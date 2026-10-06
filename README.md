@@ -144,8 +144,8 @@ No [Console do Firebase](https://console.firebase.google.com):
 1. **Adicionar projeto**, com o nome que quiser (ex.: `ponto-minhaloja`).
 2. **Upgrade para o plano Blaze** (canto inferior esquerdo) e configure o alerta de orçamento.
 3. **Authentication**: "Vamos começar" → método **E-mail/senha** → ativar.
-4. **Firestore Database**: "Criar banco de dados" → edição **Standard** → local **southamerica-east1 (São Paulo)** → modo **produção**.
-5. **Storage**: "Vamos começar" → modo **produção** → local preferencialmente o mesmo do Firestore.
+4. **Firestore Database**: não precisa criar. Se o banco ainda não existir, o primeiro deploy cria o banco em São Paulo (`southamerica-east1`, definido no `firebase.json`). Se preferir criar pelo console, escolha a edição **Standard**, esse mesmo local e o modo **produção**. O local não pode ser mudado depois.
+5. **Storage**: "Vamos começar" → modo **produção** → local **southamerica-east1 (São Paulo)**. O console destaca as regiões dos EUA como "sem custo". Em São Paulo as fotos custam centavos por mês e ficam na mesma região do servidor.
 6. **Configurações do projeto** (engrenagem) → **Seus apps** → ícone **Web `</>`** → registre o app (não precisa marcar Hosting aqui). Copie os valores de `firebaseConfig`.
 
 ### 3. Configure o site
@@ -187,6 +187,13 @@ O primeiro deploy leva alguns minutos. Durante ele:
 - O índice do banco termina de ser criado alguns minutos depois. Até lá, o filtro por funcionário pode avisar que o índice "está sendo criado".
 
 Ao final aparece o endereço do site, algo como `https://ponto-minhaloja.web.app`.
+
+Depois do primeiro deploy, proteja o banco contra exclusão e ligue a recuperação e os backups diários (veja [Dados, histórico e backups](#dados-histórico-e-backups)):
+
+```
+firebase firestore:databases:update "(default)" --delete-protection ENABLED --point-in-time-recovery ENABLED --project producao
+firebase firestore:backups:schedules:create --recurrence DAILY --retention 98d --project producao
+```
 
 ### 6. Primeiro acesso
 
@@ -251,9 +258,12 @@ Ao final aparece o endereço do site, algo como `https://ponto-minhaloja.web.app
 
 - **Nada expira:** marcações, fotos, espelhos assinados (e suas versões anteriores), solicitações, abonos e auditoria ficam guardados sem prazo. Qualquer mês antigo pode ser consultado, fechado, assinado e impresso.
 - **O que já protege os dados:** toda escrita passa pelo servidor com transações (sem registro pela metade ou duplicado), marcações nunca são apagadas, e a cadeia de hashes e a auditoria mostram qualquer alteração.
-- **Ative os backups do Firestore** (recomendado antes de usar em produção). No Console do Google Cloud → Firestore → **Disaster recovery**:
-  1. **Recuperação pontual (PITR)**: permite voltar o banco a qualquer minuto dos últimos 7 dias.
-  2. **Backups agendados**: crie um diário com retenção de 14 semanas.
+- **Ative os backups do Firestore** (recomendado antes de usar em produção). Use os comandos do fim do [passo 5](#5-escolha-o-projeto-e-publique) ou o Console do Google Cloud → Firestore → **Disaster recovery**:
+  1. **Proteção contra exclusão**: impede que o banco seja apagado por engano.
+  2. **Recuperação pontual (PITR)**: permite voltar o banco a qualquer minuto dos últimos 7 dias.
+  3. **Backups agendados**: um por dia, guardado por 14 semanas (98 dias).
+
+  A proteção é gratuita. A recuperação e os backups custam centavos por mês no volume de uma loja.
 - **Fotos:** os buckets novos do Storage guardam arquivos apagados por 7 dias (*soft delete*). Aumente esse prazo nas configurações do bucket, se quiser.
 - **Custo de leitura:** a tela de Marcações traz no máximo 3.000 registros por consulta (os mais recentes) e avisa quando atinge o limite. Assim, um período longo não fica lento nem caro.
 
