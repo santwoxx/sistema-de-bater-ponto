@@ -174,9 +174,11 @@ npm --prefix web install
 ### 5. Escolha o projeto e publique
 
 ```
-firebase use --add        (escolha o seu projeto e dê o apelido "producao")
-firebase deploy
+firebase login
+firebase deploy --project producao
 ```
+
+O apelido `producao` já aponta para o projeto `ponto-digital-2e2f9` no arquivo `.firebaserc`. Para usar outro projeto, troque o ID ali ou rode `firebase use --add`. Sem `--project`, o CLI usa o projeto de testes `demo-ponto`, que só existe nos emuladores, então nada vai para a nuvem por engano.
 
 O primeiro deploy leva alguns minutos. Durante ele:
 
@@ -270,7 +272,7 @@ Para usar a Vercel no lugar do Firebase Hosting:
 2. **Root Directory:** `web`. Deixe marcada a opção de incluir arquivos fora do Root Directory: o cálculo do espelho fica em `functions/src/espelho.ts` e é compartilhado com o site.
 3. **Environment Variables:** as mesmas do `web/.env` (`VITE_FIREBASE_API_KEY` etc.).
 4. **Deploy.** O `web/vercel.json` já configura as rotas, a permissão de câmera e o cache. Cada envio ao GitHub publica uma versão nova.
-5. Publique o backend com `firebase deploy --only functions,firestore,storage` (sem o Hosting).
+5. Publique o backend com `firebase deploy --project producao --only functions,firestore,storage` (sem o Hosting).
 
 > O plano gratuito da Vercel (Hobby) é para uso pessoal e **não comercial**. Para empresas, os termos pedem o plano Pro (pago). O Firebase Hosting não tem essa restrição e já está incluído no projeto.
 

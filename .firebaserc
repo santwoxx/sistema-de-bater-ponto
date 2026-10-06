@@ -1,5 +1,6 @@
 {
   "projects": {
-    "default": "demo-ponto"
+    "default": "demo-ponto",
+    "producao": "ponto-digital-2e2f9"
   }
 }
