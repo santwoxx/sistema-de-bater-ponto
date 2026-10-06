@@ -1,0 +1,29 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "registros",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "funcionarioId", "order": "ASCENDING" },
+        { "fieldPath": "dataLocal", "order": "ASCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "registros",
+      "fieldPath": "miniatura",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "registros",
+      "fieldPath": "hash",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "registros",
+      "fieldPath": "hashAnterior",
+      "indexes": []
+    }
+  ]
+}

@@ -1,0 +1,88 @@
+rules_version = '2';
+
+// Regra geral: o navegador NUNCA grava diretamente no banco. Toda escrita
+// passa pelas Cloud Functions, que validam os dados e registram auditoria.
+// Aqui definimos apenas quem pode LER o quê. Tudo que não está listado
+// (credenciais com hash de PIN, contador de NSR etc.) é negado.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function autenticado() {
+      return request.auth != null;
+    }
+
+    function caminhoPerfil() {
+      return /databases/$(database)/documents/usuarios/$(request.auth.uid);
+    }
+
+    function perfil() {
+      return get(caminhoPerfil()).data;
+    }
+
+    function usuarioAtivo() {
+      return autenticado() && exists(caminhoPerfil()) && perfil().ativo == true;
+    }
+
+    function ehAdmin() {
+      return usuarioAtivo() && perfil().papel == 'admin';
+    }
+
+    function acessaEmpresa(empresaId) {
+      return usuarioAtivo() && (perfil().papel == 'admin' || empresaId in perfil().empresas);
+    }
+
+    function ehAparelhoDa(empresaId) {
+      return autenticado()
+        && request.auth.token.papel == 'dispositivo'
+        && request.auth.token.empresaId == empresaId;
+    }
+
+    // Indica se o primeiro administrador já foi criado (tela de configuração inicial).
+    match /sistema/estado {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /usuarios/{uid} {
+      allow read: if autenticado() && (request.auth.uid == uid || ehAdmin());
+      allow write: if false;
+    }
+
+    match /auditoria/{id} {
+      allow read: if ehAdmin();
+      allow write: if false;
+    }
+
+    match /empresas/{empresaId} {
+      allow read: if acessaEmpresa(empresaId) || ehAparelhoDa(empresaId);
+      allow write: if false;
+
+      match /funcionarios/{funcionarioId} {
+        allow read: if acessaEmpresa(empresaId);
+        allow write: if false;
+      }
+
+      match /registros/{registroId} {
+        allow read: if acessaEmpresa(empresaId);
+        allow write: if false;
+      }
+
+      match /dispositivos/{dispositivoId} {
+        allow read: if acessaEmpresa(empresaId)
+          || (ehAparelhoDa(empresaId) && request.auth.uid == dispositivoId);
+        allow write: if false;
+      }
+
+      match /abonos/{id} {
+        allow read: if acessaEmpresa(empresaId);
+        allow write: if false;
+      }
+
+      match /auditoria/{id} {
+        allow read: if acessaEmpresa(empresaId);
+        allow write: if false;
+      }
+    }
+  }
+}

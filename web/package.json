@@ -1,0 +1,34 @@
+{
+  "name": "ponto-web",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:emuladores": "vite --mode emuladores",
+    "build": "tsc -b && vite build",
+    "build:emuladores": "tsc -b && vite build --mode emuladores",
+    "test": "vitest run",
+    "dados:exemplo": "node testes/dados-exemplo.mjs",
+    "test:e2e": "npm --prefix ../functions run build && firebase emulators:exec --project demo-ponto --only auth,firestore,functions,storage \"node testes/e2e.mjs\"",
+    "lint": "oxlint",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "firebase": "^12.19.0",
+    "lucide-react": "^1.52.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "react-router": "^8.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "oxlint": "^1.81.0",
+    "typescript": "~6.0.2",
+    "vite": "^8.3.0",
+    "vitest": "^5.0.3"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "ponto-functions",
+  "private": true,
+  "description": "Backend (Cloud Functions) do sistema de ponto: toda escrita de dados passa por aqui.",
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "test": "vitest run",
+    "serve": "npm run build && firebase emulators:start --project demo-ponto --only auth,firestore,functions,storage",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "engines": {
+    "node": "24"
+  },
+  "main": "lib/index.js",
+  "dependencies": {
+    "firebase-admin": "^14.5.0",
+    "firebase-functions": "^7.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.1",
+    "typescript": "~6.0",
+    "vitest": "^5.0.3"
+  }
+}
