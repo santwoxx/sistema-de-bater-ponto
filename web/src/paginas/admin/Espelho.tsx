@@ -1,54 +1,55 @@
 import { collection, query, where } from 'firebase/firestore'
-import { CalendarCheck, CalendarDays, Download, Plus, Printer } from 'lucide-react'
+import { CalendarCheck, CalendarDays, Download, Lock, Plus, Printer, RotateCcw } from 'lucide-react'
 import { useState } from 'react'
-import { Link } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
+import { api } from '../../api'
 import { DetalheAbono, ModalAbono } from '../../componentes/Abonos'
 import { Aviso, CabecalhoPagina, Campo, Carregando, Vazio } from '../../componentes/Basicos'
+import { BlocoAssinatura, ModalReabrir } from '../../componentes/EspelhoFechado'
 import { DetalhesRegistro, ModalIncluirMarcacao } from '../../componentes/Marcacoes'
+import { useNotificar } from '../../componentes/Notificacoes'
 import { useEmpresaAtual } from '../../contexto/Empresa'
 import { usePerfil } from '../../contexto/Sessao'
 import { db } from '../../firebase'
 import { useAgora, useColecao } from '../../hooks/useColecao'
 import { baixarCsv } from '../../lib/csv'
-import { calcularEspelho, type AbonoBruto, type DiaEspelho } from '../../lib/espelho'
+import { mensagemErro } from '../../lib/erros'
+import { calcularEspelho, documentoDoEspelho, ocorrenciasDoDia, rotuloAbono, type DiaEspelho } from '../../lib/espelho'
 import { formatarCnpj, formatarCpf } from '../../lib/formatos'
 import { dataLocal, formatarData, formatarDataHora, minutosParaHHMM, nomeDiaCurto, nomeMes } from '../../lib/tempo'
+import { jsonEstavel } from '../../lib/util'
 import {
   ordenarPorNome,
   paraAbono,
+  paraEspelhoFechado,
   paraFuncionario,
   paraRegistro,
   paraSolicitacao,
-  ROTULOS_ABONO,
   type Abono,
   type Registro,
-  type TipoAbono,
 } from '../../tipos'
 
-function rotuloAbono(abono: AbonoBruto): string {
-  const tipo = ROTULOS_ABONO[abono.tipo as TipoAbono] ?? 'Abono'
-  return `${tipo}${abono.minutos === null ? '' : ` ${minutosParaHHMM(abono.minutos)}`}: ${abono.descricao}`
-}
-
 function ocorrencias(dia: DiaEspelho, comAbonos = true): string {
-  const lista: string[] = comAbonos ? dia.abonos.map(rotuloAbono) : []
-  if (dia.falta) lista.push('Falta')
-  if (dia.incompleto) lista.push('Marcação ímpar')
-  if (dia.temManual) lista.push('Ajuste manual')
-  if (dia.situacao === 'hoje') lista.push('Em andamento')
-  if (dia.situacao === 'antes-admissao') lista.push('Antes da admissão')
-  if (dia.situacao === 'antes-inicio') lista.push('Antes do início do controle')
-  return lista.join(' · ')
+  return ocorrenciasDoDia(dia, comAbonos).join(' · ')
 }
 
 export default function Espelho() {
   const empresa = useEmpresaAtual()
   const perfil = usePerfil()
+  const notificar = useNotificar()
+  // Funcionário e mês podem vir no endereço (links do Fechamento mensal).
+  const [parametros] = useSearchParams()
   // Recalcula a cada minuto: se a tela ficar aberta na virada do dia, o "hoje" acompanha.
   const agora = useAgora(60_000)
   const hoje = dataLocal(new Date(agora), empresa.fusoHorario)
-  const [mes, setMes] = useState(hoje.slice(0, 7))
-  const [funcionarioId, setFuncionarioId] = useState('')
+  const [mes, setMes] = useState(() => {
+    const doEndereco = parametros.get('mes') ?? ''
+    return /^\d{4}-\d{2}$/.test(doEndereco) ? doEndereco : hoje.slice(0, 7)
+  })
+  const [funcionarioId, setFuncionarioId] = useState(() => parametros.get('funcionario') ?? '')
+  const [fechando, setFechando] = useState(false)
+  const [reabrindo, setReabrindo] = useState(false)
+  const [erroFechamento, setErroFechamento] = useState('')
   const [incluirNoDia, setIncluirNoDia] = useState<string | null>(null)
   const [abonarNoDia, setAbonarNoDia] = useState<string | null>(null)
   const [detalhe, setDetalhe] = useState<Registro | null>(null)
@@ -107,6 +108,36 @@ export default function Espelho() {
   const registrosPorId = new Map(registros.dados.map((r) => [r.id, r]))
   const abonosPorId = new Map(abonos.map((a) => [a.id, a]))
 
+  // Versão fechada (a que o funcionário assina) e se as marcações mudaram depois dela.
+  const fechados = useColecao(
+    () =>
+      funcionario && mes
+        ? query(collection(db, 'empresas', empresa.id, 'espelhos'), where('funcionarioId', '==', funcionario.id), where('mes', '==', mes))
+        : null,
+    paraEspelhoFechado,
+    `${empresa.id}:fechado:${funcionario?.id}:${mes}`,
+  )
+  const fechado = fechados.dados[0]
+  const mesEncerrado = mes < hoje.slice(0, 7)
+  const mudouDepoisDoFechamento =
+    Boolean(fechado && resumo && !registros.carregando && !abonosDoMes.carregando) &&
+    jsonEstavel(documentoDoEspelho(resumo!, empresa.toleranciaMinutos)) !== jsonEstavel(fechado!.documento)
+
+  async function fecharEsteMes() {
+    if (!funcionario) return
+    setErroFechamento('')
+    setFechando(true)
+    try {
+      const { resultados } = await api.fecharEspelhos({ empresaId: empresa.id, mes, funcionarioIds: [funcionario.id] })
+      if (resultados[0]?.resultado === 'exige-motivo') setReabrindo(true)
+      else notificar('Espelho fechado e enviado para o funcionário assinar no aparelho de ponto.')
+    } catch (e) {
+      setErroFechamento(mensagemErro(e))
+    } finally {
+      setFechando(false)
+    }
+  }
+
   function exportar() {
     if (!resumo || !funcionario) return
     const linhas = resumo.dias.map((d) => [
@@ -164,6 +195,43 @@ export default function Espelho() {
       </div>
 
       {(registros.erro ?? abonosDoMes.erro) && <Aviso tipo="erro">{registros.erro ?? abonosDoMes.erro}</Aviso>}
+
+      {funcionario && resumo && !fechados.carregando && (
+        <section className="cartao nao-imprimir">
+          <h2>Fechamento e assinatura</h2>
+          {fechado ? (
+            <BlocoAssinatura espelho={fechado} empresa={empresa} />
+          ) : (
+            <p className="texto-suave">
+              {mesEncerrado
+                ? 'Este mês ainda não foi fechado. Ao fechar, o espelho é congelado e enviado para o funcionário conferir e assinar no aparelho de ponto.'
+                : 'O mês está em andamento. Ele poderá ser fechado e enviado para assinatura depois que terminar.'}
+            </p>
+          )}
+          {mudouDepoisDoFechamento && fechado && (
+            <Aviso tipo="alerta">
+              As marcações deste mês mudaram depois do fechamento.{' '}
+              {fechado.status === 'aguardando'
+                ? 'Atualize a versão enviada para assinatura.'
+                : 'Reabra com motivo para gerar uma nova versão e pedir nova assinatura.'}
+            </Aviso>
+          )}
+          {erroFechamento && <Aviso tipo="erro">{erroFechamento}</Aviso>}
+          <div className="acoes-detalhe">
+            {mesEncerrado && (!fechado || (fechado.status === 'aguardando' && mudouDepoisDoFechamento)) && (
+              <button type="button" className="botao primario" onClick={fecharEsteMes} disabled={fechando}>
+                <Lock size={16} aria-hidden />{' '}
+                {fechando ? 'Fechando...' : fechado ? 'Atualizar versão para assinatura' : 'Fechar mês e enviar para assinatura'}
+              </button>
+            )}
+            {fechado && fechado.status !== 'aguardando' && (
+              <button type="button" className="botao" onClick={() => setReabrindo(true)}>
+                <RotateCcw size={16} aria-hidden /> {fechado.status === 'contestado' ? 'Reenviar para assinatura' : 'Reabrir com motivo'}
+              </button>
+            )}
+          </div>
+        </section>
+      )}
 
       {funcionarios.carregando ? (
         <Carregando />
@@ -330,16 +398,29 @@ export default function Espelho() {
             considera só dias já encerrados.
           </p>
 
-          <div className="assinaturas so-impressao">
-            <div>
-              <span />
-              {funcionario.nome}
+          {fechado && fechado.status === 'assinado' && !mudouDepoisDoFechamento ? (
+            // Assinado no aparelho: a impressão leva os dados da assinatura eletrônica.
+            <div className="so-impressao impressao-assinatura">
+              <BlocoAssinatura espelho={fechado} empresa={empresa} />
+              <div className="assinaturas assinatura-unica">
+                <div>
+                  <span />
+                  {empresa.nome}
+                </div>
+              </div>
             </div>
-            <div>
-              <span />
-              {empresa.nome}
+          ) : (
+            <div className="assinaturas so-impressao">
+              <div>
+                <span />
+                {funcionario.nome}
+              </div>
+              <div>
+                <span />
+                {empresa.nome}
+              </div>
             </div>
-          </div>
+          )}
           <p className="so-impressao texto-suave">
             Emitido em {formatarDataHora(new Date(agora), empresa.fusoHorario)} por {perfil.nome}.
           </p>
@@ -360,6 +441,9 @@ export default function Espelho() {
       )}
       {abonoAberto && <DetalheAbono empresa={empresa} abono={abonoAberto} aoFechar={() => setAbonoAberto(null)} />}
       {detalhe && <DetalhesRegistro registro={detalhe} empresa={empresa} aoFechar={() => setDetalhe(null)} />}
+      {reabrindo && fechado && funcionario && (
+        <ModalReabrir empresa={empresa} mes={mes} funcionario={funcionario} espelho={fechado} aoFechar={() => setReabrindo(false)} />
+      )}
     </>
   )
 }

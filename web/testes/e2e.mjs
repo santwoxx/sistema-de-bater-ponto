@@ -436,6 +436,104 @@ await etapa('consulta do espelho (funcionário + período) traz as marcações d
   assert.equal((await getDocs(q)).size, 3)
 })
 
+await etapa('fechamento do mês: espelho congelado, assinado ou contestado no aparelho, reabertura com motivo', async () => {
+  const mesAtual = dataSaoPaulo().slice(0, 7)
+  const [ano, numero] = mesAtual.split('-').map(Number)
+  const mesAnterior = new Date(Date.UTC(ano, numero - 2, 1)).toISOString().slice(0, 7)
+  for (const [dia, hora] of [
+    ['15', '08:00'],
+    ['15', '17:00'],
+    ['16', '08:00'],
+    ['16', '12:00'],
+  ]) {
+    await gestora.chamar('incluirMarcacao', { empresaId: empresaA, funcionarioId: maria, data: `${mesAnterior}-${dia}`, hora, justificativa: 'Implantação do sistema' })
+  }
+
+  await falha(gestora.chamar('fecharEspelhos', { empresaId: empresaA, mes: mesAtual }), 'functions/failed-precondition', /terminaram/)
+  await falha(outraGestora.chamar('fecharEspelhos', { empresaId: empresaA, mes: mesAnterior }), 'functions/permission-denied')
+
+  const resultado = (lista, id) => lista.resultados.find((r) => r.funcionarioId === id)?.resultado
+  const primeiro = await gestora.chamar('fecharEspelhos', { empresaId: empresaA, mes: mesAnterior })
+  assert.equal(resultado(primeiro, maria), 'fechado')
+  assert.equal(resultado(primeiro, joao), 'fechado')
+  const refMaria = doc(gestora.db, 'empresas', empresaA, 'espelhos', `${maria}_${mesAnterior}`)
+  const fechado = await getDoc(refMaria)
+  assert.equal(fechado.get('status'), 'aguardando')
+  assert.equal(fechado.get('versao'), 1)
+  assert.equal(fechado.get('documento').totais.trabalhadoMin, 540 + 240)
+  assert.match(fechado.get('hash'), /^[0-9a-f]{64}$/)
+  assert.equal(resultado(await gestora.chamar('fecharEspelhos', { empresaId: empresaA, mes: mesAnterior }), maria), 'sem-alteracoes')
+
+  // Só quem tem acesso à empresa vê os espelhos; o aparelho só pelo fluxo com PIN.
+  await falha(getDocs(collection(outraGestora.db, 'empresas', empresaA, 'espelhos')), 'permission-denied')
+  await falha(getDocs(collection(aparelho.db, 'empresas', empresaA, 'espelhos')), 'permission-denied')
+
+  // Maria confere e assina no aparelho.
+  await falha(aparelho.chamar('consultarEspelhosPendentes', { matricula: '12', pin: '9999' }), 'functions/permission-denied')
+  const pendentes = await aparelho.chamar('consultarEspelhosPendentes', { matricula: '12', pin: '2580' })
+  assert.equal(pendentes.funcionarioNome, 'Maria Souza')
+  assert.equal(pendentes.espelhos.length, 1)
+  const espelho = pendentes.espelhos[0]
+  assert.equal(espelho.hash, fechado.get('hash'))
+  assert.equal(espelho.documento.dias.length > 27, true)
+  const assinar = (dados) => aparelho.chamar('assinarEspelho', { matricula: '12', pin: '2580', espelhoId: espelho.id, miniatura: jpeg(300), ...dados })
+  await falha(assinar({ hash: '0'.repeat(64), concordo: true }), 'functions/failed-precondition', /atualizado/)
+  const assinado = await assinar({ hash: espelho.hash, concordo: true })
+  assert.equal(assinado.status, 'assinado')
+  assert.match(assinado.codigo, /^[0-9A-F]{16}$/)
+  const depois = await getDoc(refMaria)
+  assert.equal(depois.get('status'), 'assinado')
+  assert.equal(depois.get('assinatura').codigo, assinado.codigo)
+  assert.ok(depois.get('assinatura').miniatura.startsWith('data:image/jpeg;base64,'))
+  await falha(assinar({ hash: espelho.hash, concordo: true }), 'functions/failed-precondition', /não está aguardando/)
+
+  // Mudança depois da assinatura: só reabre com motivo, e a versão assinada fica guardada.
+  await gestora.chamar('incluirMarcacao', { empresaId: empresaA, funcionarioId: maria, data: `${mesAnterior}-16`, hora: '13:00', justificativa: 'Correção após assinatura' })
+  assert.equal(resultado(await gestora.chamar('fecharEspelhos', { empresaId: empresaA, mes: mesAnterior }), maria), 'exige-motivo')
+  assert.equal((await getDoc(refMaria)).get('status'), 'assinado')
+  const reaberto = await gestora.chamar('fecharEspelhos', {
+    empresaId: empresaA,
+    mes: mesAnterior,
+    funcionarioIds: [maria],
+    motivoReabertura: 'Inclusão da volta do almoço do dia 16',
+  })
+  assert.equal(resultado(reaberto, maria), 'atualizado')
+  const versao2 = await getDoc(refMaria)
+  assert.equal(versao2.get('status'), 'aguardando')
+  assert.equal(versao2.get('versao'), 2)
+  assert.equal(versao2.get('reabertura').statusAnterior, 'assinado')
+  const versao1 = await getDoc(doc(gestora.db, 'empresas', empresaA, 'espelhos', `${maria}_${mesAnterior}`, 'versoes', '1'))
+  assert.equal(versao1.get('status'), 'assinado')
+  assert.equal(versao1.get('assinatura').codigo, assinado.codigo)
+
+  // João contesta; a gestora reenvia com motivo.
+  const doJoao = (await aparelho.chamar('consultarEspelhosPendentes', { matricula: '7', pin: '8642' })).espelhos[0]
+  await falha(
+    aparelho.chamar('assinarEspelho', { matricula: '7', pin: '8642', espelhoId: doJoao.id, hash: doJoao.hash, concordo: false, motivo: 'ok' }),
+    'functions/invalid-argument',
+  )
+  const contestado = await aparelho.chamar('assinarEspelho', {
+    matricula: '7',
+    pin: '8642',
+    espelhoId: doJoao.id,
+    hash: doJoao.hash,
+    concordo: false,
+    motivo: 'Trabalhei no dia 10 e não aparece',
+    miniatura: null,
+  })
+  assert.equal(contestado.status, 'contestado')
+  const refJoao = doc(gestora.db, 'empresas', empresaA, 'espelhos', doJoao.id)
+  assert.equal((await getDoc(refJoao)).get('contestacao').motivo, 'Trabalhei no dia 10 e não aparece')
+  const reenviado = await gestora.chamar('fecharEspelhos', {
+    empresaId: empresaA,
+    mes: mesAnterior,
+    funcionarioIds: [joao],
+    motivoReabertura: 'Conferido: não houve trabalho no dia 10',
+  })
+  assert.equal(resultado(reenviado, joao), 'atualizado')
+  assert.equal((await getDoc(refJoao)).get('status'), 'aguardando')
+})
+
 await etapa('auditoria registra as ações; a do sistema é só do admin', async () => {
   const acoes = (await getDocs(collection(gestora.db, 'empresas', empresaA, 'auditoria'))).docs.map((d) => d.get('acao'))
   for (const acao of [
@@ -450,6 +548,9 @@ await etapa('auditoria registra as ações; a do sistema é só do admin', async
     'solicitacao.criada',
     'solicitacao.aprovada',
     'solicitacao.recusada',
+    'espelho.fechado',
+    'espelho.assinado',
+    'espelho.contestado',
   ]) {
     assert.ok(acoes.includes(acao), `faltou ${acao} na auditoria`)
   }

@@ -29,6 +29,8 @@ export interface Empresa {
   ativo: boolean;
   intervaloMinimoMinutos: number;
   toleranciaMinutos: number;
+  /** Antes desta data (AAAA-MM-DD), dia sem marcação não conta como falta. */
+  inicioControle: string | null;
 }
 
 export const PADROES_EMPRESA = {
@@ -81,6 +83,7 @@ export async function carregarEmpresa(empresaId: string): Promise<Empresa> {
     ativo: dados.ativo !== false,
     intervaloMinimoMinutos: dados.intervaloMinimoMinutos ?? PADROES_EMPRESA.intervaloMinimoMinutos,
     toleranciaMinutos: dados.toleranciaMinutos ?? PADROES_EMPRESA.toleranciaMinutos,
+    inicioControle: typeof dados.inicioControle === "string" ? dados.inicioControle : null,
   };
 }
 

@@ -109,6 +109,8 @@ export async function conferirPin(params: {
     logger.warn("PIN incorreto", contexto);
     throw credenciaisInvalidas();
   }
+  // PIN certo zera a contagem: o bloqueio é para erros seguidos.
+  if ((credenciais.falhas ?? 0) > 0) await credenciaisRef.update({ falhas: 0 });
 }
 
 /**

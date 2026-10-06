@@ -22,6 +22,8 @@ import {
   type Solicitacao,
 } from '../../tipos'
 
+const HISTORICO_POR_PAGINA = 150
+
 function Origem({ s, empresa }: { s: Solicitacao; empresa: Empresa }) {
   return (
     <>
@@ -42,10 +44,11 @@ export default function Solicitacoes() {
   const colecao = () => collection(db, 'empresas', empresa.id, 'solicitacoes')
 
   const pendentes = useColecao(() => query(colecao(), where('status', '==', 'pendente')), paraSolicitacao, `${empresa.id}:pendentes`)
+  const [quantidadeHistorico, setQuantidadeHistorico] = useState(HISTORICO_POR_PAGINA)
   const historico = useColecao(
-    () => (aba === 'historico' ? query(colecao(), orderBy('criadoEm', 'desc'), limit(150)) : null),
+    () => (aba === 'historico' ? query(colecao(), orderBy('criadoEm', 'desc'), limit(quantidadeHistorico)) : null),
     paraSolicitacao,
-    `${empresa.id}:historico:${aba}`,
+    `${empresa.id}:historico:${aba}:${quantidadeHistorico}`,
   )
   const funcionarios = useColecao(() => collection(db, 'empresas', empresa.id, 'funcionarios'), paraFuncionario, `${empresa.id}:todos`)
 
@@ -246,6 +249,14 @@ export default function Solicitacoes() {
             </div>
           )}
         </section>
+      )}
+      {aba === 'historico' && historico.dados.length >= quantidadeHistorico && (
+        <div className="rodape-tabela carregar-mais">
+          <span className="texto-suave">Mostrando as {historico.dados.length} solicitações mais recentes.</span>
+          <button type="button" className="botao pequeno" onClick={() => setQuantidadeHistorico(quantidadeHistorico + HISTORICO_POR_PAGINA)}>
+            Carregar mais antigas
+          </button>
+        </div>
       )}
 
       {nova && (

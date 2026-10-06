@@ -1,4 +1,5 @@
 import type { DocumentSnapshot, Timestamp } from 'firebase/firestore'
+import type { DocumentoEspelho } from './lib/espelho'
 
 export type Papel = 'admin' | 'gestor'
 
@@ -128,6 +129,56 @@ export interface Solicitacao {
   decididoEm?: Timestamp | null
   motivoRecusa?: string
   registroId?: string
+}
+
+export type StatusEspelho = 'aguardando' | 'assinado' | 'contestado'
+
+/** Prova da assinatura (ou contestação) feita pelo funcionário no aparelho. */
+export interface RegistroAssinatura {
+  em: Timestamp | null
+  codigo: string
+  hash: string
+  dispositivoId: string
+  dispositivoNome: string
+  miniatura: string | null
+}
+
+/** Espelho de um mês fechado: versão congelada enviada para o funcionário assinar. */
+export interface EspelhoFechado {
+  id: string
+  mes: string
+  funcionarioId: string
+  hash: string
+  versao: number
+  status: StatusEspelho
+  empresa: { id: string; nome: string; cnpj: string }
+  funcionario: { id: string; nome: string; cpf: string; matricula: string; cargo: string; admissao: string | null }
+  documento: DocumentoEspelho
+  fechadoPor: Autor
+  fechadoEm: Timestamp | null
+  assinatura: RegistroAssinatura | null
+  contestacao: (RegistroAssinatura & { motivo: string }) | null
+  reabertura: { motivo: string; statusAnterior: string } | null
+}
+
+export function paraEspelhoFechado(snap: DocumentSnapshot): EspelhoFechado {
+  const d = snap.data() ?? {}
+  return {
+    id: snap.id,
+    mes: d.mes ?? '',
+    funcionarioId: d.funcionarioId ?? '',
+    hash: d.hash ?? '',
+    versao: d.versao ?? 1,
+    status: d.status === 'assinado' || d.status === 'contestado' ? d.status : 'aguardando',
+    empresa: d.empresa ?? { id: '', nome: '', cnpj: '' },
+    funcionario: d.funcionario ?? { id: '', nome: '', cpf: '', matricula: '', cargo: '', admissao: null },
+    documento: d.documento,
+    fechadoPor: d.fechadoPor ?? { uid: '', nome: '' },
+    fechadoEm: d.fechadoEm ?? null,
+    assinatura: d.assinatura ?? null,
+    contestacao: d.contestacao ?? null,
+    reabertura: d.reabertura ?? null,
+  }
 }
 
 export interface EntradaAuditoria {

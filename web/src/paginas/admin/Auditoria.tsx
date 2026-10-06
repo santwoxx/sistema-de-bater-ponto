@@ -9,21 +9,28 @@ import { useColecao } from '../../hooks/useColecao'
 import { formatarDataHora } from '../../lib/tempo'
 import { paraAuditoria } from '../../tipos'
 
+const POR_PAGINA = 300
+
 export default function Auditoria() {
   const empresa = useEmpresaAtual()
   const perfil = usePerfil()
   const [escopo, setEscopo] = useState<'empresa' | 'sistema'>('empresa')
+  const [quantidade, setQuantidade] = useState(POR_PAGINA)
 
   const entradas = useColecao(
     () =>
       query(
         escopo === 'empresa' ? collection(db, 'empresas', empresa.id, 'auditoria') : collection(db, 'auditoria'),
         orderBy('em', 'desc'),
-        limit(300),
+        limit(quantidade),
       ),
     paraAuditoria,
-    `${escopo}:${empresa.id}`,
+    `${escopo}:${empresa.id}:${quantidade}`,
   )
+  const trocarEscopo = (novo: typeof escopo) => {
+    setEscopo(novo)
+    setQuantidade(POR_PAGINA)
+  }
 
   return (
     <>
@@ -33,10 +40,10 @@ export default function Auditoria() {
         acoes={
           perfil.papel === 'admin' && (
             <div className="alternador" role="tablist">
-              <button type="button" className={escopo === 'empresa' ? 'ativo' : ''} onClick={() => setEscopo('empresa')}>
+              <button type="button" className={escopo === 'empresa' ? 'ativo' : ''} onClick={() => trocarEscopo('empresa')}>
                 {empresa.nome}
               </button>
-              <button type="button" className={escopo === 'sistema' ? 'ativo' : ''} onClick={() => setEscopo('sistema')}>
+              <button type="button" className={escopo === 'sistema' ? 'ativo' : ''} onClick={() => trocarEscopo('sistema')}>
                 Sistema (empresas e usuários)
               </button>
             </div>
@@ -78,7 +85,14 @@ export default function Auditoria() {
           </div>
         )}
       </section>
-      <p className="texto-suave rodape-tabela">Mostrando os 300 eventos mais recentes.</p>
+      <div className="rodape-tabela carregar-mais">
+        <span className="texto-suave">Mostrando os {entradas.dados.length} eventos mais recentes.</span>
+        {entradas.dados.length >= quantidade && (
+          <button type="button" className="botao pequeno" onClick={() => setQuantidade(quantidade + POR_PAGINA)}>
+            Carregar eventos mais antigos
+          </button>
+        )}
+      </div>
     </>
   )
 }

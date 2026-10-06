@@ -6,7 +6,9 @@ import {
   CircleCheck,
   ClockAlert,
   Delete,
+  FileSignature,
   Fingerprint,
+  Info,
   LoaderCircle,
   Maximize,
   Send,
@@ -14,7 +16,7 @@ import {
   WifiOff,
 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import { api, type ComprovantePonto, type Sincronizacao } from '../../api'
+import { api, type ComprovantePonto, type EspelhoParaAssinar, type Sincronizacao } from '../../api'
 import { Aviso, Campo } from '../../componentes/Basicos'
 import Modal from '../../componentes/Modal'
 import { CHAVE_APARELHO } from '../../contexto/Sessao'
@@ -24,17 +26,31 @@ import { useAgora } from '../../hooks/useColecao'
 import { erroDeRede, mensagemErro } from '../../lib/erros'
 import { formatarNsr } from '../../lib/formatos'
 import { somErro, somFoto, somSucesso } from '../../lib/sons'
-import { dataLocal, dataPorExtenso, formatarData, horaLocal, somarDias } from '../../lib/tempo'
+import { dataLocal, dataPorExtenso, formatarData, horaLocal, nomeMes, somarDias } from '../../lib/tempo'
 import { gerarId, gravarLocal, lerLocal } from '../../lib/util'
+import ConferenciaEspelho from './ConferenciaEspelho'
 
-type Etapa = 'matricula' | 'pin' | 'foto' | 'formulario' | 'enviando' | 'sucesso' | 'solicitado' | 'erro'
+type Etapa =
+  | 'matricula'
+  | 'pin'
+  | 'foto'
+  | 'formulario'
+  | 'enviando'
+  | 'espelho'
+  | 'sucesso'
+  | 'solicitado'
+  | 'assinado'
+  | 'informacao'
+  | 'erro'
 type InfoAparelho = Extract<Sincronizacao, { ativo: true }>
 
 const CHAVE_INFO = 'ponto.info'
 const SINCRONIZAR_A_CADA_MS = 5 * 60_000
 const INATIVIDADE_MS = 20_000
 const FORMULARIO_MS = 90_000
+const CONFERENCIA_MS = 3 * 60_000
 const RESULTADO_MS = 6_000
+const ETAPAS_DE_RESULTADO: Etapa[] = ['sucesso', 'erro', 'solicitado', 'assinado', 'informacao']
 const TECLAS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'apagar', '0', 'ok']
 const OUTRO_MOTIVO = 'Outro motivo'
 const MOTIVOS = ['Esqueci de registrar', 'O aparelho estava sem internet ou com problema', 'Estava em trabalho externo', OUTRO_MOTIVO]
@@ -102,10 +118,16 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
   const [mensagem, setMensagem] = useState('')
   const [configuracoes, setConfiguracoes] = useState(false)
   // "solicitacao": o funcionário esqueceu de bater e pede a inclusão do horário.
-  const [modo, setModo] = useState<'ponto' | 'solicitacao'>('ponto')
+  // "assinatura": o funcionário confere e assina o espelho de um mês fechado.
+  const [modo, setModo] = useState<'ponto' | 'solicitacao' | 'assinatura'>('ponto')
   const [pedido, setPedido] = useState({ data: '', hora: '', motivo: MOTIVOS[0], outroMotivo: '' })
   const [pedidoEnviado, setPedidoEnviado] = useState<{ funcionarioNome: string; data: string; hora: string } | null>(null)
   const [erroPedido, setErroPedido] = useState('')
+  const [espelhos, setEspelhos] = useState<EspelhoParaAssinar[]>([])
+  const [indiceEspelho, setIndiceEspelho] = useState(0)
+  const [assinando, setAssinando] = useState(false)
+  const [erroAssinatura, setErroAssinatura] = useState('')
+  const [assinatura, setAssinatura] = useState<{ status: 'assinado' | 'contestado'; mes: string; codigo: string } | null>(null)
 
   const reiniciar = useCallback(() => {
     setEtapa('matricula')
@@ -115,6 +137,10 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
     setMensagem('')
     setComprovante(null)
     setPedidoEnviado(null)
+    setEspelhos([])
+    setIndiceEspelho(0)
+    setErroAssinatura('')
+    setAssinatura(null)
   }, [])
 
   const falhar = useCallback((texto: string) => {
@@ -175,6 +201,60 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
     }
   }
 
+  const buscarEspelhos = useCallback(async () => {
+    setEtapa('enviando')
+    try {
+      const resposta = await api.consultarEspelhosPendentes({ matricula, pin })
+      setConectado(true)
+      if (resposta.espelhos.length === 0) {
+        setPin('')
+        setMensagem(`${resposta.funcionarioNome}, não há espelho de ponto aguardando a sua assinatura.`)
+        setEtapa('informacao')
+        return
+      }
+      setEspelhos(resposta.espelhos)
+      setIndiceEspelho(0)
+      setErroAssinatura('')
+      setEtapa('espelho')
+    } catch (e) {
+      if (erroDeRede(e)) setConectado(false)
+      falhar(mensagemErro(e))
+    }
+  }, [matricula, pin, falhar, setConectado])
+
+  async function assinar(concordo: boolean, motivo?: string) {
+    const espelho = espelhos[indiceEspelho]
+    if (!espelho) return
+    setErroAssinatura('')
+    setAssinando(true)
+    // Foto pequena de quem assinou, como prova (se a câmera estiver disponível).
+    const miniatura = estadoCamera === 'pronta' ? (capturar()?.miniatura ?? null) : null
+    try {
+      const resultado = await api.assinarEspelho({ matricula, pin, espelhoId: espelho.id, hash: espelho.hash, concordo, motivo, miniatura })
+      setConectado(true)
+      setAssinatura(resultado)
+      setEtapa('assinado')
+      somSucesso()
+    } catch (e) {
+      if (erroDeRede(e)) setConectado(false)
+      setErroAssinatura(mensagemErro(e))
+      somErro()
+    } finally {
+      setAssinando(false)
+    }
+  }
+
+  // Depois de assinar: segue para o próximo espelho pendente ou volta ao início.
+  const continuarAposAssinatura = useCallback(() => {
+    if (indiceEspelho + 1 < espelhos.length) {
+      setIndiceEspelho(indiceEspelho + 1)
+      setAssinatura(null)
+      setEtapa('espelho')
+    } else {
+      reiniciar()
+    }
+  }, [indiceEspelho, espelhos.length, reiniciar])
+
   // Contagem regressiva antes da foto (começa em 3 ao entrar na etapa "foto").
   const enviarRef = useRef(enviar)
   useEffect(() => {
@@ -197,18 +277,25 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
 
   // Volta ao início após inatividade ou depois de mostrar o resultado.
   useEffect(() => {
-    const emDigitacao = (etapa === 'matricula' || etapa === 'pin') && (matricula !== '' || pin !== '' || modo === 'solicitacao')
-    const mostrandoResultado = etapa === 'sucesso' || etapa === 'erro' || etapa === 'solicitado'
-    const espera = mostrandoResultado ? RESULTADO_MS : etapa === 'formulario' ? FORMULARIO_MS : emDigitacao ? INATIVIDADE_MS : 0
+    const emDigitacao = (etapa === 'matricula' || etapa === 'pin') && (matricula !== '' || pin !== '' || modo !== 'ponto')
+    const espera = ETAPAS_DE_RESULTADO.includes(etapa)
+      ? RESULTADO_MS
+      : etapa === 'formulario'
+        ? FORMULARIO_MS
+        : etapa === 'espelho'
+          ? CONFERENCIA_MS
+          : emDigitacao
+            ? INATIVIDADE_MS
+            : 0
     if (!espera) return
-    const id = setTimeout(reiniciar, espera)
+    const id = setTimeout(etapa === 'assinado' ? continuarAposAssinatura : reiniciar, espera)
     return () => clearTimeout(id)
-  }, [etapa, matricula, pin, modo, pedido, reiniciar])
+  }, [etapa, matricula, pin, modo, pedido, indiceEspelho, reiniciar, continuarAposAssinatura])
 
   const teclar = useCallback(
     (tecla: string) => {
       if (configuracoes) return
-      if (etapa === 'sucesso' || etapa === 'erro' || etapa === 'solicitado') {
+      if (ETAPAS_DE_RESULTADO.includes(etapa)) {
         reiniciar()
         return
       }
@@ -228,6 +315,8 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
             setPedido({ data: dataLocal(new Date(Date.now() + deslocamento), fuso), hora: '', motivo: MOTIVOS[0], outroMotivo: '' })
             setErroPedido('')
             setEtapa('formulario')
+          } else if (modo === 'assinatura') {
+            void buscarEspelhos()
           } else if (estadoCamera !== 'pronta') {
             falhar(erroCamera || 'A câmera ainda não está pronta. Aguarde e tente de novo.')
           } else {
@@ -237,13 +326,13 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
         } else if (pin.length < 6) setPin((p) => p + tecla)
       }
     },
-    [configuracoes, etapa, matricula, pin, modo, deslocamento, fuso, estadoCamera, erroCamera, reiniciar, falhar],
+    [configuracoes, etapa, matricula, pin, modo, deslocamento, fuso, estadoCamera, erroCamera, reiniciar, falhar, buscarEspelhos],
   )
 
   // Também aceita teclado físico (computador com webcam).
   useEffect(() => {
     const aoTeclar = (e: KeyboardEvent) => {
-      if (configuracoes || etapa === 'formulario') return
+      if (configuracoes || etapa === 'formulario' || etapa === 'espelho') return
       if (e.target instanceof HTMLElement && e.target.closest('input, select, textarea')) return
       if (/^\d$/.test(e.key)) teclar(e.key)
       else if (e.key === 'Backspace') teclar('apagar')
@@ -284,13 +373,19 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
   const titulo =
     etapa === 'pin'
       ? 'Digite seu PIN'
-      : modo === 'solicitacao'
-        ? 'Esqueceu de bater? Digite sua matrícula'
-        : etapa === 'foto'
-          ? 'Olhe para a câmera'
-          : etapa === 'enviando'
-            ? 'Registrando...'
-            : 'Digite sua matrícula'
+      : etapa === 'enviando' && modo === 'assinatura'
+        ? 'Buscando seus espelhos...'
+        : modo === 'solicitacao'
+          ? 'Esqueceu de bater? Digite sua matrícula'
+          : modo === 'assinatura'
+            ? 'Assinar espelho: digite sua matrícula'
+            : etapa === 'foto'
+              ? 'Olhe para a câmera'
+              : etapa === 'enviando'
+                ? 'Registrando...'
+                : 'Digite sua matrícula'
+  const textoAguarde =
+    modo === 'solicitacao' ? 'Enviando a solicitação...' : modo === 'assinatura' ? 'Buscando seus espelhos...' : 'Registrando...'
 
   return (
     <div className="terminal">
@@ -359,7 +454,7 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
           )}
           {etapa === 'enviando' && (
             <div className="camera-aviso">
-              <LoaderCircle className="girando" aria-hidden /> {modo === 'solicitacao' ? 'Enviando a solicitação...' : 'Registrando...'}
+              <LoaderCircle className="girando" aria-hidden /> {textoAguarde}
             </div>
           )}
         </section>
@@ -447,31 +542,47 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
                 </button>
               ))}
             </div>
-            {modo === 'solicitacao' ? (
+            {modo !== 'ponto' ? (
               <button type="button" className="terminal-link" onClick={reiniciar}>
                 Cancelar e voltar ao ponto
               </button>
             ) : (
               etapa === 'matricula' && (
-                <button
-                  type="button"
-                  className="terminal-esqueci"
-                  onClick={() => {
-                    setMatricula('')
-                    setModo('solicitacao')
-                  }}
-                >
-                  <ClockAlert size={20} aria-hidden /> Esqueci de bater o ponto
-                </button>
+                <div className="terminal-atalhos">
+                  <button
+                    type="button"
+                    className="terminal-esqueci"
+                    onClick={() => {
+                      setMatricula('')
+                      setModo('solicitacao')
+                    }}
+                  >
+                    <ClockAlert size={20} aria-hidden /> Esqueci de bater o ponto
+                  </button>
+                  <button
+                    type="button"
+                    className="terminal-esqueci"
+                    onClick={() => {
+                      setMatricula('')
+                      setModo('assinatura')
+                    }}
+                  >
+                    <FileSignature size={20} aria-hidden /> Assinar meu espelho
+                  </button>
+                </div>
               )
             )}
             <p className="terminal-instrucao">
               {etapa === 'pin'
                 ? modo === 'solicitacao'
                   ? 'Depois do PIN, informe o dia e o horário que ficou sem marcação.'
-                  : 'Ao confirmar, olhe para a câmera: a foto é tirada automaticamente.'
+                  : modo === 'assinatura'
+                    ? 'Depois do PIN, confira o espelho do mês e assine.'
+                    : 'Ao confirmar, olhe para a câmera: a foto é tirada automaticamente.'
                 : bloqueado
-                  ? 'Fique parado, olhando para a câmera.'
+                  ? modo === 'ponto'
+                    ? 'Fique parado, olhando para a câmera.'
+                    : 'Aguarde um instante.'
                   : 'Matrícula, depois o PIN.'}
             </p>
             </>
@@ -508,10 +619,50 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
         </div>
       )}
 
+      {etapa === 'espelho' && espelhos[indiceEspelho] && (
+        <ConferenciaEspelho
+          key={espelhos[indiceEspelho].id}
+          espelho={espelhos[indiceEspelho]}
+          restantes={espelhos.length - indiceEspelho - 1}
+          ocupado={assinando}
+          erro={erroAssinatura}
+          aoAssinar={() => void assinar(true)}
+          aoContestar={(motivo) => void assinar(false, motivo)}
+          aoSair={reiniciar}
+        />
+      )}
+
+      {etapa === 'assinado' && assinatura && (
+        <div
+          className={`resultado ${assinatura.status === 'assinado' ? 'resultado-sucesso' : 'resultado-solicitado'}`}
+          onClick={continuarAposAssinatura}
+          role="status"
+        >
+          {assinatura.status === 'assinado' ? <FileSignature size={64} aria-hidden /> : <Send size={64} aria-hidden />}
+          <h2>{assinatura.status === 'assinado' ? 'Espelho assinado!' : 'Contestação enviada'}</h2>
+          <p>
+            {assinatura.status === 'assinado'
+              ? `Espelho de ${nomeMes(assinatura.mes)} assinado eletronicamente.`
+              : `O gestor vai analisar o espelho de ${nomeMes(assinatura.mes)} e enviar uma versão corrigida.`}
+          </p>
+          <small>Código {assinatura.codigo}</small>
+          {indiceEspelho + 1 < espelhos.length && <small>Toque para conferir o próximo espelho.</small>}
+        </div>
+      )}
+
+      {etapa === 'informacao' && (
+        <div className="resultado resultado-solicitado" onClick={reiniciar} role="status">
+          <Info size={64} aria-hidden />
+          <h2>Tudo em dia</h2>
+          <p>{mensagem}</p>
+          <small>Toque para voltar</small>
+        </div>
+      )}
+
       {etapa === 'erro' && (
         <div className="resultado resultado-erro" onClick={reiniciar} role="alert">
           <CircleAlert size={72} aria-hidden />
-          <h2>{modo === 'solicitacao' ? 'Não foi possível enviar' : 'Não foi possível registrar'}</h2>
+          <h2>{modo === 'ponto' ? 'Não foi possível registrar' : 'Não foi possível concluir'}</h2>
           <p>{mensagem}</p>
           <small>Toque para tentar de novo</small>
         </div>

@@ -1,4 +1,4 @@
-import { collection, query, where } from 'firebase/firestore'
+import { collection, limit, orderBy, query, where } from 'firebase/firestore'
 import { ClipboardList, Download, Plus, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Aviso, CabecalhoPagina, Campo, Carregando, Selo, Vazio } from '../../componentes/Basicos'
@@ -13,6 +13,8 @@ import { dataLocal, diferencaDias, formatarData, nomeDiaCurto, somarDias } from 
 import { ordenarPorNome, paraFuncionario, paraRegistro, type Registro } from '../../tipos'
 
 const MAX_DIAS = 92
+// Teto de leitura por consulta: protege o custo e a velocidade em períodos longos.
+const LIMITE_MARCACOES = 3000
 
 export default function Registros() {
   const empresa = useEmpresaAtual()
@@ -30,7 +32,12 @@ export default function Registros() {
     () => {
       if (!periodoValido) return null
       const colecao = collection(db, 'empresas', empresa.id, 'registros')
-      const periodo = [where('dataLocal', '>=', de), where('dataLocal', '<=', ate)]
+      const periodo = [
+        where('dataLocal', '>=', de),
+        where('dataLocal', '<=', ate),
+        orderBy('dataLocal', 'desc'),
+        limit(LIMITE_MARCACOES),
+      ] as const
       return funcionarioId ? query(colecao, where('funcionarioId', '==', funcionarioId), ...periodo) : query(colecao, ...periodo)
     },
     paraRegistro,
@@ -129,6 +136,12 @@ export default function Registros() {
       </div>
 
       {!periodoValido && <Aviso tipo="alerta">Escolha um período válido de até {MAX_DIAS} dias.</Aviso>}
+      {registros.dados.length >= LIMITE_MARCACOES && (
+        <Aviso tipo="alerta">
+          Mostrando as {LIMITE_MARCACOES.toLocaleString('pt-BR')} marcações mais recentes do período. Diminua o período ou escolha um
+          funcionário para ver todas.
+        </Aviso>
+      )}
       {registros.erro && <Aviso tipo="erro">{registros.erro}</Aviso>}
 
       <section className="cartao sem-preenchimento">

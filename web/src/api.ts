@@ -1,5 +1,6 @@
 import { httpsCallable, type Functions } from 'firebase/functions'
 import { functions } from './firebase'
+import type { DocumentoEspelho } from './lib/espelho'
 import type { TipoAbono } from './tipos'
 
 // Chamadas às Cloud Functions, com tipos. O segundo parâmetro permite usar
@@ -116,4 +117,36 @@ export const api = {
     { empresaId: string; solicitacaoId: string; aprovar: boolean; motivoRecusa?: string },
     { ok: true; registroId: string | null }
   >('decidirSolicitacao'),
+  fecharEspelhos: funcao<
+    { empresaId: string; mes: string; funcionarioIds?: string[]; motivoReabertura?: string },
+    { resultados: Array<{ funcionarioId: string; nome: string; resultado: ResultadoFechamento }> }
+  >('fecharEspelhos', 120_000),
+  // Feitas no aparelho de ponto, identificando o funcionário pela matrícula + PIN.
+  consultarEspelhosPendentes: funcao<{ matricula: string; pin: string }, { funcionarioNome: string; espelhos: EspelhoParaAssinar[] }>(
+    'consultarEspelhosPendentes',
+    25_000,
+  ),
+  assinarEspelho: funcao<
+    {
+      matricula: string
+      pin: string
+      espelhoId: string
+      hash: string
+      concordo: boolean
+      motivo?: string
+      miniatura: string | null
+    },
+    { status: 'assinado' | 'contestado'; mes: string; codigo: string }
+  >('assinarEspelho', 25_000),
+}
+
+export type ResultadoFechamento = 'fechado' | 'atualizado' | 'sem-alteracoes' | 'exige-motivo'
+
+export interface EspelhoParaAssinar {
+  id: string
+  mes: string
+  hash: string
+  empresaNome: string
+  funcionario: { nome: string; matricula: string; cargo: string }
+  documento: DocumentoEspelho
 }

@@ -84,6 +84,17 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // Espelhos fechados (versão congelada que o funcionário assina) e versões anteriores.
+      match /espelhos/{id} {
+        allow read: if acessaEmpresa(empresaId);
+        allow write: if false;
+
+        match /versoes/{versao} {
+          allow read: if acessaEmpresa(empresaId);
+          allow write: if false;
+        }
+      }
+
       match /auditoria/{id} {
         allow read: if acessaEmpresa(empresaId);
         allow write: if false;

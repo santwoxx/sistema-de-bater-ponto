@@ -13,10 +13,12 @@ Sistema de controle de ponto para lojas e pequenas empresas, feito com Firebase.
 3. [Como o sistema é organizado](#como-o-sistema-é-organizado)
 4. [Colocar no ar, passo a passo](#colocar-no-ar-passo-a-passo)
 5. [Uso no dia a dia](#uso-no-dia-a-dia)
-6. [Testar no computador, sem tocar na nuvem](#testar-no-computador-sem-tocar-na-nuvem)
-7. [Segurança](#segurança)
-8. [Aspectos legais: leia antes de usar com a equipe](#aspectos-legais-leia-antes-de-usar-com-a-equipe)
-9. [Limitações conhecidas e próximos passos](#limitações-conhecidas-e-próximos-passos)
+6. [Dados, histórico e backups](#dados-histórico-e-backups)
+7. [Publicar o site na Vercel (opcional)](#publicar-o-site-na-vercel-opcional)
+8. [Testar no computador, sem tocar na nuvem](#testar-no-computador-sem-tocar-na-nuvem)
+9. [Segurança](#segurança)
+10. [Aspectos legais: leia antes de usar com a equipe](#aspectos-legais-leia-antes-de-usar-com-a-equipe)
+11. [Limitações conhecidas e próximos passos](#limitações-conhecidas-e-próximos-passos)
 
 ---
 
@@ -27,6 +29,7 @@ Sistema de controle de ponto para lojas e pequenas empresas, feito com Firebase.
 - Teclado numérico grande (aceita também teclado físico), câmera ao vivo com moldura para o rosto e contagem regressiva de 3 segundos antes da foto.
 - Comprovante na tela: nome, **Entrada/Saída**, hora, data, **NSR** (número sequencial do registro) e código de verificação.
 - **"Esqueci de bater o ponto"**: o funcionário se identifica com matrícula e PIN e pede a inclusão do horário que faltou (dia, horário e motivo). Uma foto pequena é tirada como prova, e a marcação só vale depois que o gestor aprovar.
+- **"Assinar meu espelho"**: com matrícula e PIN, o funcionário confere o espelho dos meses fechados (dia a dia e totais) e **assina** ou **contesta** explicando o que está errado. A assinatura registra data, hora, aparelho, foto e um código de verificação.
 - Relógio sincronizado com o servidor, aviso de "Sem internet", tela sempre acesa e tela cheia. Pode ser instalado como aplicativo (PWA).
 - Ativado uma única vez por um gestor e desativável pelo painel a qualquer momento.
 
@@ -37,7 +40,8 @@ Sistema de controle de ponto para lojas e pequenas empresas, feito com Firebase.
 | **Hoje** | Quem está em expediente, quem saiu, quem está de férias ou atestado, marcações do dia em tempo real e aparelhos online |
 | **Marcações** | Filtro por período e funcionário, foto de cada batida, inclusão manual com justificativa, desconsiderar ou restaurar uma batida, exportação CSV |
 | **Solicitações** | Pedidos de marcação esquecida feitos pelo funcionário no aparelho ou registrados pelo gestor. Aprovar inclui a marcação; recusar exige motivo. Contador de pendentes no menu |
-| **Espelho de ponto** | Mês a mês, por funcionário: marcações, previsto, trabalhado, saldo, faltas e marcações ímpares. Lançamento de abonos. Impressão ou PDF com campos de assinatura e CSV para a contabilidade |
+| **Espelho de ponto** | Qualquer mês, por funcionário: marcações, previsto, trabalhado, saldo, faltas e marcações ímpares. Lançamento de abonos. Mostra se o mês foi fechado e assinado e avisa se algo mudou depois. Impressão ou PDF (com os dados da assinatura eletrônica, quando houver) e CSV |
+| **Fechamento mensal** | Congela o espelho de todos os funcionários de um mês e envia para assinatura. Mostra quem assinou, quem contestou e quem falta, com os totais de cada um; CSV do mês para a folha. Reabrir um espelho assinado exige motivo e guarda a versão anterior |
 | **Funcionários** | CPF, matrícula, cargo, admissão, jornada de cada dia da semana e PIN |
 | **Aparelhos de ponto** | Aparelhos ativados, último sinal, último registro e desativação |
 | **Auditoria** | Quem fez o quê e quando, com as justificativas |
@@ -84,6 +88,8 @@ Sistema bater ponto/
 │       ├── ponto.ts         registro do ponto: foto, NSR, cadeia de hashes
 │       ├── identificacao.ts matrícula + PIN no aparelho, com bloqueios por erro
 │       ├── solicitacoes.ts  pedidos de marcação esquecida (pedir, aprovar, recusar)
+│       ├── espelho.ts       cálculo do espelho (fonte única: servidor e painel usam o mesmo)
+│       ├── fechamentos.ts   fechamento mensal, assinatura e contestação do espelho
 │       ├── ajustes.ts       incluir/desconsiderar marcação
 │       ├── abonos.ts        feriados, atestados, férias
 │       ├── funcionarios.ts, empresas.ts, usuarios.ts, dispositivos.ts, sistema.ts
@@ -91,7 +97,7 @@ Sistema bater ponto/
 └── web/                     site (React + Vite, TypeScript)
     ├── src/paginas/ponto/   tela do aparelho de ponto
     ├── src/paginas/admin/   painel do gestor
-    ├── src/lib/espelho.ts   cálculo de horas, saldo e faltas
+    ├── vercel.json          configuração para publicar o site na Vercel (opcional)
     └── testes/e2e.mjs       teste de ponta a ponta com os emuladores
 ```
 
@@ -107,6 +113,8 @@ empresas/{empresaId}                    nome, CNPJ, fuso, regras
   ├── registros/{id}                    marcações (imutáveis)
   ├── abonos/{id}                       feriados, atestados, férias
   ├── solicitacoes/{id}                 pedidos de marcação esquecida (pendente/aprovada/recusada)
+  ├── espelhos/{funcionarioId_AAAA-MM}  espelho fechado (congelado, com hash) e sua assinatura
+  │   └── versoes/{n}                   versões anteriores, quando um espelho é reaberto
   ├── dispositivos/{uid}                aparelhos de ponto
   ├── auditoria/{id}                    ações na empresa
   └── privado/controle                  último NSR e último hash (inacessível pelo navegador)
@@ -203,6 +211,8 @@ Ao final aparece o endereço do site, algo como `https://ponto-minhaloja.web.app
 
 **Funcionário que esqueceu de bater:** no aparelho, toca em **"Esqueci de bater o ponto"** → matrícula → PIN → informa o dia (até 31 dias atrás), o horário e o motivo → envia. O pedido vai para a gestora.
 
+**Funcionário assinando o espelho:** no aparelho, toca em **"Assinar meu espelho"** → matrícula → PIN → confere o mês dia a dia → **Concordo e assino** (ou **Não concordo**, explicando o que está errado).
+
 **Gestora:**
 
 - Escolha a empresa no topo da tela (busca por nome ou CNPJ).
@@ -211,7 +221,10 @@ Ao final aparece o endereço do site, algo como `https://ponto-minhaloja.web.app
 - **Batida duplicada ou errada:** abra a marcação → **Desconsiderar** (com motivo). A original continua guardada.
 - **Feriado, atestado ou férias:** Espelho de ponto → **Lançar abono** (ou o ícone de calendário no dia).
 - **Esqueceu o PIN ou foi bloqueado** (5 erros seguidos bloqueiam por 15 minutos): Funcionários → editar → **Redefinir o PIN**.
-- **Fechamento do mês:** Espelho de ponto → **Imprimir / PDF** (com campos de assinatura) ou **CSV**.
+- **Fechamento do mês** (no início do mês seguinte): **Fechamento mensal** → escolha o mês → **Fechar mês e enviar para assinatura**. Acompanhe quem assinou; quem contestou aparece com o motivo, e depois de corrigir você clica em **Reenviar**. O **CSV do mês** traz os totais de todos para a folha.
+- **Consultar meses anteriores:** todas as telas aceitam qualquer período (Marcações, Espelho, Fechamento, Auditoria e Solicitações, com "carregar mais antigos"). Nada é apagado.
+- **Algo mudou depois da assinatura:** o espelho avisa. No Fechamento mensal, use **Reabrir** com motivo: uma nova versão vai para assinatura e a assinada fica guardada.
+- **Papel assinado:** Espelho de ponto → **Imprimir / PDF**. Se o funcionário já assinou no aparelho, a impressão sai com os dados da assinatura eletrônica.
 - **Aparelho perdido ou trocado:** Aparelhos de ponto → **Desativar**. Ele para de registrar na hora.
 
 **Ajustes por empresa** (Empresas → editar):
@@ -222,6 +235,37 @@ Ao final aparece o endereço do site, algo como `https://ponto-minhaloja.web.app
 | Intervalo mínimo entre batidas | Evita batida duplicada por engano | 2 min |
 | Tolerância diária no saldo | Diferenças até esse limite não geram saldo no dia | 10 min |
 | Início do controle de ponto | Antes dessa data, dia sem marcação não é falta (útil ao implantar no meio do mês) | data do cadastro |
+
+---
+
+## Dados, histórico e backups
+
+- **Nada expira:** marcações, fotos, espelhos assinados (e suas versões anteriores), solicitações, abonos e auditoria ficam guardados sem prazo. Qualquer mês antigo pode ser consultado, fechado, assinado e impresso.
+- **O que já protege os dados:** toda escrita passa pelo servidor com transações (sem registro pela metade ou duplicado), marcações nunca são apagadas, e a cadeia de hashes e a auditoria mostram qualquer alteração.
+- **Ative os backups do Firestore** (recomendado antes de usar em produção). No Console do Google Cloud → Firestore → **Disaster recovery**:
+  1. **Recuperação pontual (PITR)**: permite voltar o banco a qualquer minuto dos últimos 7 dias.
+  2. **Backups agendados**: crie um diário com retenção de 14 semanas.
+- **Fotos:** os buckets novos do Storage guardam arquivos apagados por 7 dias (*soft delete*). Aumente esse prazo nas configurações do bucket, se quiser.
+- **Custo de leitura:** a tela de Marcações traz no máximo 3.000 registros por consulta (os mais recentes) e avisa quando atinge o limite. Assim, um período longo não fica lento nem caro.
+
+---
+
+## Publicar o site na Vercel (opcional)
+
+O sistema tem duas partes:
+
+- **Site** (painel e tela do ponto): pode ficar no Firebase Hosting (já configurado) **ou** na Vercel.
+- **Banco, fotos, login e regras de negócio**: ficam **sempre no Firebase**. A Vercel não hospeda o Firestore, o Storage nem as Cloud Functions, então o passo 5 (`firebase deploy`) continua necessário.
+
+Para usar a Vercel no lugar do Firebase Hosting:
+
+1. Em <https://vercel.com/new>, importe o repositório do GitHub.
+2. **Root Directory:** `web`. Deixe marcada a opção de incluir arquivos fora do Root Directory: o cálculo do espelho fica em `functions/src/espelho.ts` e é compartilhado com o site.
+3. **Environment Variables:** as mesmas do `web/.env` (`VITE_FIREBASE_API_KEY` etc.).
+4. **Deploy.** O `web/vercel.json` já configura as rotas, a permissão de câmera e o cache. Cada envio ao GitHub publica uma versão nova.
+5. Publique o backend com `firebase deploy --only functions,firestore,storage` (sem o Hosting).
+
+> O plano gratuito da Vercel (Hobby) é para uso pessoal e **não comercial**. Para empresas, os termos pedem o plano Pro (pago). O Firebase Hosting não tem essa restrição e já está incluído no projeto.
 
 ---
 
@@ -249,8 +293,8 @@ Abra <http://localhost:5173>. Os dados somem quando os emuladores são fechados.
 |---|---|
 | `functions`: `npm test` | CPF, CNPJ (inclusive alfanumérico), PIN, matrícula e fusos horários |
 | `web`: `npm test` | Cálculo do espelho (pares, saldo, tolerância, faltas, abonos, início do controle) e mensagens de erro |
-| `web`: `npm run test:e2e` | 20 etapas de ponta a ponta com os emuladores: permissões de cada papel, registro com foto, NSR, cadeia de hashes, bloqueio de PIN, ajustes, abonos, solicitações, auditoria e desativação de aparelho |
-| `web`: `npm run dados:exemplo` | Com os emuladores ligados, cria administrador, gestora, empresas e funcionários de exemplo (senha `senha1234`) |
+| `web`: `npm run test:e2e` | 21 etapas de ponta a ponta com os emuladores: permissões de cada papel, registro com foto, NSR, cadeia de hashes, bloqueio de PIN, ajustes, abonos, solicitações, fechamento e assinatura do espelho, auditoria e desativação de aparelho |
+| `web`: `npm run dados:exemplo` | Com os emuladores ligados, cria administrador, gestora, empresas, funcionários e o histórico do mês anterior, pronto para fechar e assinar (senha `senha1234`) |
 
 ---
 
@@ -274,7 +318,8 @@ Abra <http://localhost:5173>. Os dados somem quando os emuladores são fechados.
 
 - Pela CLT (art. 74, §2º), estabelecimentos com **mais de 20 empregados** são obrigados a registrar entrada e saída.
 - O registro **eletrônico** de ponto é regulado pela **Portaria MTP nº 671/2021**. Para sistemas via programa (**REP-P**), ela exige, entre outros pontos, registro do programa no **INPI**, comprovante para o trabalhador, geração dos arquivos **AFD** e **AEJ** e assinatura eletrônica.
-- O sistema já tem a base que essas regras pedem: horário do servidor, NSR sequencial, marcações imutáveis, ajustes justificados, trilha de auditoria e comprovante na tela. **Ainda faltam** os arquivos AFD/AEJ, a assinatura eletrônica, o comprovante enviado ao trabalhador e o registro no INPI.
+- O sistema já tem a base que essas regras pedem: horário do servidor, NSR sequencial, marcações imutáveis, ajustes justificados, trilha de auditoria, comprovante na tela e espelho mensal congelado e assinado pelo funcionário. **Ainda faltam** os arquivos AFD/AEJ, a assinatura digital com certificado (ICP-Brasil) dos arquivos, o comprovante enviado ao trabalhador e o registro no INPI.
+- **Assinatura do espelho:** é uma assinatura eletrônica *simples* (matrícula + PIN pessoal + foto + data, hora e aparelho, ligada ao conteúdo exato do espelho por um hash). Ela documenta a concordância do funcionário, mas não substitui um certificado digital. Peça ao contador ou advogado para validar o uso como comprovante.
 - **LGPD:** a foto é dado pessoal. O sistema a usa só como prova visual da batida e não faz reconhecimento facial (que seria dado biométrico sensível). Informe os funcionários por escrito sobre a coleta, a finalidade e o prazo de guarda. Mantenha os registros por pelo menos 5 anos (prazo de prescrição trabalhista).
 
 ---
@@ -285,4 +330,5 @@ Abra <http://localhost:5173>. Os dados somem quando os emuladores são fechados.
 - **Turnos que atravessam a meia-noite** contam no dia de cada marcação. Para turnos noturnos, o espelho precisaria do conceito de "dia de trabalho".
 - **Escalas (12x36 etc.)** não são calculadas automaticamente: a jornada é por dia da semana. Use folgas e abonos para ajustar.
 - **Horas extras e adicional noturno** aparecem como saldo, sem percentuais (50%, 100%).
-- **Próximos passos sugeridos:** arquivos AFD/AEJ (Portaria 671), envio do comprovante por e-mail, Firebase App Check, backups agendados do Firestore e relatórios por período para a folha.
+- **Banco de horas** é calculado mês a mês; o saldo de um mês ainda não é levado automaticamente para o seguinte.
+- **Próximos passos sugeridos:** arquivos AFD/AEJ (Portaria 671), banco de horas acumulado, envio do comprovante por e-mail, Firebase App Check e alertas de solicitações pendentes por e-mail ou WhatsApp.
