@@ -1,6 +1,7 @@
 node_modules/
 dist/
-lib/
+# Build do backend (só a pasta functions/lib; web/src/lib é código-fonte).
+/functions/lib/
 .env
 .env.local
 *.local
