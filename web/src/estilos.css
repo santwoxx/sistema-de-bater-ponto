@@ -1289,6 +1289,133 @@ button.miniatura {
   font-size: 0.86rem;
 }
 
+/* Exportar dados */
+
+.opcoes-exportacao {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.opcao-exportacao {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px;
+  border: 1px solid var(--borda-forte);
+  border-radius: var(--raio);
+  cursor: pointer;
+}
+
+.opcao-exportacao.escolhida {
+  border-color: var(--primaria);
+  background: var(--primaria-clara);
+}
+
+.opcao-exportacao input {
+  margin-top: 3px;
+}
+
+.opcao-exportacao span {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.opcao-exportacao small {
+  color: var(--texto-suave);
+}
+
+.opcao-exportacao em {
+  font-size: 0.8rem;
+  font-style: normal;
+  font-weight: 700;
+  color: var(--primaria);
+}
+
+.escolha-funcionarios {
+  margin-top: 6px;
+  max-width: 560px;
+}
+
+.acoes-exportacao {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+.acoes-exportacao p {
+  margin: 0;
+  max-width: 560px;
+}
+
+.botao.grande-auto {
+  min-height: 48px;
+  padding: 10px 22px;
+  font-size: 1.02rem;
+}
+
+/* Impressão em lote: um espelho por folha */
+
+.barra-impressao {
+  position: sticky;
+  top: 86px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 16px;
+  margin-bottom: 18px;
+  border-radius: var(--raio);
+  background: var(--superficie);
+  border: 1px solid var(--borda);
+  box-shadow: var(--sombra);
+}
+
+.folha-espelho {
+  padding: 24px;
+  margin-bottom: 24px;
+  background: var(--superficie);
+  border: 1px solid var(--borda);
+  border-radius: var(--raio);
+}
+
+.folha-espelho .assinaturas {
+  display: grid;
+}
+
+.assinatura-eletronica {
+  margin: 16px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--borda);
+}
+
+@media print {
+  .folha-espelho {
+    padding: 0;
+    margin: 0;
+    border: none;
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .folha-espelho:last-child {
+    break-after: auto;
+    page-break-after: auto;
+  }
+}
+
+@media (max-width: 760px) {
+  .opcoes-exportacao {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .carregar-mais {
   display: flex;
   align-items: center;

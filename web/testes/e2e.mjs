@@ -534,6 +534,68 @@ await etapa('fechamento do mês: espelho congelado, assinado ou contestado no ap
   assert.equal((await getDoc(refJoao)).get('status'), 'aguardando')
 })
 
+await etapa('exportação por empresa com filtros: marcações, espelho diário, resumo e espelhos para impressão', async () => {
+  const mesAtual = dataSaoPaulo().slice(0, 7)
+  const [ano, numero] = mesAtual.split('-').map(Number)
+  const mesAnterior = new Date(Date.UTC(ano, numero - 2, 1)).toISOString().slice(0, 7)
+  const fimMesAnterior = new Date(Date.UTC(ano, numero - 1, 0)).toISOString().slice(0, 10)
+  const de = `${mesAnterior}-01`
+  const ate = dataSaoPaulo()
+  const exportar = (dados) =>
+    gestora.chamar('exportarDados', { empresaId: empresaA, de, ate, funcionarioIds: null, incluirDesconsideradas: false, origem: 'todas', ...dados })
+
+  // Uma marcação desconsiderada, para testar o filtro de situação.
+  const alvo = (
+    await getDocs(
+      query(collection(gestora.db, 'empresas', empresaA, 'registros'), where('funcionarioId', '==', maria), where('dataLocal', '==', `${mesAnterior}-16`)),
+    )
+  ).docs.find((d) => d.get('horaLocal') === '13:00:00')
+  await gestora.chamar('desconsiderarMarcacao', { empresaId: empresaA, registroId: alvo.id, motivo: 'Lançada em duplicidade' })
+
+  // Marcações: confere com o que está no banco.
+  const noBanco = (
+    await getDocs(query(collection(gestora.db, 'empresas', empresaA, 'registros'), where('dataLocal', '>=', de), where('dataLocal', '<=', ate)))
+  ).docs.map((d) => d.data())
+  const validas = await exportar({ tipo: 'marcacoes' })
+  assert.equal(validas.quantidade, noBanco.filter((r) => !r.desconsiderado).length)
+  assert.equal(validas.linhas.length, validas.quantidade + 1)
+  assert.equal(validas.linhas[0][0], 'Data')
+  assert.ok(!JSON.stringify(validas.linhas).includes('data:image'), 'a exportação não deve trazer fotos')
+  const todas = await exportar({ tipo: 'marcacoes', incluirDesconsideradas: true })
+  assert.equal(todas.quantidade, noBanco.length)
+  assert.ok(todas.linhas.some((l) => l[10] === 'Desconsiderada' && l[11] === 'Lançada em duplicidade'))
+  const soMaria = await exportar({ tipo: 'marcacoes', funcionarioIds: [maria] })
+  assert.ok(soMaria.quantidade > 0 && soMaria.linhas.slice(1).every((l) => l[3] === 'Maria Souza'))
+  const manuais = await exportar({ tipo: 'marcacoes', origem: 'manual' })
+  const doAparelho = await exportar({ tipo: 'marcacoes', origem: 'dispositivo' })
+  assert.ok(manuais.linhas.slice(1).every((l) => l[7] === 'Manual'))
+  assert.ok(doAparelho.linhas.slice(1).every((l) => l[7] === 'Aparelho' && /^\d+$/.test(String(l[9]))))
+  assert.equal(manuais.quantidade + doAparelho.quantidade, validas.quantidade)
+
+  // Espelho diário: uma linha por funcionário e dia do período.
+  const dias = Math.round((Date.parse(ate) - Date.parse(de)) / 86_400_000) + 1
+  assert.equal((await exportar({ tipo: 'espelho-diario', funcionarioIds: [maria, joao] })).quantidade, 2 * dias)
+
+  // Resumo do mês anterior da Maria: 9h no dia 15 + 4h no dia 16 (a das 13:00 foi desconsiderada).
+  const resumo = await exportar({ tipo: 'resumo', de, ate: fimMesAnterior, funcionarioIds: [maria] })
+  assert.equal(resumo.linhas[2][0], 'Maria Souza')
+  assert.equal(resumo.linhas[2][6], '13:00')
+
+  // Espelhos para impressão: o mês sai inteiro e, se fechado, com a versão oficial.
+  const paraImprimir = await exportar({ tipo: 'espelhos', de: `${mesAnterior}-10`, ate: `${mesAnterior}-20`, funcionarioIds: [maria] })
+  assert.equal(paraImprimir.espelhos.length, 1)
+  assert.equal(paraImprimir.espelhos[0].mes, mesAnterior)
+  assert.equal(paraImprimir.espelhos[0].fechamento.versao, 2)
+  assert.ok(paraImprimir.espelhos[0].documento.dias.length >= 28)
+
+  // Só quem tem acesso à empresa exporta; período e filtros são validados.
+  const pedido = { empresaId: empresaA, tipo: 'marcacoes', de, ate, funcionarioIds: null }
+  await falha(outraGestora.chamar('exportarDados', pedido), 'functions/permission-denied')
+  await falha(aparelho.chamar('exportarDados', pedido), 'functions/permission-denied')
+  await falha(exportar({ tipo: 'marcacoes', de: '2024-01-01' }), 'functions/invalid-argument', /366/)
+  await falha(exportar({ tipo: 'marcacoes', funcionarioIds: [] }), 'functions/invalid-argument')
+})
+
 await etapa('auditoria registra as ações; a do sistema é só do admin', async () => {
   const acoes = (await getDocs(collection(gestora.db, 'empresas', empresaA, 'auditoria'))).docs.map((d) => d.get('acao'))
   for (const acao of [
@@ -551,6 +613,7 @@ await etapa('auditoria registra as ações; a do sistema é só do admin', async
     'espelho.fechado',
     'espelho.assinado',
     'espelho.contestado',
+    'dados.exportados',
   ]) {
     assert.ok(acoes.includes(acao), `faltou ${acao} na auditoria`)
   }

@@ -1,6 +1,7 @@
 import { collection, limit, orderBy, query, where } from 'firebase/firestore'
 import { ClipboardList, Download, Plus, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
+import { Link } from 'react-router'
 import { Aviso, CabecalhoPagina, Campo, Carregando, Selo, Vazio } from '../../componentes/Basicos'
 import { DetalhesRegistro, Miniatura, ModalIncluirMarcacao } from '../../componentes/Marcacoes'
 import { useEmpresaAtual } from '../../contexto/Empresa'
@@ -139,7 +140,7 @@ export default function Registros() {
       {registros.dados.length >= LIMITE_MARCACOES && (
         <Aviso tipo="alerta">
           Mostrando as {LIMITE_MARCACOES.toLocaleString('pt-BR')} marcações mais recentes do período. Diminua o período ou escolha um
-          funcionário para ver todas.
+          funcionário para ver todas. Para baixar períodos longos completos, use <Link to="/admin/exportar">Exportar dados</Link>.
         </Aviso>
       )}
       {registros.erro && <Aviso tipo="erro">{registros.erro}</Aviso>}

@@ -16,6 +16,7 @@ const Registros = lazy(() => import('./paginas/admin/Registros'))
 const Solicitacoes = lazy(() => import('./paginas/admin/Solicitacoes'))
 const Espelho = lazy(() => import('./paginas/admin/Espelho'))
 const Fechamento = lazy(() => import('./paginas/admin/Fechamento'))
+const Exportar = lazy(() => import('./paginas/admin/Exportar'))
 const Funcionarios = lazy(() => import('./paginas/admin/Funcionarios'))
 const Aparelhos = lazy(() => import('./paginas/admin/Aparelhos'))
 const Auditoria = lazy(() => import('./paginas/admin/Auditoria'))
@@ -87,6 +88,7 @@ export default function App() {
                 <Route path="solicitacoes" element={<Solicitacoes />} />
                 <Route path="espelho" element={<Espelho />} />
                 <Route path="fechamento" element={<Fechamento />} />
+                <Route path="exportar" element={<Exportar />} />
                 <Route path="funcionarios" element={<Funcionarios />} />
                 <Route path="aparelhos" element={<Aparelhos />} />
                 <Route path="auditoria" element={<Auditoria />} />

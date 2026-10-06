@@ -42,6 +42,7 @@ Sistema de controle de ponto para lojas e pequenas empresas, feito com Firebase.
 | **Solicitações** | Pedidos de marcação esquecida feitos pelo funcionário no aparelho ou registrados pelo gestor. Aprovar inclui a marcação; recusar exige motivo. Contador de pendentes no menu |
 | **Espelho de ponto** | Qualquer mês, por funcionário: marcações, previsto, trabalhado, saldo, faltas e marcações ímpares. Lançamento de abonos. Mostra se o mês foi fechado e assinado e avisa se algo mudou depois. Impressão ou PDF (com os dados da assinatura eletrônica, quando houver) e CSV |
 | **Fechamento mensal** | Congela o espelho de todos os funcionários de um mês e envia para assinatura. Mostra quem assinou, quem contestou e quem falta, com os totais de cada um; CSV do mês para a folha. Reabrir um espelho assinado exige motivo e guarda a versão anterior |
+| **Exportar dados** | Baixa os dados de ponto da empresa escolhida, com filtros de período (até 12 meses), funcionários, origem e situação: **marcações** (uma linha por batida), **espelho diário**, **resumo por funcionário** (CSV que abre no Excel) ou **espelhos para imprimir/PDF**, um por folha. Cada exportação fica na auditoria |
 | **Funcionários** | CPF, matrícula, cargo, admissão, jornada de cada dia da semana e PIN |
 | **Aparelhos de ponto** | Aparelhos ativados, último sinal, último registro e desativação |
 | **Auditoria** | Quem fez o quê e quando, com as justificativas |
@@ -90,6 +91,7 @@ Sistema bater ponto/
 │       ├── solicitacoes.ts  pedidos de marcação esquecida (pedir, aprovar, recusar)
 │       ├── espelho.ts       cálculo do espelho (fonte única: servidor e painel usam o mesmo)
 │       ├── fechamentos.ts   fechamento mensal, assinatura e contestação do espelho
+│       ├── exportacao.ts    exportação com filtros (CSV e espelhos para impressão)
 │       ├── ajustes.ts       incluir/desconsiderar marcação
 │       ├── abonos.ts        feriados, atestados, férias
 │       ├── funcionarios.ts, empresas.ts, usuarios.ts, dispositivos.ts, sistema.ts
@@ -224,7 +226,8 @@ Ao final aparece o endereço do site, algo como `https://ponto-minhaloja.web.app
 - **Fechamento do mês** (no início do mês seguinte): **Fechamento mensal** → escolha o mês → **Fechar mês e enviar para assinatura**. Acompanhe quem assinou; quem contestou aparece com o motivo, e depois de corrigir você clica em **Reenviar**. O **CSV do mês** traz os totais de todos para a folha.
 - **Consultar meses anteriores:** todas as telas aceitam qualquer período (Marcações, Espelho, Fechamento, Auditoria e Solicitações, com "carregar mais antigos"). Nada é apagado.
 - **Algo mudou depois da assinatura:** o espelho avisa. No Fechamento mensal, use **Reabrir** com motivo: uma nova versão vai para assinatura e a assinada fica guardada.
-- **Papel assinado:** Espelho de ponto → **Imprimir / PDF**. Se o funcionário já assinou no aparelho, a impressão sai com os dados da assinatura eletrônica.
+- **Papel assinado:** Espelho de ponto → **Imprimir / PDF**. Se o funcionário já assinou no aparelho, a impressão sai com os dados da assinatura eletrônica. Para imprimir os espelhos de todos de uma vez: **Exportar dados → Espelhos para imprimir ou PDF**.
+- **Arquivo para a contabilidade:** **Exportar dados** → Resumo por funcionário (totais) ou Espelho diário (dia a dia), no período e com os funcionários que quiser.
 - **Aparelho perdido ou trocado:** Aparelhos de ponto → **Desativar**. Ele para de registrar na hora.
 
 **Ajustes por empresa** (Empresas → editar):
@@ -239,6 +242,10 @@ Ao final aparece o endereço do site, algo como `https://ponto-minhaloja.web.app
 ---
 
 ## Dados, histórico e backups
+
+**Onde ficam os dados:** no **seu projeto Firebase** (Google Cloud), na região escolhida ao criar o banco (recomendado: São Paulo, `southamerica-east1`). Cada empresa tem a sua "pasta" separada, `empresas/{id}`, com funcionários, marcações, abonos, solicitações, espelhos fechados e auditoria. As fotos ficam no Cloud Storage, em `empresas/{id}/registros/AAAA-MM/`. Dá para ver tudo pelo painel ou, como administrador, no Console do Firebase (Firestore Database e Storage). O Google criptografa os dados armazenados.
+
+**Baixar os dados de uma empresa:** página **Exportar dados** (escolha a empresa no topo, o tipo de arquivo, o período, os funcionários e os filtros). Também há exportações rápidas nas telas de Marcações (o que está filtrado na tela), Espelho de ponto (um funcionário) e Fechamento mensal (totais do mês).
 
 - **Nada expira:** marcações, fotos, espelhos assinados (e suas versões anteriores), solicitações, abonos e auditoria ficam guardados sem prazo. Qualquer mês antigo pode ser consultado, fechado, assinado e impresso.
 - **O que já protege os dados:** toda escrita passa pelo servidor com transações (sem registro pela metade ou duplicado), marcações nunca são apagadas, e a cadeia de hashes e a auditoria mostram qualquer alteração.
@@ -293,7 +300,7 @@ Abra <http://localhost:5173>. Os dados somem quando os emuladores são fechados.
 |---|---|
 | `functions`: `npm test` | CPF, CNPJ (inclusive alfanumérico), PIN, matrícula e fusos horários |
 | `web`: `npm test` | Cálculo do espelho (pares, saldo, tolerância, faltas, abonos, início do controle) e mensagens de erro |
-| `web`: `npm run test:e2e` | 21 etapas de ponta a ponta com os emuladores: permissões de cada papel, registro com foto, NSR, cadeia de hashes, bloqueio de PIN, ajustes, abonos, solicitações, fechamento e assinatura do espelho, auditoria e desativação de aparelho |
+| `web`: `npm run test:e2e` | 22 etapas de ponta a ponta com os emuladores: permissões de cada papel, registro com foto, NSR, cadeia de hashes, bloqueio de PIN, ajustes, abonos, solicitações, fechamento e assinatura do espelho, exportação com filtros, auditoria e desativação de aparelho |
 | `web`: `npm run dados:exemplo` | Com os emuladores ligados, cria administrador, gestora, empresas, funcionários e o histórico do mês anterior, pronto para fechar e assinar (senha `senha1234`) |
 
 ---

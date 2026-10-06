@@ -138,9 +138,46 @@ export const api = {
     },
     { status: 'assinado' | 'contestado'; mes: string; codigo: string }
   >('assinarEspelho', 25_000),
+  exportarDados: funcao<DadosExportacao, ResultadoExportacao>('exportarDados', 300_000),
 }
 
 export type ResultadoFechamento = 'fechado' | 'atualizado' | 'sem-alteracoes' | 'exige-motivo'
+
+export type TipoExportacao = 'marcacoes' | 'espelho-diario' | 'resumo' | 'espelhos'
+
+export interface DadosExportacao {
+  empresaId: string
+  tipo: TipoExportacao
+  de: string
+  ate: string
+  /** null = todos os funcionários. */
+  funcionarioIds: string[] | null
+  incluirDesconsideradas: boolean
+  origem: 'todas' | 'dispositivo' | 'manual'
+}
+
+export interface EspelhoParaImpressao {
+  mes: string
+  funcionario: { id: string; nome: string; cpf: string; matricula: string; cargo: string; admissao: string | null }
+  documento: DocumentoEspelho
+  fechamento: {
+    status: 'aguardando' | 'assinado' | 'contestado'
+    versao: number
+    fechadoEm: number | null
+    fechadoPor: string
+    assinatura: { em: number | null; codigo: string; dispositivoNome: string } | null
+    contestacao: { em: number | null; motivo: string } | null
+  } | null
+}
+
+export interface ResultadoExportacao {
+  tipo: TipoExportacao
+  nomeArquivo: string
+  quantidade: number
+  empresa: { nome: string; cnpj: string }
+  linhas?: Array<Array<string | number | null>>
+  espelhos?: EspelhoParaImpressao[]
+}
 
 export interface EspelhoParaAssinar {
   id: string
