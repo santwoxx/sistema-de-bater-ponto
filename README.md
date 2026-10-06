@@ -26,6 +26,7 @@ Sistema de controle de ponto para lojas e pequenas empresas, feito com Firebase.
 
 - Teclado numérico grande (aceita também teclado físico), câmera ao vivo com moldura para o rosto e contagem regressiva de 3 segundos antes da foto.
 - Comprovante na tela: nome, **Entrada/Saída**, hora, data, **NSR** (número sequencial do registro) e código de verificação.
+- **"Esqueci de bater o ponto"**: o funcionário se identifica com matrícula e PIN e pede a inclusão do horário que faltou (dia, horário e motivo). Uma foto pequena é tirada como prova, e a marcação só vale depois que o gestor aprovar.
 - Relógio sincronizado com o servidor, aviso de "Sem internet", tela sempre acesa e tela cheia. Pode ser instalado como aplicativo (PWA).
 - Ativado uma única vez por um gestor e desativável pelo painel a qualquer momento.
 
@@ -35,6 +36,7 @@ Sistema de controle de ponto para lojas e pequenas empresas, feito com Firebase.
 |---|---|
 | **Hoje** | Quem está em expediente, quem saiu, quem está de férias ou atestado, marcações do dia em tempo real e aparelhos online |
 | **Marcações** | Filtro por período e funcionário, foto de cada batida, inclusão manual com justificativa, desconsiderar ou restaurar uma batida, exportação CSV |
+| **Solicitações** | Pedidos de marcação esquecida feitos pelo funcionário no aparelho ou registrados pelo gestor. Aprovar inclui a marcação; recusar exige motivo. Contador de pendentes no menu |
 | **Espelho de ponto** | Mês a mês, por funcionário: marcações, previsto, trabalhado, saldo, faltas e marcações ímpares. Lançamento de abonos. Impressão ou PDF com campos de assinatura e CSV para a contabilidade |
 | **Funcionários** | CPF, matrícula, cargo, admissão, jornada de cada dia da semana e PIN |
 | **Aparelhos de ponto** | Aparelhos ativados, último sinal, último registro e desativação |
@@ -79,7 +81,9 @@ Sistema bater ponto/
 ├── storage.rules            quem pode ver as fotos
 ├── functions/               backend (Cloud Functions, TypeScript)
 │   └── src/
-│       ├── ponto.ts         registro do ponto: PIN, foto, NSR, cadeia de hashes
+│       ├── ponto.ts         registro do ponto: foto, NSR, cadeia de hashes
+│       ├── identificacao.ts matrícula + PIN no aparelho, com bloqueios por erro
+│       ├── solicitacoes.ts  pedidos de marcação esquecida (pedir, aprovar, recusar)
 │       ├── ajustes.ts       incluir/desconsiderar marcação
 │       ├── abonos.ts        feriados, atestados, férias
 │       ├── funcionarios.ts, empresas.ts, usuarios.ts, dispositivos.ts, sistema.ts
@@ -102,6 +106,7 @@ empresas/{empresaId}                    nome, CNPJ, fuso, regras
   ├── credenciais/{funcionarioId}       hash do PIN e bloqueio (inacessível pelo navegador)
   ├── registros/{id}                    marcações (imutáveis)
   ├── abonos/{id}                       feriados, atestados, férias
+  ├── solicitacoes/{id}                 pedidos de marcação esquecida (pendente/aprovada/recusada)
   ├── dispositivos/{uid}                aparelhos de ponto
   ├── auditoria/{id}                    ações na empresa
   └── privado/controle                  último NSR e último hash (inacessível pelo navegador)
@@ -196,10 +201,13 @@ Ao final aparece o endereço do site, algo como `https://ponto-minhaloja.web.app
 
 **Funcionário:** digita a matrícula → ✓ → digita o PIN → ✓ → olha para a câmera → vê o comprovante. A 1ª batida do dia é Entrada, a 2ª Saída, a 3ª Entrada, e assim por diante.
 
+**Funcionário que esqueceu de bater:** no aparelho, toca em **"Esqueci de bater o ponto"** → matrícula → PIN → informa o dia (até 31 dias atrás), o horário e o motivo → envia. O pedido vai para a gestora.
+
 **Gestora:**
 
 - Escolha a empresa no topo da tela (busca por nome ou CNPJ).
-- **Esqueceu de bater:** Espelho de ponto → botão **+** no dia → inclua o horário com justificativa.
+- **Solicitações** (o número ao lado do menu mostra as pendentes): veja o pedido com a foto de quem pediu e as marcações que já existem no dia, e **Aprove** (a marcação é incluída) ou **Recuse** (com motivo).
+- **Funcionário avisou que esqueceu:** Solicitações → **Nova solicitação** → marque "Aprovar e incluir a marcação agora" (ou deixe pendente para outra pessoa analisar). Também dá para incluir direto pelo Espelho de ponto → botão **+** no dia.
 - **Batida duplicada ou errada:** abra a marcação → **Desconsiderar** (com motivo). A original continua guardada.
 - **Feriado, atestado ou férias:** Espelho de ponto → **Lançar abono** (ou o ícone de calendário no dia).
 - **Esqueceu o PIN ou foi bloqueado** (5 erros seguidos bloqueiam por 15 minutos): Funcionários → editar → **Redefinir o PIN**.
@@ -241,7 +249,8 @@ Abra <http://localhost:5173>. Os dados somem quando os emuladores são fechados.
 |---|---|
 | `functions`: `npm test` | CPF, CNPJ (inclusive alfanumérico), PIN, matrícula e fusos horários |
 | `web`: `npm test` | Cálculo do espelho (pares, saldo, tolerância, faltas, abonos, início do controle) e mensagens de erro |
-| `web`: `npm run test:e2e` | 19 etapas de ponta a ponta com os emuladores: permissões de cada papel, registro com foto, NSR, cadeia de hashes, bloqueio de PIN, ajustes, abonos, auditoria e desativação de aparelho |
+| `web`: `npm run test:e2e` | 20 etapas de ponta a ponta com os emuladores: permissões de cada papel, registro com foto, NSR, cadeia de hashes, bloqueio de PIN, ajustes, abonos, solicitações, auditoria e desativação de aparelho |
+| `web`: `npm run dados:exemplo` | Com os emuladores ligados, cria administrador, gestora, empresas e funcionários de exemplo (senha `senha1234`) |
 
 ---
 

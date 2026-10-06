@@ -453,6 +453,13 @@ input[type='radio'] {
   color: var(--azul);
 }
 
+.pendente {
+  margin-top: 4px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--amarelo);
+}
+
 .chip-abono {
   background: var(--amarelo-claro);
   color: var(--amarelo);
@@ -824,6 +831,22 @@ button.miniatura {
 .menu-lateral nav a.ativo {
   background: #24365c;
   color: #fff;
+}
+
+.contador {
+  margin-left: auto;
+  min-width: 22px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #f59e0b;
+  color: #1f1300;
+  font-size: 0.78rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.espaco-abaixo {
+  margin-bottom: 16px;
 }
 
 .menu-secao {
@@ -1655,6 +1678,87 @@ html.modo-ponto body {
   color: #8d9ab0;
 }
 
+.terminal-esqueci {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 52px;
+  padding: 10px 18px;
+  border: 1px dashed #5c6e8f;
+  border-radius: 14px;
+  background: transparent;
+  color: #e9eef7;
+  font-size: 1.05rem;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.terminal-esqueci:active {
+  background: #162238;
+}
+
+.terminal-link {
+  border: none;
+  background: none;
+  color: #8fb0ff;
+  font-size: 1rem;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 8px;
+}
+
+.terminal-formulario {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.terminal-formulario label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-weight: 600;
+  color: #a9b6cc;
+}
+
+.terminal-formulario input,
+.terminal-formulario select {
+  min-height: 54px;
+  padding: 10px 14px;
+  border: 1px solid #2b3b5a;
+  border-radius: 12px;
+  background: #0f182a;
+  color: #fff;
+  font-size: 1.15rem;
+}
+
+.terminal-campos {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.terminal-botoes {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 12px;
+}
+
+.terminal-botoes .tecla {
+  gap: 10px;
+  font-size: 1.15rem;
+}
+
+.terminal-erro {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #4a1d1d;
+  color: #fecaca;
+}
+
 .resultado {
   position: fixed;
   inset: 0;
@@ -1700,6 +1804,10 @@ html.modo-ponto body {
 
 .resultado-erro {
   background: radial-gradient(circle at 50% 30%, #b8322f 0, #6e1616 75%);
+}
+
+.resultado-solicitado {
+  background: radial-gradient(circle at 50% 30%, #2f6fdc 0, #173a85 75%);
 }
 
 .resultado-foto {

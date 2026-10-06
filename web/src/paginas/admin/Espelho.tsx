@@ -1,6 +1,7 @@
 import { collection, query, where } from 'firebase/firestore'
 import { CalendarCheck, CalendarDays, Download, Plus, Printer } from 'lucide-react'
 import { useState } from 'react'
+import { Link } from 'react-router'
 import { DetalheAbono, ModalAbono } from '../../componentes/Abonos'
 import { Aviso, CabecalhoPagina, Campo, Carregando, Vazio } from '../../componentes/Basicos'
 import { DetalhesRegistro, ModalIncluirMarcacao } from '../../componentes/Marcacoes'
@@ -12,7 +13,17 @@ import { baixarCsv } from '../../lib/csv'
 import { calcularEspelho, type AbonoBruto, type DiaEspelho } from '../../lib/espelho'
 import { formatarCnpj, formatarCpf } from '../../lib/formatos'
 import { dataLocal, formatarData, formatarDataHora, minutosParaHHMM, nomeDiaCurto, nomeMes } from '../../lib/tempo'
-import { ordenarPorNome, paraAbono, paraFuncionario, paraRegistro, ROTULOS_ABONO, type Abono, type Registro, type TipoAbono } from '../../tipos'
+import {
+  ordenarPorNome,
+  paraAbono,
+  paraFuncionario,
+  paraRegistro,
+  paraSolicitacao,
+  ROTULOS_ABONO,
+  type Abono,
+  type Registro,
+  type TipoAbono,
+} from '../../tipos'
 
 function rotuloAbono(abono: AbonoBruto): string {
   const tipo = ROTULOS_ABONO[abono.tipo as TipoAbono] ?? 'Abono'
@@ -70,6 +81,15 @@ export default function Espelho() {
   )
   // Abonos do funcionário mais os coletivos (feriados, folgas da empresa toda).
   const abonos = abonosDoMes.dados.filter((a) => a.funcionarioId === null || a.funcionarioId === funcionario?.id)
+  const solicitacoes = useColecao(
+    () => (funcionario ? query(collection(db, 'empresas', empresa.id, 'solicitacoes'), where('funcionarioId', '==', funcionario.id)) : null),
+    paraSolicitacao,
+    `${empresa.id}:solicitacoes:${funcionario?.id}`,
+  )
+  const pendentesPorDia = new Map<string, string[]>()
+  for (const s of solicitacoes.dados) {
+    if (s.status === 'pendente') pendentesPorDia.set(s.data, [...(pendentesPorDia.get(s.data) ?? []), s.hora])
+  }
 
   const resumo =
     funcionario && /^\d{4}-\d{2}$/.test(mes)
@@ -261,6 +281,11 @@ export default function Espelho() {
                           </div>
                         )}
                         <small>{ocorrencias(d, false)}</small>
+                        {pendentesPorDia.has(d.data) && (
+                          <Link to="/admin/solicitacoes" className="bloco pendente nao-imprimir">
+                            Solicitação pendente: {pendentesPorDia.get(d.data)!.sort().join(', ')}
+                          </Link>
+                        )}
                       </td>
                       <td className="nao-imprimir sem-quebra">
                         {d.situacao !== 'futuro' && (

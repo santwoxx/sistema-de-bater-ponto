@@ -1,10 +1,12 @@
 import { signOut } from 'firebase/auth'
+import { collection, query, where } from 'firebase/firestore'
 import {
   Building2,
   CalendarDays,
   ClipboardList,
   Fingerprint,
   History,
+  Inbox,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -18,11 +20,13 @@ import { Carregando, Vazio } from '../../componentes/Basicos'
 import SeletorEmpresa from '../../componentes/SeletorEmpresa'
 import { useEmpresas } from '../../contexto/Empresa'
 import { usePerfil } from '../../contexto/Sessao'
-import { auth, NOME_SISTEMA } from '../../firebase'
+import { auth, db, NOME_SISTEMA } from '../../firebase'
+import { useColecao } from '../../hooks/useColecao'
 
 const ITENS = [
   { para: '/admin', rotulo: 'Hoje', icone: LayoutDashboard, fim: true },
   { para: '/admin/registros', rotulo: 'Marcações', icone: ClipboardList },
+  { para: '/admin/solicitacoes', rotulo: 'Solicitações', icone: Inbox },
   { para: '/admin/espelho', rotulo: 'Espelho de ponto', icone: CalendarDays },
   { para: '/admin/funcionarios', rotulo: 'Funcionários', icone: Users },
   { para: '/admin/aparelhos', rotulo: 'Aparelhos de ponto', icone: Tablet },
@@ -39,6 +43,12 @@ export default function LayoutAdmin() {
   const { empresas, carregando, empresa } = useEmpresas()
   const location = useLocation()
   const [menuAberto, setMenuAberto] = useState(false)
+  // Contador de solicitações pendentes da empresa selecionada, ao lado do menu.
+  const pendentes = useColecao(
+    () => (empresa ? query(collection(db, 'empresas', empresa.id, 'solicitacoes'), where('status', '==', 'pendente')) : null),
+    (snap) => snap.id,
+    `pendentes:${empresa?.id}`,
+  )
 
   const paginaGlobal = ITENS_ADMIN.some((item) => location.pathname.startsWith(item.para))
   let conteudo
@@ -74,6 +84,11 @@ export default function LayoutAdmin() {
     >
       <item.icone size={18} aria-hidden />
       {item.rotulo}
+      {item.para === '/admin/solicitacoes' && pendentes.dados.length > 0 && (
+        <span className="contador" aria-label={`${pendentes.dados.length} pendentes`}>
+          {pendentes.dados.length}
+        </span>
+      )}
     </NavLink>
   )
 

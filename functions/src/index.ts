@@ -9,3 +9,4 @@ export { ativarDispositivo, desativarDispositivo, sincronizarDispositivo } from 
 export { registrarPonto } from "./ponto";
 export { incluirMarcacao, desconsiderarMarcacao } from "./ajustes";
 export { incluirAbono, removerAbono } from "./abonos";
+export { solicitarMarcacao, criarSolicitacao, decidirSolicitacao } from "./solicitacoes";

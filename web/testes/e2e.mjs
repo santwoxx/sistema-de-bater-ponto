@@ -355,6 +355,77 @@ await etapa('abonos: feriado coletivo e férias individuais, sem duplicar; só q
   assert.equal((await getDoc(doc(gestora.db, 'empresas', empresaA, 'abonos', doFeriado.id))).exists(), false)
 })
 
+await etapa('solicitações: funcionário pede no aparelho, gestora aprova ou recusa, admin registra pelo painel', async () => {
+  const ontem = dataSaoPaulo(-1)
+  const pedido = { matricula: '7', pin: '8642', data: ontem, hora: '18:00', motivo: 'Esqueci de registrar', miniatura: jpeg(400) }
+  await falha(aparelho.chamar('solicitarMarcacao', { ...pedido, pin: '0001' }), 'functions/permission-denied', /inválidos/)
+  await falha(aparelho.chamar('solicitarMarcacao', { ...pedido, data: dataSaoPaulo(1) }), 'functions/invalid-argument', /futuro/)
+  await falha(aparelho.chamar('solicitarMarcacao', { ...pedido, data: dataSaoPaulo(-40) }), 'functions/invalid-argument', /últimos/)
+  const criada = await aparelho.chamar('solicitarMarcacao', pedido)
+  assert.equal(criada.funcionarioNome, 'João Lima')
+  await falha(aparelho.chamar('solicitarMarcacao', pedido), 'functions/already-exists', /pendente/)
+
+  // Enquanto pendente, não vira marcação.
+  const doDia = () =>
+    getDocs(query(collection(gestora.db, 'empresas', empresaA, 'registros'), where('funcionarioId', '==', joao), where('dataLocal', '==', ontem)))
+  assert.equal((await doDia()).size, 0)
+  const pendente = await getDoc(doc(gestora.db, 'empresas', empresaA, 'solicitacoes', criada.id))
+  assert.equal(pendente.get('status'), 'pendente')
+  assert.equal(pendente.get('origem'), 'funcionario')
+  assert.ok(pendente.get('miniatura').startsWith('data:image/jpeg;base64,'))
+
+  // Só quem tem acesso à empresa vê e decide.
+  await falha(getDocs(collection(outraGestora.db, 'empresas', empresaA, 'solicitacoes')), 'permission-denied')
+  await falha(getDocs(collection(aparelho.db, 'empresas', empresaA, 'solicitacoes')), 'permission-denied')
+  const decisao = { empresaId: empresaA, solicitacaoId: criada.id, aprovar: true }
+  await falha(outraGestora.chamar('decidirSolicitacao', decisao), 'functions/permission-denied')
+  await falha(aparelho.chamar('decidirSolicitacao', decisao), 'functions/permission-denied')
+
+  const aprovada = await gestora.chamar('decidirSolicitacao', decisao)
+  const registro = await getDoc(doc(gestora.db, 'empresas', empresaA, 'registros', aprovada.registroId))
+  assert.equal(registro.get('origem'), 'manual')
+  assert.equal(registro.get('horaLocal'), '18:00:00')
+  assert.equal(registro.get('solicitacaoId'), criada.id)
+  assert.match(registro.get('justificativa'), /Esqueci de registrar/)
+  const fechada = await getDoc(doc(gestora.db, 'empresas', empresaA, 'solicitacoes', criada.id))
+  assert.equal(fechada.get('status'), 'aprovada')
+  assert.equal(fechada.get('decididoPor').nome, 'Gisele Gestora')
+  await falha(gestora.chamar('decidirSolicitacao', decisao), 'functions/failed-precondition')
+  await falha(aparelho.chamar('solicitarMarcacao', pedido), 'functions/already-exists', /marcação/)
+
+  // Recusa exige motivo e não cria marcação.
+  const outra = await aparelho.chamar('solicitarMarcacao', { ...pedido, hora: '12:00' })
+  await falha(
+    gestora.chamar('decidirSolicitacao', { empresaId: empresaA, solicitacaoId: outra.id, aprovar: false }),
+    'functions/invalid-argument',
+  )
+  await gestora.chamar('decidirSolicitacao', { empresaId: empresaA, solicitacaoId: outra.id, aprovar: false, motivoRecusa: 'Estava de folga' })
+  assert.equal((await getDoc(doc(gestora.db, 'empresas', empresaA, 'solicitacoes', outra.id))).get('status'), 'recusada')
+  assert.equal((await doDia()).size, 1)
+
+  // Pelo painel: o admin registra em nome do funcionário, já aprovada; ou deixa pendente.
+  const peloAdmin = await admin.chamar('criarSolicitacao', {
+    empresaId: empresaA,
+    funcionarioId: joao,
+    data: ontem,
+    hora: '08:00',
+    motivo: 'Avisou por telefone',
+    aprovarAgora: true,
+  })
+  assert.ok(peloAdmin.registroId)
+  assert.equal((await getDoc(doc(admin.db, 'empresas', empresaA, 'solicitacoes', peloAdmin.id))).get('status'), 'aprovada')
+  const paraAnalise = await gestora.chamar('criarSolicitacao', {
+    empresaId: empresaA,
+    funcionarioId: joao,
+    data: ontem,
+    hora: '13:00',
+    motivo: 'Confirmar com o gerente',
+    aprovarAgora: false,
+  })
+  assert.equal(paraAnalise.registroId, null)
+  assert.equal((await doDia()).size, 2)
+})
+
 await etapa('consulta do espelho (funcionário + período) traz as marcações do mês', async () => {
   const q = query(
     collection(gestora.db, 'empresas', empresaA, 'registros'),
@@ -376,6 +447,9 @@ await etapa('auditoria registra as ações; a do sistema é só do admin', async
     'marcacao.restaurada',
     'abono.incluido',
     'abono.removido',
+    'solicitacao.criada',
+    'solicitacao.aprovada',
+    'solicitacao.recusada',
   ]) {
     assert.ok(acoes.includes(acao), `faltou ${acao} na auditoria`)
   }

@@ -107,6 +107,29 @@ export interface Abono {
   criadoEm: Timestamp | null
 }
 
+export type StatusSolicitacao = 'pendente' | 'aprovada' | 'recusada'
+
+/** Pedido de inclusão de uma marcação esquecida (pelo funcionário ou pelo gestor). */
+export interface Solicitacao {
+  id: string
+  funcionarioId: string
+  funcionarioNome: string
+  funcionarioMatricula: string
+  data: string
+  hora: string
+  motivo: string
+  origem: 'funcionario' | 'gestor'
+  solicitadoPor: Autor
+  dispositivoNome?: string
+  miniatura: string | null
+  status: StatusSolicitacao
+  criadoEm: Timestamp | null
+  decididoPor?: Autor
+  decididoEm?: Timestamp | null
+  motivoRecusa?: string
+  registroId?: string
+}
+
 export interface EntradaAuditoria {
   id: string
   acao: string
@@ -179,6 +202,29 @@ export function paraAbono(snap: DocumentSnapshot): Abono {
     minutos: typeof d.minutos === 'number' ? d.minutos : null,
     criadoPor: d.criadoPor,
     criadoEm: d.criadoEm ?? null,
+  }
+}
+
+export function paraSolicitacao(snap: DocumentSnapshot): Solicitacao {
+  const d = snap.data() ?? {}
+  return {
+    id: snap.id,
+    funcionarioId: d.funcionarioId ?? '',
+    funcionarioNome: d.funcionarioNome ?? '',
+    funcionarioMatricula: d.funcionarioMatricula ?? '',
+    data: d.data ?? '',
+    hora: d.hora ?? '',
+    motivo: d.motivo ?? '',
+    origem: d.origem === 'gestor' ? 'gestor' : 'funcionario',
+    solicitadoPor: d.solicitadoPor ?? { uid: '', nome: '' },
+    dispositivoNome: d.dispositivoNome,
+    miniatura: d.miniatura ?? null,
+    status: d.status === 'aprovada' || d.status === 'recusada' ? d.status : 'pendente',
+    criadoEm: d.criadoEm ?? null,
+    decididoPor: d.decididoPor,
+    decididoEm: d.decididoEm ?? null,
+    motivoRecusa: d.motivoRecusa,
+    registroId: d.registroId,
   }
 }
 

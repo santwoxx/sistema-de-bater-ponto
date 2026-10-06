@@ -13,6 +13,7 @@ const Ponto = lazy(() => import('./paginas/ponto/Ponto'))
 const LayoutAdmin = lazy(() => import('./paginas/admin/LayoutAdmin'))
 const Hoje = lazy(() => import('./paginas/admin/Hoje'))
 const Registros = lazy(() => import('./paginas/admin/Registros'))
+const Solicitacoes = lazy(() => import('./paginas/admin/Solicitacoes'))
 const Espelho = lazy(() => import('./paginas/admin/Espelho'))
 const Funcionarios = lazy(() => import('./paginas/admin/Funcionarios'))
 const Aparelhos = lazy(() => import('./paginas/admin/Aparelhos'))
@@ -82,6 +83,7 @@ export default function App() {
               >
                 <Route index element={<Hoje />} />
                 <Route path="registros" element={<Registros />} />
+                <Route path="solicitacoes" element={<Solicitacoes />} />
                 <Route path="espelho" element={<Espelho />} />
                 <Route path="funcionarios" element={<Funcionarios />} />
                 <Route path="aparelhos" element={<Aparelhos />} />

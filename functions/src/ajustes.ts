@@ -1,7 +1,7 @@
-import { FieldValue, Timestamp } from "firebase-admin/firestore";
+import { FieldValue, Timestamp, type DocumentData, type QuerySnapshot } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/https";
 import { db } from "./admin";
-import { autor, exigirAcessoEmpresa } from "./acesso";
+import { autor, exigirAcessoEmpresa, type Autor } from "./acesso";
 import { registrarAuditoria } from "./auditoria";
 import { dataLocal, horaLocal, localParaUtc } from "./tempo";
 import { dataISO, horaHHMM, idDocumento, objeto, texto } from "./validacao";
@@ -9,6 +9,42 @@ import { dataISO, horaHHMM, idDocumento, objeto, texto } from "./validacao";
 // Marcações originais NUNCA são alteradas nem apagadas. Correções são feitas
 // incluindo uma marcação manual (com justificativa) ou desconsiderando uma
 // marcação existente (com motivo). Tudo fica registrado na auditoria.
+
+export function consultaDoDia(empresaId: string, funcionarioId: string, data: string) {
+  return db.collection(`empresas/${empresaId}/registros`).where("funcionarioId", "==", funcionarioId).where("dataLocal", "==", data);
+}
+
+export function existeNoMesmoMinuto(doDia: QuerySnapshot, hora: string): boolean {
+  return doDia.docs.some((doc) => !doc.get("desconsiderado") && String(doc.get("horaLocal")).slice(0, 5) === hora.slice(0, 5));
+}
+
+/** Dados de uma marcação manual (sem foto, sem NSR), pronta para gravar. */
+export function marcacaoManual(params: {
+  funcionarioId: string;
+  funcionario: DocumentData;
+  instante: Date;
+  fuso: string;
+  justificativa: string;
+  incluidoPor: Autor;
+  solicitacaoId?: string;
+}) {
+  const { funcionarioId, funcionario, instante, fuso, justificativa, incluidoPor, solicitacaoId } = params;
+  return {
+    funcionarioId,
+    funcionarioNome: funcionario.nome,
+    funcionarioMatricula: funcionario.matricula,
+    funcionarioCpf: funcionario.cpf,
+    dataHora: Timestamp.fromDate(instante),
+    dataLocal: dataLocal(instante, fuso),
+    horaLocal: horaLocal(instante, fuso),
+    origem: "manual",
+    justificativa,
+    incluidoPor,
+    ...(solicitacaoId ? { solicitacaoId } : {}),
+    desconsiderado: null,
+    criadoEm: FieldValue.serverTimestamp(),
+  };
+}
 
 export const incluirMarcacao = onCall(async (request) => {
   const dados = objeto(request.data);
@@ -28,30 +64,15 @@ export const incluirMarcacao = onCall(async (request) => {
     throw new HttpsError("invalid-argument", "Não é possível incluir uma marcação no futuro.");
   }
   const dia = dataLocal(instante, empresa.fusoHorario);
-  const horario = horaLocal(instante, empresa.fusoHorario);
 
-  const registros = db.collection(`empresas/${empresaId}/registros`);
-  const doDia = await registros.where("funcionarioId", "==", funcionarioId).where("dataLocal", "==", dia).get();
-  const mesmoMinuto = doDia.docs.some(
-    (doc) => !doc.get("desconsiderado") && String(doc.get("horaLocal")).slice(0, 5) === horario.slice(0, 5),
+  if (existeNoMesmoMinuto(await consultaDoDia(empresaId, funcionarioId, dia).get(), hora)) {
+    throw new HttpsError("already-exists", `Já existe uma marcação às ${hora} neste dia.`);
+  }
+
+  const ref = db.collection(`empresas/${empresaId}/registros`).doc();
+  await ref.set(
+    marcacaoManual({ funcionarioId, funcionario, instante, fuso: empresa.fusoHorario, justificativa, incluidoPor: autor(usuario) }),
   );
-  if (mesmoMinuto) throw new HttpsError("already-exists", `Já existe uma marcação às ${hora} neste dia.`);
-
-  const ref = registros.doc();
-  await ref.set({
-    funcionarioId,
-    funcionarioNome: funcionario.nome,
-    funcionarioMatricula: funcionario.matricula,
-    funcionarioCpf: funcionario.cpf,
-    dataHora: Timestamp.fromDate(instante),
-    dataLocal: dia,
-    horaLocal: horario,
-    origem: "manual",
-    justificativa,
-    incluidoPor: autor(usuario),
-    desconsiderado: null,
-    criadoEm: FieldValue.serverTimestamp(),
-  });
 
   await registrarAuditoria({
     empresaId,

@@ -103,4 +103,17 @@ export const api = {
     { criados: number }
   >('incluirAbono'),
   removerAbono: funcao<{ empresaId: string; abonoId: string }, { ok: true }>('removerAbono'),
+  // Feita no aparelho de ponto, identificando o funcionário pela matrícula + PIN.
+  solicitarMarcacao: funcao<
+    { matricula: string; pin: string; data: string; hora: string; motivo: string; miniatura: string | null },
+    { id: string; funcionarioNome: string; data: string; hora: string }
+  >('solicitarMarcacao', 25_000),
+  criarSolicitacao: funcao<
+    { empresaId: string; funcionarioId: string; data: string; hora: string; motivo: string; aprovarAgora: boolean },
+    { id: string; registroId: string | null }
+  >('criarSolicitacao'),
+  decidirSolicitacao: funcao<
+    { empresaId: string; solicitacaoId: string; aprovar: boolean; motivoRecusa?: string },
+    { ok: true; registroId: string | null }
+  >('decidirSolicitacao'),
 }

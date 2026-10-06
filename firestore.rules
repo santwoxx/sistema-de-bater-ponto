@@ -79,6 +79,11 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      match /solicitacoes/{id} {
+        allow read: if acessaEmpresa(empresaId);
+        allow write: if false;
+      }
+
       match /auditoria/{id} {
         allow read: if acessaEmpresa(empresaId);
         allow write: if false;
