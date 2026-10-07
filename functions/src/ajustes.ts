@@ -2,7 +2,7 @@ import { FieldValue, Timestamp, type DocumentData, type QuerySnapshot } from "fi
 import { HttpsError, onCall } from "firebase-functions/https";
 import { db } from "./admin";
 import { autor, exigirAcessoEmpresa, type Autor } from "./acesso";
-import { registrarAuditoria } from "./auditoria";
+import { auditarNa } from "./auditoria";
 import { dataLocal, horaLocal, localParaUtc } from "./tempo";
 import { dataISO, horaHHMM, idDocumento, objeto, texto } from "./validacao";
 
@@ -70,17 +70,19 @@ export const incluirMarcacao = onCall(async (request) => {
   }
 
   const ref = db.collection(`empresas/${empresaId}/registros`).doc();
-  await ref.set(
+  const lote = db.batch();
+  lote.create(
+    ref,
     marcacaoManual({ funcionarioId, funcionario, instante, fuso: empresa.fusoHorario, justificativa, incluidoPor: autor(usuario) }),
   );
-
-  await registrarAuditoria({
+  auditarNa(lote, {
     empresaId,
     autor: autor(usuario),
     acao: "marcacao.incluida",
     descricao: `Marcação manual incluída para ${funcionario.nome} em ${dia.split("-").reverse().join("/")} às ${hora}.`,
     detalhes: { registroId: ref.id, funcionarioId, data: dia, hora, justificativa },
   });
+  await lote.commit();
 
   return { id: ref.id };
 });
@@ -94,23 +96,23 @@ export const desconsiderarMarcacao = onCall(async (request) => {
   const motivo = restaurar ? "" : texto(dados.motivo, "Motivo", { min: 5, max: 500 });
 
   const ref = db.doc(`empresas/${empresaId}/registros/${registroId}`);
-  const snap = await ref.get();
-  const registro = snap.data();
-  if (!registro) throw new HttpsError("not-found", "Marcação não encontrada.");
-  if (restaurar && !registro.desconsiderado) throw new HttpsError("failed-precondition", "Esta marcação já está válida.");
-  if (!restaurar && registro.desconsiderado) throw new HttpsError("failed-precondition", "Esta marcação já foi desconsiderada.");
+  await db.runTransaction(async (tx) => {
+    const registro = (await tx.get(ref)).data();
+    if (!registro) throw new HttpsError("not-found", "Marcação não encontrada.");
+    if (restaurar && !registro.desconsiderado) throw new HttpsError("failed-precondition", "Esta marcação já está válida.");
+    if (!restaurar && registro.desconsiderado) throw new HttpsError("failed-precondition", "Esta marcação já foi desconsiderada.");
 
-  await ref.update({
-    desconsiderado: restaurar ? null : { motivo, por: autor(usuario), em: FieldValue.serverTimestamp() },
-  });
-
-  const quando = `${String(registro.dataLocal).split("-").reverse().join("/")} às ${String(registro.horaLocal).slice(0, 5)}`;
-  await registrarAuditoria({
-    empresaId,
-    autor: autor(usuario),
-    acao: restaurar ? "marcacao.restaurada" : "marcacao.desconsiderada",
-    descricao: `Marcação de ${registro.funcionarioNome} em ${quando} ${restaurar ? "voltou a valer" : "desconsiderada"}.`,
-    detalhes: { registroId, funcionarioId: registro.funcionarioId, ...(restaurar ? {} : { motivo }) },
+    tx.update(ref, {
+      desconsiderado: restaurar ? null : { motivo, por: autor(usuario), em: FieldValue.serverTimestamp() },
+    });
+    const quando = `${String(registro.dataLocal).split("-").reverse().join("/")} às ${String(registro.horaLocal).slice(0, 5)}`;
+    auditarNa(tx, {
+      empresaId,
+      autor: autor(usuario),
+      acao: restaurar ? "marcacao.restaurada" : "marcacao.desconsiderada",
+      descricao: `Marcação de ${registro.funcionarioNome} em ${quando} ${restaurar ? "voltou a valer" : "desconsiderada"}.`,
+      detalhes: { registroId, funcionarioId: registro.funcionarioId, ...(restaurar ? {} : { motivo }) },
+    });
   });
 
   return { ok: true };

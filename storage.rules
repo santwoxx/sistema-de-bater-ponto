@@ -1,25 +1,13 @@
 rules_version = '2';
 
-// Fotos das marcações: gravadas somente pelas Cloud Functions e visíveis
-// apenas para quem tem acesso à empresa (consulta o perfil no Firestore).
+// Fotos das marcações: gravadas e lidas somente pelas Cloud Functions.
+// O painel recebe a foto pela função obterFoto, que confere o acesso à
+// empresa e a integridade do arquivo. Nenhum navegador lê ou grava aqui.
 
 service firebase.storage {
   match /b/{bucket}/o {
-
-    function perfil() {
-      return firestore.get(/databases/(default)/documents/usuarios/$(request.auth.uid)).data;
-    }
-
-    function acessaEmpresa(empresaId) {
-      return request.auth != null
-        && firestore.exists(/databases/(default)/documents/usuarios/$(request.auth.uid))
-        && perfil().ativo == true
-        && (perfil().papel == 'admin' || empresaId in perfil().empresas);
-    }
-
-    match /empresas/{empresaId}/registros/{caminho=**} {
-      allow read: if acessaEmpresa(empresaId);
-      allow write: if false;
+    match /{caminho=**} {
+      allow read, write: if false;
     }
   }
 }

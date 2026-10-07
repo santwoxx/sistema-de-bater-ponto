@@ -2,7 +2,7 @@ import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/https";
 import { db } from "./admin";
 import { autor, exigirAcessoEmpresa, exigirDispositivo } from "./acesso";
-import { registrarAuditoria } from "./auditoria";
+import { auditarNa, registrarAuditoria } from "./auditoria";
 import { calcularEspelho, documentoDoEspelho, type AbonoBruto, type MarcacaoBruta } from "./espelho";
 import { decodificarJpeg, identificarNoAparelho, lerMatriculaPin, MAX_MINIATURA_BYTES } from "./identificacao";
 import { sha256 } from "./seguranca";
@@ -45,7 +45,13 @@ export const fecharEspelhos = onCall({ timeoutSeconds: 120, memory: "512MiB" }, 
   const empresaRef = db.doc(`empresas/${empresaId}`);
   const [funcionarios, registros, abonosSnap] = await Promise.all([
     empresaRef.collection("funcionarios").get(),
-    empresaRef.collection("registros").where("dataLocal", ">=", `${mes}-01`).where("dataLocal", "<=", `${mes}-31`).get(),
+    // Só os campos do cálculo: sem as miniaturas das fotos, que pesariam na memória.
+    empresaRef
+      .collection("registros")
+      .where("dataLocal", ">=", `${mes}-01`)
+      .where("dataLocal", "<=", `${mes}-31`)
+      .select("funcionarioId", "dataLocal", "horaLocal", "origem", "desconsiderado")
+      .get(),
     empresaRef.collection("abonos").where("data", ">=", `${mes}-01`).where("data", "<=", `${mes}-31`).get(),
   ]);
 
@@ -182,7 +188,13 @@ export const assinarEspelho = onCall(async (request) => {
   const motivo = concordo ? null : texto(dados.motivo, "Motivo", { min: 5, max: 500 });
   const miniatura = dados.miniatura ? decodificarJpeg(dados.miniatura, "Foto", MAX_MINIATURA_BYTES) : null;
 
-  const { empresaRef, dispositivo, funcionarioId, funcionario } = await identificarNoAparelho({ empresaId, dispositivoId, matricula, pin });
+  const { empresaRef, dispositivo, funcionarioId, funcionario } = await identificarNoAparelho({
+    empresaId,
+    dispositivoId,
+    matricula,
+    pin,
+    miniatura,
+  });
   const ref = empresaRef.collection("espelhos").doc(espelhoId);
   const agora = new Date();
   // Código que identifica esta assinatura: espelho (hash) + quem + quando + onde.
@@ -204,17 +216,17 @@ export const assinarEspelho = onCall(async (request) => {
       miniatura: miniatura ? `data:image/jpeg;base64,${miniatura.toString("base64")}` : null,
     };
     tx.update(ref, concordo ? { status: "assinado", assinatura: registro } : { status: "contestado", contestacao: { ...registro, motivo } });
-    return espelho.mes as string;
-  });
-
-  await registrarAuditoria({
-    empresaId,
-    autor: { uid: funcionarioId, nome: funcionario.nome },
-    acao: concordo ? "espelho.assinado" : "espelho.contestado",
-    descricao: concordo
-      ? `${funcionario.nome} assinou o espelho de ${nomeMes(mes)} no aparelho "${dispositivo.nome}" (código ${codigo}).`
-      : `${funcionario.nome} contestou o espelho de ${nomeMes(mes)} no aparelho "${dispositivo.nome}": ${motivo}.`,
-    detalhes: { espelhoId, mes, codigo, hash, ...(motivo ? { motivo } : {}) },
+    const mesEspelho = espelho.mes as string;
+    auditarNa(tx, {
+      empresaId,
+      autor: { uid: funcionarioId, nome: String(funcionario.nome) },
+      acao: concordo ? "espelho.assinado" : "espelho.contestado",
+      descricao: concordo
+        ? `${funcionario.nome} assinou o espelho de ${nomeMes(mesEspelho)} no aparelho "${dispositivo.nome}" (código ${codigo}).`
+        : `${funcionario.nome} contestou o espelho de ${nomeMes(mesEspelho)} no aparelho "${dispositivo.nome}": ${motivo}.`,
+      detalhes: { espelhoId, mes: mesEspelho, codigo, hash, ...(motivo ? { motivo } : {}) },
+    });
+    return mesEspelho;
   });
 
   return { status: concordo ? "assinado" : "contestado", mes, codigo };

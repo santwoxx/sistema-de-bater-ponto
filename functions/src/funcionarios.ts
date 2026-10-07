@@ -2,7 +2,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/https";
 import { db } from "./admin";
 import { autor, exigirAcessoEmpresa } from "./acesso";
-import { registrarAuditoria } from "./auditoria";
+import { auditarNa } from "./auditoria";
 import { gerarHashPin } from "./seguranca";
 import {
   booleano,
@@ -68,24 +68,24 @@ export const salvarFuncionario = onCall(async (request) => {
         ativo,
         atualizadoEm: agora,
         ...(id ? {} : { criadoEm: agora, pinDefinido: false }),
-        ...(credenciais ? { pinDefinido: true, pinAtualizadoEm: agora } : {}),
+        ...(credenciais ? { pinDefinido: true, pinProvisorio: true, pinAtualizadoEm: agora } : {}),
       },
       { merge: true },
     );
     if (credenciais) {
-      // Redefinir o PIN também desbloqueia quem errou demais.
-      tx.set(credenciaisRef, { ...credenciais, falhas: 0, bloqueadoAte: null }, { merge: true });
+      // O PIN do gestor é provisório: o funcionário cria o dele no primeiro uso
+      // (ver pinPessoal.ts). Redefinir também desbloqueia quem errou demais.
+      tx.set(credenciaisRef, { ...credenciais, provisorio: true, falhas: 0, bloqueios: 0, bloqueadoAte: null }, { merge: true });
     }
-  });
-
-  await registrarAuditoria({
-    empresaId,
-    autor: autor(usuario),
-    acao: id ? "funcionario.atualizado" : "funcionario.criado",
-    descricao:
-      `Funcionário ${nome} (matrícula ${matriculaFuncionario}) ${id ? "atualizado" : "cadastrado"}` +
-      `${novoPin && id ? "; PIN redefinido" : ""}${ativo ? "" : "; inativo"}.`,
-    detalhes: { funcionarioId: ref.id, matricula: matriculaFuncionario, cargo, ativo, pinAlterado: Boolean(novoPin) },
+    auditarNa(tx, {
+      empresaId,
+      autor: autor(usuario),
+      acao: id ? "funcionario.atualizado" : "funcionario.criado",
+      descricao:
+        `Funcionário ${nome} (matrícula ${matriculaFuncionario}) ${id ? "atualizado" : "cadastrado"}` +
+        `${novoPin && id ? "; PIN provisório redefinido" : ""}${ativo ? "" : "; inativo"}.`,
+      detalhes: { funcionarioId: ref.id, matricula: matriculaFuncionario, cargo, ativo, pinAlterado: Boolean(novoPin) },
+    });
   });
 
   return { id: ref.id };

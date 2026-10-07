@@ -30,6 +30,7 @@ Sistema de controle de ponto para lojas e pequenas empresas, feito com Firebase.
 - Comprovante na tela: nome, **Entrada/Saída**, hora, data, **NSR** (número sequencial do registro) e código de verificação.
 - **"Esqueci de bater o ponto"**: o funcionário se identifica com matrícula e PIN e pede a inclusão do horário que faltou (dia, horário e motivo). Uma foto pequena é tirada como prova, e a marcação só vale depois que o gestor aprovar.
 - **"Assinar meu espelho"**: com matrícula e PIN, o funcionário confere o espelho dos meses fechados (dia a dia e totais) e **assina** ou **contesta** explicando o que está errado. A assinatura registra data, hora, aparelho, foto e um código de verificação.
+- **PIN pessoal**: o PIN que o gestor cadastra é provisório. No primeiro uso, o aparelho pede que o funcionário crie o dele, e ninguém da empresa fica sabendo. **"Trocar meu PIN"** permite trocá-lo quando quiser.
 - Relógio sincronizado com o servidor, aviso de "Sem internet", tela sempre acesa e tela cheia. Pode ser instalado como aplicativo (PWA).
 - Ativado uma única vez por um gestor e desativável pelo painel a qualquer momento.
 
@@ -43,9 +44,9 @@ Sistema de controle de ponto para lojas e pequenas empresas, feito com Firebase.
 | **Espelho de ponto** | Qualquer mês, por funcionário: marcações, previsto, trabalhado, saldo, faltas e marcações ímpares. Lançamento de abonos. Mostra se o mês foi fechado e assinado e avisa se algo mudou depois. Impressão ou PDF (com os dados da assinatura eletrônica, quando houver) e CSV |
 | **Fechamento mensal** | Congela o espelho de todos os funcionários de um mês e envia para assinatura. Mostra quem assinou, quem contestou e quem falta, com os totais de cada um; CSV do mês para a folha. Reabrir um espelho assinado exige motivo e guarda a versão anterior |
 | **Exportar dados** | Baixa os dados de ponto da empresa escolhida, com filtros de período (até 12 meses), funcionários, origem e situação: **marcações** (uma linha por batida), **espelho diário**, **resumo por funcionário** (CSV que abre no Excel) ou **espelhos para imprimir/PDF**, um por folha. Cada exportação fica na auditoria |
-| **Funcionários** | CPF, matrícula, cargo, admissão, jornada de cada dia da semana e PIN |
+| **Funcionários** | CPF, matrícula, cargo, admissão, jornada de cada dia da semana e PIN provisório (mostra quem ainda não criou o PIN pessoal) |
 | **Aparelhos de ponto** | Aparelhos ativados, último sinal, último registro e desativação |
-| **Auditoria** | Quem fez o quê e quando, com as justificativas |
+| **Auditoria** | Quem fez o quê e quando, com as justificativas. Bloqueios por PIN errado aparecem com a foto de quem tentou. **Verificação de integridade**: refaz a cadeia de hashes e aponta marcação apagada, inserida ou alterada, mesmo direto no banco |
 | **Empresas** *(admin)* | CNPJ (inclusive o novo CNPJ alfanumérico), fuso horário, intervalo mínimo entre batidas, tolerância e início do controle de ponto |
 | **Usuários** *(admin)* | Administradores e gestores, com as empresas que cada gestor acessa |
 
@@ -72,22 +73,27 @@ Sistema de controle de ponto para lojas e pequenas empresas, feito com Firebase.
 ## Como o sistema é organizado
 
 ```
-Aparelho da loja (/ponto) ─┐
-                           ├──► Cloud Functions (São Paulo) ──► Firestore (dados) + Storage (fotos)
-Painel do gestor (/admin) ─┘          ▲
-         └──────── leitura direta, liberada pelas regras de segurança ┘
+Aparelho da loja (/ponto) ─────► Cloud Functions (São Paulo) ──► Firestore (dados) + Storage (fotos)
+Painel do gestor (/admin) ─┬───►        ▲
+                           └── leitura direta do Firestore, liberada pelas regras de segurança
 ```
+
+O aparelho só fala com as funções. O painel lê o Firestore direto (as regras liberam só as empresas de cada gestor) e recebe as fotos pelas funções.
 
 ```
 Sistema bater ponto/
 ├── firebase.json            configuração do Firebase (hosting, functions, emuladores)
 ├── firestore.rules          quem pode ler o quê no banco (ninguém grava direto)
 ├── firestore.indexes.json   índices do banco
-├── storage.rules            quem pode ver as fotos
+├── storage.rules            fotos: nenhum navegador lê ou grava direto
 ├── functions/               backend (Cloud Functions, TypeScript)
 │   └── src/
 │       ├── ponto.ts         registro do ponto: foto, NSR, cadeia de hashes
+│       ├── cadeia.ts        cálculo e verificação da cadeia de hashes
+│       ├── integridade.ts   verificação de integridade pedida no painel
+│       ├── fotos.ts         entrega da foto ao painel, com conferência do hash
 │       ├── identificacao.ts matrícula + PIN no aparelho, com bloqueios por erro
+│       ├── pinPessoal.ts    o funcionário cria ou troca o próprio PIN
 │       ├── solicitacoes.ts  pedidos de marcação esquecida (pedir, aprovar, recusar)
 │       ├── espelho.ts       cálculo do espelho (fonte única: servidor e painel usam o mesmo)
 │       ├── fechamentos.ts   fechamento mensal, assinatura e contestação do espelho
@@ -111,7 +117,7 @@ usuarios/{uid}                          nome, e-mail, papel (admin|gestor), empr
 auditoria/{id}                          ações globais (empresas, usuários)
 empresas/{empresaId}                    nome, CNPJ, fuso, regras
   ├── funcionarios/{id}                 nome, CPF, matrícula, jornada
-  ├── credenciais/{funcionarioId}       hash do PIN e bloqueio (inacessível pelo navegador)
+  ├── credenciais/{funcionarioId}       hash do PIN, se é provisório e bloqueios (inacessível pelo navegador)
   ├── registros/{id}                    marcações (imutáveis)
   ├── abonos/{id}                       feriados, atestados, férias
   ├── solicitacoes/{id}                 pedidos de marcação esquecida (pendente/aprovada/recusada)
@@ -143,7 +149,7 @@ No [Console do Firebase](https://console.firebase.google.com):
 
 1. **Adicionar projeto**, com o nome que quiser (ex.: `ponto-minhaloja`).
 2. **Upgrade para o plano Blaze** (canto inferior esquerdo) e configure o alerta de orçamento.
-3. **Authentication**: "Vamos começar" → método **E-mail/senha** → ativar.
+3. **Authentication**: "Vamos começar" → método **E-mail/senha** → ativar. Depois, em **Configurações → Ações do usuário**, desmarque **"Ativar criação (inscrição)"** e **"Ativar exclusão"**: as contas são criadas só pelo administrador, então ninguém precisa se cadastrar sozinho.
 4. **Firestore Database**: não precisa criar. Se o banco ainda não existir, o primeiro deploy cria o banco em São Paulo (`southamerica-east1`, definido no `firebase.json`). Se preferir criar pelo console, escolha a edição **Standard**, esse mesmo local e o modo **produção**. O local não pode ser mudado depois.
 5. **Storage**: "Vamos começar" → modo **produção** → local **southamerica-east1 (São Paulo)**. O console destaca as regiões dos EUA como "sem custo". Em São Paulo as fotos custam centavos por mês e ficam na mesma região do servidor.
 6. **Configurações do projeto** (engrenagem) → **Seus apps** → ícone **Web `</>`** → registre o app (não precisa marcar Hosting aqui). Copie os valores de `firebaseConfig`.
@@ -173,6 +179,14 @@ npm --prefix web install
 
 ### 5. Escolha o projeto e publique
 
+Antes do primeiro deploy, crie o **código de instalação**: um segredo que a tela de configuração inicial vai exigir, para que um estranho que abra o site logo após a publicação não consiga se tornar o administrador. Crie o arquivo `functions/.env.SEU-PROJETO` (ex.: `functions/.env.ponto-digital-2e2f9`; ele fica fora do Git) com uma linha:
+
+```
+CODIGO_INSTALACAO=ESCOLHA-UM-CODIGO-LONGO
+```
+
+Depois publique:
+
 ```
 firebase login
 firebase deploy --project producao
@@ -182,8 +196,8 @@ O apelido `producao` já aponta para o projeto `ponto-digital-2e2f9` no arquivo 
 
 O primeiro deploy leva alguns minutos. Durante ele:
 
-- Se perguntar se o **Storage pode ler o Firestore** (regras entre serviços), responda **Sim**: é assim que as fotos ficam visíveis só para quem tem acesso à empresa.
 - Se perguntar sobre **política de limpeza de imagens** das Functions, aceite o padrão.
+- Se perguntar o **nome do site**, aceite o sugerido (o ID do projeto).
 - O índice do banco termina de ser criado alguns minutos depois. Até lá, o filtro por funcionário pode avisar que o índice "está sendo criado".
 
 Ao final aparece o endereço do site, algo como `https://ponto-minhaloja.web.app`.
@@ -198,10 +212,10 @@ firebase firestore:backups:schedules:create --recurrence DAILY --retention 98d -
 ### 6. Primeiro acesso
 
 1. Abra `https://SEU-PROJETO.web.app` → clique em **"Configure o sistema e crie o administrador"**.
-2. Crie a sua conta de administrador (só funciona uma vez).
+2. Informe o **código de instalação** e crie a sua conta de administrador (só funciona uma vez). Faça isso logo depois do deploy.
 3. Em **Empresas**, cadastre a primeira empresa.
 4. Em **Usuários**, crie a conta da gestora e marque as empresas que ela pode acessar.
-5. Em **Funcionários**, cadastre a equipe com matrícula e PIN. Entregue o PIN a cada pessoa.
+5. Em **Funcionários**, cadastre a equipe com matrícula e um **PIN provisório**. Entregue o PIN a cada pessoa: no primeiro uso do aparelho ela cria o PIN pessoal.
 
 ### 7. Coloque o aparelho na loja
 
@@ -304,14 +318,14 @@ cd web
 npm run dev:emuladores
 ```
 
-Abra <http://localhost:5173>. Os dados somem quando os emuladores são fechados.
+Abra <http://localhost:5173>. Os dados somem quando os emuladores são fechados. Nos emuladores, o código de instalação é `TESTE-LOCAL` (arquivo `functions/.env.demo-ponto`).
 
 **Testes automáticos:**
 
 | Comando (na pasta indicada) | O que testa |
 |---|---|
-| `functions`: `npm test` | CPF, CNPJ (inclusive alfanumérico), PIN, matrícula e fusos horários |
-| `web`: `npm test` | Cálculo do espelho (pares, saldo, tolerância, faltas, abonos, início do controle) e mensagens de erro |
+| `functions`: `npm test` | CPF, CNPJ (inclusive alfanumérico), PIN, matrícula, limpeza de textos, fusos horários, hash do PIN e a verificação da cadeia de hashes (alteração, exclusão e hash refeito) |
+| `web`: `npm test` | Cálculo do espelho (pares, saldo, tolerância, faltas, abonos, início do controle), regra do PIN e mensagens de erro |
 | `web`: `npm run test:e2e` | 22 etapas de ponta a ponta com os emuladores: permissões de cada papel, registro com foto, NSR, cadeia de hashes, bloqueio de PIN, ajustes, abonos, solicitações, fechamento e assinatura do espelho, exportação com filtros, auditoria e desativação de aparelho |
 | `web`: `npm run dados:exemplo` | Com os emuladores ligados, cria administrador, gestora, empresas, funcionários e o histórico do mês anterior, pronto para fechar e assinar (senha `senha1234`) |
 
@@ -319,15 +333,38 @@ Abra <http://localhost:5173>. Os dados somem quando os emuladores são fechados.
 
 ## Segurança
 
-- **O navegador nunca grava direto no banco.** Toda escrita passa pelas Cloud Functions, que validam os dados, conferem a permissão e registram na auditoria. As regras do Firestore e do Storage só liberam leitura para quem tem acesso à empresa.
+**Dados e permissões**
+
+- **O navegador nunca grava direto no banco.** Toda escrita passa pelas Cloud Functions, que validam cada campo, conferem a permissão e gravam a auditoria **na mesma transação** da alteração: não existe mudança sem rastro.
+- **Leitura só para quem tem acesso à empresa.** Gestores veem apenas as empresas liberadas; o administrador vê todas e não consegue remover o próprio acesso. Usuário desativado perde o acesso na hora.
+- **Aparelhos de ponto não leem nada do banco:** falam só com as funções, e cada um fica preso a uma empresa (no máximo 50 ativos por empresa).
+- **Fotos sem link público.** O Storage não libera leitura para nenhum navegador; o painel recebe a foto pela função `obterFoto`, que confere o acesso e se o arquivo é o mesmo gravado na batida (aviso se tiver sido trocado).
+- **Textos limpos:** caracteres invisíveis (que poderiam disfarçar nomes e motivos) são removidos, e o CSV neutraliza fórmulas do Excel.
+
+**PIN e identificação no aparelho**
+
+- **PIN pessoal:** o gestor só define um PIN provisório; o funcionário cria o dele no primeiro uso. Assim a empresa não conhece o PIN que bate o ponto e assina o espelho.
+- **Guardado só como hash** (scrypt com sal), numa coleção que nenhum navegador lê. PINs óbvios (1234, 1111) são recusados.
+- **Bloqueios:** 5 erros seguidos bloqueiam a matrícula por 15 minutos, depois 30, depois 1 hora; 25 erros em 15 minutos bloqueiam o aparelho. Cada tentativa é reservada numa transação **antes** de o PIN ser conferido, então disparar tentativas em paralelo não burla o limite. Todo bloqueio vai para a auditoria com a foto de quem tentou.
+- **Sem pistas para quem tenta adivinhar:** matrícula inexistente e PIN errado dão a mesma resposta, no mesmo tempo.
+
+**Marcações**
+
 - **Horário do servidor:** mudar o relógio do tablet não altera a hora da batida.
-- **PIN:** guardado só como hash (scrypt com sal), numa coleção que nenhum navegador lê. PINs óbvios (1234, 1111) são recusados. 5 erros seguidos bloqueiam a matrícula por 15 minutos, e muitos erros no mesmo aparelho bloqueiam o aparelho temporariamente.
-- **Foto em toda batida**, gravada pelo servidor e visível só para gestores da empresa.
 - **Marcações imutáveis:** correções viram inclusões ou desconsiderações com justificativa. Nada é apagado.
-- **NSR sequencial e cadeia de hashes (SHA-256)** por empresa: cada registro inclui o hash do anterior e o da foto. Apagar ou alterar uma marcação quebra a cadeia, o que torna a adulteração detectável.
+- **NSR sequencial e cadeia de hashes (SHA-256)** por empresa: cada registro inclui o hash do anterior, da foto, da data e da hora. A **verificação de integridade** (página Auditoria) refaz a conta e aponta qualquer marcação apagada, inserida ou alterada, mesmo direto no banco.
 - **Sem batida duplicada:** intervalo mínimo entre batidas, e o reenvio automático após queda de internet nunca cria dois registros.
-- **Aparelhos com conta própria**, presos a uma empresa, que só registram ponto: não leem funcionários nem marcações.
-- **Papéis:** administrador (tudo) e gestor (só as empresas liberadas). Um administrador não consegue remover o próprio acesso.
+
+**Site e instalação**
+
+- **Política de segurança de conteúdo (CSP) estrita:** o site só carrega código dele mesmo e só se conecta ao Firebase; não pode ser embutido em outro site; a câmera só funciona nele.
+- **Código de instalação** para criar o primeiro administrador.
+
+**Configurações recomendadas no Console** (além das do passo 2):
+
+- **Alerta de orçamento** no Google Cloud (ele avisa, não bloqueia).
+- **Restrinja a chave da API** em Google Cloud → APIs e serviços → Credenciais → "Browser key": em "Restrições de aplicativos", escolha **Referenciadores HTTP** e informe `https://SEU-PROJETO.web.app/*` e `https://SEU-PROJETO.firebaseapp.com/*`. A chave aparece no site (é normal no Firebase), mas assim não serve em outro lugar.
+- Senhas fortes para administradores e gestores: cada login dá acesso aos dados das empresas.
 
 ---
 
@@ -350,4 +387,7 @@ Abra <http://localhost:5173>. Os dados somem quando os emuladores são fechados.
 - **Escalas (12x36 etc.)** não são calculadas automaticamente: a jornada é por dia da semana. Use folgas e abonos para ajustar.
 - **Horas extras e adicional noturno** aparecem como saldo, sem percentuais (50%, 100%).
 - **Banco de horas** é calculado mês a mês; o saldo de um mês ainda não é levado automaticamente para o seguinte.
-- **Próximos passos sugeridos:** arquivos AFD/AEJ (Portaria 671), banco de horas acumulado, envio do comprovante por e-mail, Firebase App Check e alertas de solicitações pendentes por e-mail ou WhatsApp.
+- **A foto não prova que a pessoa estava lá.** Não há detecção de vivacidade: uma foto de foto passaria. A foto serve de evidência para o gestor conferir.
+- **Quem tem acesso físico a um computador usado como ponto** pode copiar a sessão do aparelho. Ainda assim, só consegue bater ponto com matrícula e PIN corretos (com os bloqueios acima). Prefira tablet em modo quiosque e desative aparelhos perdidos pelo painel.
+- **O dono do projeto Firebase** tem acesso total ao banco pelo Console. A cadeia de hashes torna qualquer alteração visível na verificação de integridade, mas não a impede.
+- **Próximos passos sugeridos:** arquivos AFD/AEJ (Portaria 671), banco de horas acumulado, envio do comprovante por e-mail, Firebase App Check, verificação em duas etapas (MFA) para gestores e alertas de solicitações pendentes por e-mail ou WhatsApp.

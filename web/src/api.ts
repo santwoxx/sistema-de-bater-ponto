@@ -70,7 +70,7 @@ export type Sincronizacao =
     }
 
 export const api = {
-  configurarPrimeiroAdmin: funcao<{ nome: string; email: string; senha: string }, { ok: true }>('configurarPrimeiroAdmin'),
+  configurarPrimeiroAdmin: funcao<{ nome: string; email: string; senha: string; codigo: string }, { ok: true }>('configurarPrimeiroAdmin'),
   salvarEmpresa: funcao<DadosEmpresa, { id: string }>('salvarEmpresa'),
   salvarUsuario: funcao<DadosUsuario, { uid: string }>('salvarUsuario'),
   salvarFuncionario: funcao<DadosFuncionario, { id: string }>('salvarFuncionario'),
@@ -83,6 +83,13 @@ export const api = {
     { idRequisicao: string; matricula: string; pin: string; foto: string; miniatura: string },
     ComprovantePonto
   >('registrarPonto', 25_000),
+  // O funcionário cria (no primeiro uso) ou troca o próprio PIN, no aparelho.
+  definirPin: funcao<
+    { matricula: string; pin: string; novoPin: string; miniatura: string | null },
+    { funcionarioNome: string }
+  >('definirPin', 25_000),
+  // Foto completa de uma marcação, conferida com o hash gravado no registro.
+  obterFoto: funcao<{ empresaId: string; registroId: string }, { foto: string; confere: boolean }>('obterFoto', 30_000),
   incluirMarcacao: funcao<
     { empresaId: string; funcionarioId: string; data: string; hora: string; justificativa: string },
     { id: string }
@@ -139,6 +146,15 @@ export const api = {
     { status: 'assinado' | 'contestado'; mes: string; codigo: string }
   >('assinarEspelho', 25_000),
   exportarDados: funcao<DadosExportacao, ResultadoExportacao>('exportarDados', 300_000),
+  verificarIntegridade: funcao<{ empresaId: string }, ResultadoIntegridade>('verificarIntegridade', 300_000),
+}
+
+export interface ResultadoIntegridade {
+  marcacoesAparelho: number
+  marcacoesManuais: number
+  ultimoNsr: number
+  totalProblemas: number
+  problemas: Array<{ nsr: number | null; registroId: string | null; descricao: string }>
 }
 
 export type ResultadoFechamento = 'fechado' | 'atualizado' | 'sem-alteracoes' | 'exige-motivo'

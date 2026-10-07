@@ -4,6 +4,8 @@ rules_version = '2';
 // passa pelas Cloud Functions, que validam os dados e registram auditoria.
 // Aqui definimos apenas quem pode LER o quê. Tudo que não está listado
 // (credenciais com hash de PIN, contador de NSR etc.) é negado.
+//
+// Os aparelhos de ponto não leem nada daqui: falam só com as funções.
 
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -21,7 +23,10 @@ service cloud.firestore {
     }
 
     function usuarioAtivo() {
-      return autenticado() && exists(caminhoPerfil()) && perfil().ativo == true;
+      return autenticado()
+        && request.auth.token.get('papel', '') != 'dispositivo'
+        && exists(caminhoPerfil())
+        && perfil().ativo == true;
     }
 
     function ehAdmin() {
@@ -32,16 +37,10 @@ service cloud.firestore {
       return usuarioAtivo() && (perfil().papel == 'admin' || empresaId in perfil().empresas);
     }
 
-    function ehAparelhoDa(empresaId) {
-      return autenticado()
-        && request.auth.token.papel == 'dispositivo'
-        && request.auth.token.empresaId == empresaId;
-    }
-
     // Indica se o primeiro administrador já foi criado (tela de configuração inicial).
     match /sistema/estado {
-      allow read: if true;
-      allow write: if false;
+      allow get: if true;
+      allow list, write: if false;
     }
 
     match /usuarios/{uid} {
@@ -55,7 +54,7 @@ service cloud.firestore {
     }
 
     match /empresas/{empresaId} {
-      allow read: if acessaEmpresa(empresaId) || ehAparelhoDa(empresaId);
+      allow read: if acessaEmpresa(empresaId);
       allow write: if false;
 
       match /funcionarios/{funcionarioId} {
@@ -69,8 +68,7 @@ service cloud.firestore {
       }
 
       match /dispositivos/{dispositivoId} {
-        allow read: if acessaEmpresa(empresaId)
-          || (ehAparelhoDa(empresaId) && request.auth.uid == dispositivoId);
+        allow read: if acessaEmpresa(empresaId);
         allow write: if false;
       }
 

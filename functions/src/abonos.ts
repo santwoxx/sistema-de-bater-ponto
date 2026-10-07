@@ -2,7 +2,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/https";
 import { db } from "./admin";
 import { autor, exigirAcessoEmpresa } from "./acesso";
-import { registrarAuditoria } from "./auditoria";
+import { auditarNa } from "./auditoria";
 import { dataISO, idDocumento, idOpcional, inteiro, objeto, opcao, texto } from "./validacao";
 
 // Abonos: dias (ou horas) em que a ausência é justificada — feriado, atestado,
@@ -69,16 +69,15 @@ export const incluirAbono = onCall(async (request) => {
   for (const data of novos) {
     lote.set(colecao.doc(), { data, funcionarioId, funcionarioNome, tipo, descricao, minutos, criadoPor: autor(usuario), criadoEm: agora });
   }
-  await lote.commit();
-
   const periodo = de === ate ? formatar(de) : `${formatar(de)} a ${formatar(ate)}`;
-  await registrarAuditoria({
+  auditarNa(lote, {
     empresaId,
     autor: autor(usuario),
     acao: "abono.incluido",
     descricao: `${ROTULOS[tipo]} lançado para ${funcionarioNome ?? "todos os funcionários"} em ${periodo}: ${descricao}.`,
     detalhes: { funcionarioId, tipo, de, ate, minutos, dias: novos.length },
   });
+  await lote.commit();
 
   return { criados: novos.length };
 });
@@ -90,23 +89,24 @@ export const removerAbono = onCall(async (request) => {
   const { usuario } = await exigirAcessoEmpresa(request, empresaId);
 
   const ref = db.doc(`empresas/${empresaId}/abonos/${abonoId}`);
-  const abono = (await ref.get()).data();
-  if (!abono) throw new HttpsError("not-found", "Abono não encontrado.");
-  await ref.delete();
-
-  await registrarAuditoria({
-    empresaId,
-    autor: autor(usuario),
-    acao: "abono.removido",
-    descricao: `${ROTULOS[abono.tipo as TipoAbono] ?? "Abono"} de ${abono.funcionarioNome ?? "todos os funcionários"} em ${formatar(abono.data)} removido.`,
-    detalhes: {
-      abonoId,
-      data: abono.data,
-      funcionarioId: abono.funcionarioId,
-      tipo: abono.tipo,
-      descricao: abono.descricao,
-      minutos: abono.minutos,
-    },
+  await db.runTransaction(async (tx) => {
+    const abono = (await tx.get(ref)).data();
+    if (!abono) throw new HttpsError("not-found", "Abono não encontrado.");
+    tx.delete(ref);
+    auditarNa(tx, {
+      empresaId,
+      autor: autor(usuario),
+      acao: "abono.removido",
+      descricao: `${ROTULOS[abono.tipo as TipoAbono] ?? "Abono"} de ${abono.funcionarioNome ?? "todos os funcionários"} em ${formatar(abono.data)} removido.`,
+      detalhes: {
+        abonoId,
+        data: abono.data,
+        funcionarioId: abono.funcionarioId,
+        tipo: abono.tipo,
+        descricao: abono.descricao,
+        minutos: abono.minutos,
+      },
+    });
   });
 
   return { ok: true };

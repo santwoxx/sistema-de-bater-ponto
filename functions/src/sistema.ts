@@ -2,11 +2,17 @@ import { FieldValue } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/https";
 import { auth, db } from "./admin";
 import { erroAuth } from "./acesso";
-import { registrarAuditoria } from "./auditoria";
+import { auditarNa } from "./auditoria";
+import { segredosIguais } from "./seguranca";
 import { email, objeto, senha, texto } from "./validacao";
 
 // Primeiro acesso: cria o administrador inicial. Só funciona uma vez;
 // depois disso, novos usuários são criados pelo próprio administrador.
+//
+// Código de instalação: se CODIGO_INSTALACAO estiver definido (arquivo
+// functions/.env.<id-do-projeto>, fora do git), a configuração exige esse código,
+// que só quem publicou o sistema conhece. Assim um estranho que abra o site
+// logo após a publicação não consegue se tornar o administrador.
 export const configurarPrimeiroAdmin = onCall(async (request) => {
   const dados = objeto(request.data);
   const nome = texto(dados.nome, "Nome", { min: 3, max: 120 });
@@ -16,6 +22,13 @@ export const configurarPrimeiroAdmin = onCall(async (request) => {
   const estadoRef = db.doc("sistema/estado");
   if ((await estadoRef.get()).exists) {
     throw new HttpsError("failed-precondition", "O sistema já foi configurado. Faça login.");
+  }
+  const codigoEsperado = (process.env.CODIGO_INSTALACAO ?? "").trim().toUpperCase();
+  if (codigoEsperado) {
+    const codigo = typeof dados.codigo === "string" ? dados.codigo.trim().toUpperCase() : "";
+    if (!segredosIguais(codigo, codigoEsperado)) {
+      throw new HttpsError("permission-denied", "Código de instalação incorreto. Ele aparece na janela de publicação do sistema.");
+    }
   }
 
   let uid: string;
@@ -41,18 +54,17 @@ export const configurarPrimeiroAdmin = onCall(async (request) => {
         criadoEm: agora,
         atualizadoEm: agora,
       });
+      auditarNa(tx, {
+        empresaId: null,
+        autor: { uid, nome },
+        acao: "sistema.configurado",
+        descricao: `Sistema configurado; administrador inicial ${nome} (${emailAdmin}).`,
+      });
     });
   } catch (erro) {
     await auth.deleteUser(uid).catch(() => undefined);
     throw erro;
   }
-
-  await registrarAuditoria({
-    empresaId: null,
-    autor: { uid, nome },
-    acao: "sistema.configurado",
-    descricao: `Sistema configurado; administrador inicial ${nome} (${emailAdmin}).`,
-  });
 
   return { ok: true };
 });

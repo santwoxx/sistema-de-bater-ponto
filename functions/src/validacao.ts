@@ -25,10 +25,17 @@ interface OpcoesTexto {
   mensagemPadrao?: string;
 }
 
+// Caracteres invisíveis de formatação (inversão da direção do texto, espaço de
+// largura zero etc.) permitiriam disfarçar nomes e motivos na tela, no CSV e na
+// impressão; caracteres de controle viram espaço.
+const FORMATACAO_INVISIVEL = /\p{Cf}/gu;
+const CONTROLE = /\p{Cc}/gu;
+
 export function texto(valor: unknown, campo: string, opcoes: OpcoesTexto = {}): string {
   const { min = 1, max = 200, padrao, mensagemPadrao } = opcoes;
   if (typeof valor !== "string") invalido(campo, "campo obrigatório.");
-  const limpo = valor.trim().replace(/\s+/g, " ");
+  if (valor.length > max * 4) invalido(campo, `máximo de ${max} caracteres.`);
+  const limpo = valor.normalize("NFC").replace(FORMATACAO_INVISIVEL, "").replace(CONTROLE, " ").trim().replace(/\s+/g, " ");
   if (limpo.length === 0) invalido(campo, "campo obrigatório.");
   if (limpo.length < min) invalido(campo, `mínimo de ${min} caracteres.`);
   if (limpo.length > max) invalido(campo, `máximo de ${max} caracteres.`);

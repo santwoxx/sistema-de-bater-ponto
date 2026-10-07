@@ -2,13 +2,16 @@ import { FieldValue } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/https";
 import { auth, db } from "./admin";
 import { autor, carregarEmpresa, exigirAcessoEmpresa, exigirDispositivo } from "./acesso";
-import { registrarAuditoria } from "./auditoria";
+import { auditarNa } from "./auditoria";
 import { idAleatorio, senhaAleatoria } from "./seguranca";
 import { idDocumento, objeto, texto } from "./validacao";
 
 // Cada aparelho de ponto (tablet, celular ou PC da loja) recebe uma conta
 // própria, presa a UMA empresa. A conta só consegue registrar ponto: não lê
-// funcionários nem registros. O gestor pode desativá-la a qualquer momento.
+// nada do banco diretamente. O gestor pode desativá-la a qualquer momento.
+
+/** Limite de aparelhos ativos por empresa: contém o estrago de uma conta de gestor invadida. */
+const MAX_APARELHOS_ATIVOS = 50;
 
 export const ativarDispositivo = onCall(async (request) => {
   const dados = objeto(request.data);
@@ -17,6 +20,11 @@ export const ativarDispositivo = onCall(async (request) => {
   if (!empresa.ativo) throw new HttpsError("failed-precondition", "Esta empresa está desativada.");
   const nome = texto(dados.nome, "Nome do aparelho", { min: 2, max: 60 });
 
+  const ativos = await db.collection(`empresas/${empresaId}/dispositivos`).where("ativo", "==", true).count().get();
+  if (ativos.data().count >= MAX_APARELHOS_ATIVOS) {
+    throw new HttpsError("resource-exhausted", `Esta empresa já tem ${MAX_APARELHOS_ATIVOS} aparelhos ativos. Desative os que não usa mais.`);
+  }
+
   const uid = `disp_${idAleatorio(20)}`;
   const senha = senhaAleatoria();
   const projeto = process.env.GCLOUD_PROJECT ?? "ponto";
@@ -24,23 +32,30 @@ export const ativarDispositivo = onCall(async (request) => {
   const email = `${uid}@${projeto}.firebaseapp.com`;
 
   await auth.createUser({ uid, email, password: senha, displayName: `Ponto: ${nome}` });
-  await auth.setCustomUserClaims(uid, { papel: "dispositivo", empresaId });
-  await db.doc(`empresas/${empresaId}/dispositivos/${uid}`).set({
-    nome,
-    ativo: true,
-    criadoEm: FieldValue.serverTimestamp(),
-    criadoPor: autor(usuario),
-    ultimoSinalEm: null,
-    ultimoRegistroEm: null,
-  });
-
-  await registrarAuditoria({
-    empresaId,
-    autor: autor(usuario),
-    acao: "dispositivo.ativado",
-    descricao: `Aparelho de ponto "${nome}" ativado.`,
-    detalhes: { dispositivoId: uid },
-  });
+  try {
+    await auth.setCustomUserClaims(uid, { papel: "dispositivo", empresaId });
+    const lote = db.batch();
+    lote.create(db.doc(`empresas/${empresaId}/dispositivos/${uid}`), {
+      nome,
+      ativo: true,
+      criadoEm: FieldValue.serverTimestamp(),
+      criadoPor: autor(usuario),
+      ultimoSinalEm: null,
+      ultimoRegistroEm: null,
+    });
+    auditarNa(lote, {
+      empresaId,
+      autor: autor(usuario),
+      acao: "dispositivo.ativado",
+      descricao: `Aparelho de ponto "${nome}" ativado.`,
+      detalhes: { dispositivoId: uid },
+    });
+    await lote.commit();
+  } catch (erro) {
+    // Sem o cadastro no banco, a conta do aparelho não pode sobrar no Auth.
+    await auth.deleteUser(uid).catch(() => undefined);
+    throw erro;
+  }
 
   return { email, senha, empresaNome: empresa.nome };
 });
@@ -55,20 +70,25 @@ export const desativarDispositivo = onCall(async (request) => {
   const snap = await ref.get();
   if (!snap.exists) throw new HttpsError("not-found", "Aparelho não encontrado.");
 
+  // Primeiro bloqueia no banco (vale na hora para registros), depois apaga a conta.
+  if (snap.get("ativo") !== false) {
+    const lote = db.batch();
+    lote.update(ref, { ativo: false, desativadoEm: FieldValue.serverTimestamp(), desativadoPor: autor(usuario) });
+    auditarNa(lote, {
+      empresaId,
+      autor: autor(usuario),
+      acao: "dispositivo.desativado",
+      descricao: `Aparelho de ponto "${snap.get("nome")}" desativado.`,
+      detalhes: { dispositivoId },
+    });
+    await lote.commit();
+  }
+
   try {
     await auth.deleteUser(dispositivoId);
   } catch (erro) {
     if ((erro as { code?: string }).code !== "auth/user-not-found") throw erro;
   }
-  await ref.update({ ativo: false, desativadoEm: FieldValue.serverTimestamp(), desativadoPor: autor(usuario) });
-
-  await registrarAuditoria({
-    empresaId,
-    autor: autor(usuario),
-    acao: "dispositivo.desativado",
-    descricao: `Aparelho de ponto "${snap.get("nome")}" desativado.`,
-    detalhes: { dispositivoId },
-  });
 
   return { ok: true };
 });

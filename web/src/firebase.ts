@@ -1,8 +1,14 @@
 import { deleteApp, initializeApp, type FirebaseOptions } from 'firebase/app'
-import { connectAuthEmulator, getAuth, inMemoryPersistence, initializeAuth, type Auth } from 'firebase/auth'
+import {
+  browserLocalPersistence,
+  connectAuthEmulator,
+  indexedDBLocalPersistence,
+  inMemoryPersistence,
+  initializeAuth,
+  type Auth,
+} from 'firebase/auth'
 import { connectFirestoreEmulator, getFirestore, type Firestore } from 'firebase/firestore'
 import { connectFunctionsEmulator, getFunctions, type Functions } from 'firebase/functions'
-import { connectStorageEmulator, getStorage } from 'firebase/storage'
 
 const env = import.meta.env
 
@@ -32,13 +38,13 @@ function conectarEmuladores(servicos: { auth: Auth; db?: Firestore; functions: F
 }
 
 export const app = initializeApp(configuracao)
-export const auth = getAuth(app)
+// Sem o módulo de popup/redirecionamento (só usamos e-mail e senha): ele carregaria
+// um iframe e scripts do Google que a política de segurança do site bloqueia.
+export const auth = initializeAuth(app, { persistence: [indexedDBLocalPersistence, browserLocalPersistence] })
 export const db = getFirestore(app)
-export const storage = getStorage(app)
 export const functions = getFunctions(app, REGIAO_FUNCOES)
 
 conectarEmuladores({ auth, db, functions })
-if (usarEmuladores) connectStorageEmulator(storage, hostEmulador, 9199)
 
 export interface SessaoTemporaria {
   auth: Auth

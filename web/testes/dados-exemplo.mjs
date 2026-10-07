@@ -35,7 +35,8 @@ if ((await getDoc(doc(db, 'sistema', 'estado'))).exists()) {
 }
 
 const SENHA = 'senha1234'
-await chamar('configurarPrimeiroAdmin', { nome: 'Administrador', email: 'admin@teste.com', senha: SENHA })
+// Código de instalação dos emuladores (functions/.env.demo-ponto).
+await chamar('configurarPrimeiroAdmin', { nome: 'Administrador', email: 'admin@teste.com', senha: SENHA, codigo: 'TESTE-LOCAL' })
 await signInWithEmailAndPassword(auth, 'admin@teste.com', SENHA)
 
 // O histórico de exemplo começa no mês anterior, para dar o que fechar e assinar.
@@ -123,7 +124,7 @@ Dados de exemplo criados (${incluidas} marcações de histórico em ${mesAnterio
     admin@teste.com    administrador, vê todas as empresas
     gestora@teste.com  gestora, vê só a Loja Centro
 
-  Funcionários para bater o ponto:
+  Funcionários (PIN provisório: no primeiro uso o aparelho pede para criar o PIN pessoal):
     Loja Centro          matrícula 1 / PIN 2580 (Maria)
                          matrícula 2 / PIN 1357 (João)
                          matrícula 3 / PIN 2468 (Ana)

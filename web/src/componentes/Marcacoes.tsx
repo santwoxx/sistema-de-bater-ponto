@@ -1,8 +1,6 @@
-import { getDownloadURL, ref } from 'firebase/storage'
 import { Ban, ImageOff, LoaderCircle, PencilLine, RotateCcw } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { api } from '../api'
-import { storage } from '../firebase'
 import { mensagemErro } from '../lib/erros'
 import { formatarNsr, mascararCpf } from '../lib/formatos'
 import { dataLocal, formatarData, formatarDataHora, hhmmParaMinutos } from '../lib/tempo'
@@ -30,29 +28,39 @@ export function Miniatura({ registro, tamanho = 40, aoClicar }: { registro: Regi
   )
 }
 
-function FotoCompleta({ caminho, alt }: { caminho: string; alt: string }) {
-  const [url, setUrl] = useState<string | null>(null)
+// A foto vem pelo servidor (não há link público): ele confere o acesso à empresa
+// e se o arquivo é o mesmo gravado no momento da marcação.
+function FotoCompleta({ empresaId, registroId, alt }: { empresaId: string; registroId: string; alt: string }) {
+  const [foto, setFoto] = useState<{ url: string; confere: boolean } | null>(null)
   const [erro, setErro] = useState<string | null>(null)
 
   useEffect(() => {
     let ativo = true
-    getDownloadURL(ref(storage, caminho))
-      .then((u) => ativo && setUrl(u))
+    api
+      .obterFoto({ empresaId, registroId })
+      .then((r) => ativo && setFoto({ url: r.foto, confere: r.confere }))
       .catch((e) => ativo && setErro(mensagemErro(e)))
     return () => {
       ativo = false
     }
-  }, [caminho])
+  }, [empresaId, registroId])
 
   if (erro) return <div className="foto-grande foto-grande-vazia">{erro}</div>
-  if (!url) {
+  if (!foto) {
     return (
       <div className="foto-grande foto-grande-vazia">
         <LoaderCircle className="girando" aria-hidden /> Carregando foto...
       </div>
     )
   }
-  return <img className="foto-grande" src={url} alt={alt} />
+  return (
+    <>
+      <img className="foto-grande" src={foto.url} alt={alt} />
+      {!foto.confere && (
+        <Aviso tipo="erro">A foto guardada não confere com a registrada no momento da marcação: o arquivo foi alterado.</Aviso>
+      )}
+    </>
+  )
 }
 
 export function DetalhesRegistro({ registro, empresa, aoFechar }: { registro: Registro; empresa: Empresa; aoFechar: () => void }) {
@@ -90,7 +98,7 @@ export function DetalhesRegistro({ registro, empresa, aoFechar }: { registro: Re
       <div className="detalhes-registro">
         <div>
           {registro.fotoPath ? (
-            <FotoCompleta caminho={registro.fotoPath} alt={`Foto de ${registro.funcionarioNome}`} />
+            <FotoCompleta empresaId={empresa.id} registroId={registro.id} alt={`Foto de ${registro.funcionarioNome}`} />
           ) : (
             <div className="foto-grande foto-grande-vazia">Marcação incluída manualmente: sem foto.</div>
           )}

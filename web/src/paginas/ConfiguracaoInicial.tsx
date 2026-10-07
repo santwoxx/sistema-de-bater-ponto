@@ -17,6 +17,7 @@ export default function ConfiguracaoInicial() {
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
   const [confirmacao, setConfirmacao] = useState('')
+  const [codigo, setCodigo] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState('')
 
@@ -36,7 +37,7 @@ export default function ConfiguracaoInicial() {
     if (senha !== confirmacao) return setErro('As senhas não conferem.')
     setEnviando(true)
     try {
-      await api.configurarPrimeiroAdmin({ nome: nome.trim(), email: email.trim(), senha })
+      await api.configurarPrimeiroAdmin({ nome: nome.trim(), email: email.trim(), senha, codigo: codigo.trim() })
       await signInWithEmailAndPassword(auth, email.trim(), senha)
       navigate('/admin', { replace: true })
     } catch (err) {
@@ -69,8 +70,17 @@ export default function ConfiguracaoInicial() {
             <Aviso tipo="info">
               Crie a conta do <strong>administrador principal</strong>. Ele poderá cadastrar empresas, gestores e funcionários.
             </Aviso>
+            <Campo rotulo="Código de instalação" ajuda="Aparece na janela de publicação do sistema. Só quem publicou o sistema tem.">
+              <input
+                value={codigo}
+                onChange={(e) => setCodigo(e.target.value.toUpperCase())}
+                autoComplete="off"
+                spellCheck={false}
+                autoFocus
+              />
+            </Campo>
             <Campo rotulo="Seu nome">
-              <input value={nome} onChange={(e) => setNome(e.target.value)} required minLength={3} autoFocus />
+              <input value={nome} onChange={(e) => setNome(e.target.value)} required minLength={3} />
             </Campo>
             <Campo rotulo="E-mail">
               <input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />

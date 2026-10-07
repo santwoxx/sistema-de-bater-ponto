@@ -2,7 +2,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/https";
 import { db } from "./admin";
 import { PADROES_EMPRESA, autor, exigirAdmin } from "./acesso";
-import { registrarAuditoria } from "./auditoria";
+import { auditarNa } from "./auditoria";
 import { dataLocal } from "./tempo";
 import { booleano, cnpjOpcional, dataISO, fusoHorario, idOpcional, inteiro, objeto, texto } from "./validacao";
 
@@ -38,7 +38,9 @@ export const salvarEmpresa = onCall(async (request) => {
   if (id && !(await ref.get()).exists) throw new HttpsError("not-found", "Empresa não encontrada.");
 
   const agora = FieldValue.serverTimestamp();
-  await ref.set(
+  const lote = db.batch();
+  lote.set(
+    ref,
     {
       nome,
       cnpj,
@@ -55,8 +57,7 @@ export const salvarEmpresa = onCall(async (request) => {
     },
     { merge: true },
   );
-
-  await registrarAuditoria({
+  auditarNa(lote, {
     empresaId: null,
     autor: autor(usuario),
     acao: id ? "empresa.atualizada" : "empresa.criada",
@@ -72,6 +73,7 @@ export const salvarEmpresa = onCall(async (request) => {
       ...(inicioInformado ? { inicioControle } : {}),
     },
   });
+  await lote.commit();
 
   return { id: ref.id };
 });

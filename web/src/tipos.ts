@@ -40,6 +40,8 @@ export interface Funcionario {
   jornada: number[]
   ativo: boolean
   pinDefinido: boolean
+  /** PIN definido pelo gestor, ainda não trocado pelo funcionário no aparelho. */
+  pinProvisorio: boolean
 }
 
 export interface Desconsideracao {
@@ -218,6 +220,7 @@ export function paraFuncionario(snap: DocumentSnapshot): Funcionario {
     jornada: Array.isArray(d.jornada) && d.jornada.length === 7 ? d.jornada : JORNADA_PADRAO,
     ativo: d.ativo !== false,
     pinDefinido: d.pinDefinido === true,
+    pinProvisorio: d.pinProvisorio === true,
   }
 }
 

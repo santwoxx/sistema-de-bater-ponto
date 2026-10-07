@@ -16,8 +16,6 @@ const MENSAGENS: Record<string, string> = {
   'functions/not-found': 'Função não encontrada no servidor. As Cloud Functions foram publicadas?',
   'permission-denied': 'Você não tem permissão para ver estes dados.',
   unavailable: 'Sem conexão com o servidor. Verificando novamente...',
-  'storage/unauthorized': 'Sem permissão para ver esta foto.',
-  'storage/object-not-found': 'Foto não encontrada.',
 }
 
 export function codigoErro(erro: unknown): string {
@@ -43,4 +41,9 @@ export function erroDeRede(erro: unknown): boolean {
   return ['functions/unavailable', 'functions/deadline-exceeded', 'functions/internal', 'auth/network-request-failed'].includes(
     codigoErro(erro),
   )
+}
+
+/** O servidor recusou porque o PIN usado é o provisório: o funcionário precisa criar o dele. */
+export function pinProvisorio(erro: unknown): boolean {
+  return (erro as { details?: { motivo?: string } } | null)?.details?.motivo === 'pin-provisorio'
 }

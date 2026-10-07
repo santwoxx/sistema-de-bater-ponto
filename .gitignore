@@ -5,6 +5,9 @@ dist/
 .env
 .env.local
 *.local
+# Variáveis das funções por projeto (ex.: código de instalação de produção).
+/functions/.env.*
+!/functions/.env.demo-ponto
 *.log
 .firebase/
 firebase-debug.log*

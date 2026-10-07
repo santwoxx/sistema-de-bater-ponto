@@ -1877,6 +1877,11 @@ html.modo-ponto body {
   padding: 10px 12px;
 }
 
+/* Número ímpar de atalhos: o último ocupa a linha inteira. */
+.terminal-atalhos .terminal-esqueci:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+
 /* Conferência do espelho no aparelho de ponto */
 
 .conferencia {
@@ -2360,4 +2365,33 @@ html.modo-ponto body {
   @page {
     margin: 12mm;
   }
+}
+
+/* Verificação de integridade (Auditoria) */
+
+.integridade {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 20px;
+  margin-bottom: 12px;
+}
+
+.integridade > div {
+  flex: 1 1 320px;
+}
+
+.integridade h2 {
+  font-size: 1.05rem;
+  margin-bottom: 6px;
+}
+
+.integridade p {
+  margin: 0;
+}
+
+.lista-problemas {
+  margin: 8px 0 4px;
+  padding-left: 18px;
 }

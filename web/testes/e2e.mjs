@@ -18,10 +18,15 @@ import {
   where,
 } from 'firebase/firestore'
 import { connectFunctionsEmulator, getFunctions, httpsCallable } from 'firebase/functions'
-import { connectStorageEmulator, getDownloadURL, getStorage, ref } from 'firebase/storage'
+import { connectStorageEmulator, getBytes, getStorage, ref } from 'firebase/storage'
 
 const PROJETO = process.env.GCLOUD_PROJECT || 'demo-ponto'
 const config = { apiKey: 'demo-chave', projectId: PROJETO, storageBucket: `${PROJETO}.appspot.com`, appId: 'demo-app' }
+// Código de instalação dos emuladores (functions/.env.demo-ponto).
+const CODIGO_INSTALACAO = 'TESTE-LOCAL'
+// PINs pessoais que os funcionários criam no aparelho (os do gestor são provisórios).
+const PIN_MARIA = '3691'
+const PIN_JOAO = '9173'
 
 let total = 0
 async function etapa(nome, fn) {
@@ -44,6 +49,18 @@ function cliente(nome) {
   const chamar = async (funcao, dados = {}) => (await httpsCallable(functions, funcao)(dados)).data
   const entrar = (email, senha) => signInWithEmailAndPassword(auth, email, senha)
   return { auth, db, storage, chamar, entrar }
+}
+
+// Altera um documento direto no emulador, sem passar pelas regras (simula alguém
+// mexendo no banco pelo Console do Firebase).
+async function adulterar(caminho, campo, valor) {
+  const url = `http://127.0.0.1:8080/v1/projects/${PROJETO}/databases/(default)/documents/${caminho}?updateMask.fieldPaths=${campo}`
+  const resposta = await fetch(url, {
+    method: 'PATCH',
+    headers: { Authorization: 'Bearer owner', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fields: { [campo]: { stringValue: valor } } }),
+  })
+  assert.equal(resposta.ok, true, `falha ao alterar ${caminho}: ${resposta.status}`)
 }
 
 async function falha(promessa, codigo, trecho) {
@@ -80,11 +97,14 @@ const outraGestora = cliente('outra')
 const aparelho = cliente('aparelho')
 let empresaA, empresaB, maria, joao, credAparelho, uidAparelho, primeiro
 
-await etapa('configuração inicial cria o administrador uma única vez', async () => {
+await etapa('configuração inicial exige o código de instalação e cria o administrador uma única vez', async () => {
   assert.equal((await getDoc(doc(anonimo.db, 'sistema', 'estado'))).exists(), false)
-  await anonimo.chamar('configurarPrimeiroAdmin', { nome: 'Ana Admin', email: 'admin@teste.com', senha: 'senha-forte-123' })
+  const dados = { nome: 'Ana Admin', email: 'admin@teste.com', senha: 'senha-forte-123' }
+  await falha(anonimo.chamar('configurarPrimeiroAdmin', dados), 'functions/permission-denied', /Código de instalação/)
+  await falha(anonimo.chamar('configurarPrimeiroAdmin', { ...dados, codigo: 'CHUTE-1234' }), 'functions/permission-denied')
+  await anonimo.chamar('configurarPrimeiroAdmin', { ...dados, codigo: CODIGO_INSTALACAO.toLowerCase() })
   await falha(
-    anonimo.chamar('configurarPrimeiroAdmin', { nome: 'Intruso', email: 'x@teste.com', senha: 'senha-forte-123' }),
+    anonimo.chamar('configurarPrimeiroAdmin', { nome: 'Intruso', email: 'x@teste.com', senha: 'senha-forte-123', codigo: CODIGO_INSTALACAO }),
     'functions/failed-precondition',
   )
   assert.equal((await getDoc(doc(anonimo.db, 'sistema', 'estado'))).exists(), true)
@@ -172,14 +192,15 @@ await etapa('admin não consegue remover o próprio acesso', async () => {
   )
 })
 
-await etapa('gestora ativa um aparelho; ele só registra ponto', async () => {
+await etapa('gestora ativa um aparelho; ele não lê nada do banco, só fala com as funções', async () => {
   credAparelho = await gestora.chamar('ativarDispositivo', { empresaId: empresaA, nome: 'Tablet do caixa' })
   const { user } = await aparelho.entrar(credAparelho.email, credAparelho.senha)
   uidAparelho = user.uid
   const token = await user.getIdTokenResult()
   assert.equal(token.claims.papel, 'dispositivo')
   assert.equal(token.claims.empresaId, empresaA)
-  assert.equal((await getDoc(doc(aparelho.db, 'empresas', empresaA))).get('nome'), 'Loja Centro')
+  await falha(getDoc(doc(aparelho.db, 'empresas', empresaA)), 'permission-denied')
+  await falha(getDoc(doc(aparelho.db, 'empresas', empresaA, 'dispositivos', uidAparelho)), 'permission-denied')
   await falha(getDocs(collection(aparelho.db, 'empresas', empresaA, 'funcionarios')), 'permission-denied')
   await falha(getDocs(collection(aparelho.db, 'empresas', empresaA, 'registros')), 'permission-denied')
   await falha(getDoc(doc(aparelho.db, 'empresas', empresaB)), 'permission-denied')
@@ -190,10 +211,37 @@ await etapa('gestora ativa um aparelho; ele só registra ponto', async () => {
   assert.ok(Math.abs(sinc.agora - Date.now()) < 60_000)
 })
 
+await etapa('PIN do gestor é provisório: só serve para o funcionário criar o PIN pessoal', async () => {
+  const provisorio = async (promessa) => {
+    const e = await falha(promessa, 'functions/failed-precondition', /PIN pessoal/)
+    assert.equal(e.details?.motivo, 'pin-provisorio')
+  }
+  await provisorio(aparelho.chamar('registrarPonto', { idRequisicao: id(), matricula: '12', pin: '2580', foto: jpeg(900), miniatura: jpeg(200) }))
+  await provisorio(aparelho.chamar('consultarEspelhosPendentes', { matricula: '12', pin: '2580' }))
+  await provisorio(
+    aparelho.chamar('solicitarMarcacao', { matricula: '12', pin: '2580', data: dataSaoPaulo(-1), hora: '08:00', motivo: 'Esqueci', miniatura: null }),
+  )
+  // Nada foi gravado com o PIN provisório.
+  assert.equal((await getDocs(collection(gestora.db, 'empresas', empresaA, 'registros'))).size, 0)
+
+  const definir = (dados) => aparelho.chamar('definirPin', { matricula: '12', pin: '2580', miniatura: jpeg(200), ...dados })
+  await falha(definir({ novoPin: '1111' }), 'functions/invalid-argument', /adivinhar/)
+  await falha(definir({ novoPin: '2580' }), 'functions/invalid-argument', /diferente/)
+  await falha(definir({ pin: '0000', novoPin: PIN_MARIA }), 'functions/permission-denied', /inválidos/)
+  await falha(gestora.chamar('definirPin', { matricula: '12', pin: '2580', novoPin: PIN_MARIA }), 'functions/permission-denied')
+  assert.equal((await definir({ novoPin: PIN_MARIA })).funcionarioNome, 'Maria Souza')
+
+  const funcionario = await getDoc(doc(gestora.db, 'empresas', empresaA, 'funcionarios', maria))
+  assert.equal(funcionario.get('pinProvisorio'), false)
+  // O PIN provisório deixa de valer; o pessoal só a funcionária conhece.
+  await falha(aparelho.chamar('consultarEspelhosPendentes', { matricula: '12', pin: '2580' }), 'functions/permission-denied')
+  assert.equal((await aparelho.chamar('consultarEspelhosPendentes', { matricula: '12', pin: PIN_MARIA })).funcionarioNome, 'Maria Souza')
+})
+
 const fotoMaria = jpeg(3000)
 await etapa('registro de ponto com foto gera NSR, hash e comprovante', async () => {
   const idRequisicao = id()
-  primeiro = await aparelho.chamar('registrarPonto', { idRequisicao, matricula: '0012', pin: '2580', foto: fotoMaria, miniatura: jpeg(500) })
+  primeiro = await aparelho.chamar('registrarPonto', { idRequisicao, matricula: '0012', pin: PIN_MARIA, foto: fotoMaria, miniatura: jpeg(500) })
   assert.equal(primeiro.nsr, 1)
   assert.equal(primeiro.tipo, 'entrada')
   assert.equal(primeiro.ordinal, 1)
@@ -202,40 +250,57 @@ await etapa('registro de ponto com foto gera NSR, hash e comprovante', async () 
   assert.ok(Math.abs(primeiro.dataHora - Date.now()) < 60_000)
 
   // Reenvio da mesma requisição (ex.: internet caiu na resposta) não duplica.
-  const reenvio = await aparelho.chamar('registrarPonto', { idRequisicao, matricula: '12', pin: '2580', foto: fotoMaria, miniatura: jpeg(500) })
+  const reenvio = await aparelho.chamar('registrarPonto', { idRequisicao, matricula: '12', pin: PIN_MARIA, foto: fotoMaria, miniatura: jpeg(500) })
   assert.equal(reenvio.nsr, 1)
   assert.equal(reenvio.registroId, primeiro.registroId)
+  // O reenvio também exige o PIN certo: sem ele, não devolve nem o comprovante.
+  await falha(
+    aparelho.chamar('registrarPonto', { idRequisicao, matricula: '12', pin: '9998', foto: fotoMaria, miniatura: jpeg(500) }),
+    'functions/permission-denied',
+  )
 })
 
 await etapa('batida repetida em seguida é bloqueada; PIN errado e matrícula inexistente recusados', async () => {
-  const novo = () => ({ idRequisicao: id(), matricula: '12', pin: '2580', foto: jpeg(1000), miniatura: jpeg(300) })
+  const novo = () => ({ idRequisicao: id(), matricula: '12', pin: PIN_MARIA, foto: jpeg(1000), miniatura: jpeg(300) })
   await falha(aparelho.chamar('registrarPonto', novo()), 'functions/failed-precondition', /já registrado/)
   await falha(aparelho.chamar('registrarPonto', { ...novo(), pin: '9999' }), 'functions/permission-denied', /inválidos/)
   await falha(aparelho.chamar('registrarPonto', { ...novo(), matricula: '4040' }), 'functions/permission-denied', /inválidos/)
   await falha(aparelho.chamar('registrarPonto', { ...novo(), foto: 'data:image/jpeg;base64,AAAA' }), 'functions/invalid-argument')
 })
 
-await etapa('gestora vê a marcação, a foto confere com o hash e a cadeia é verificável', async () => {
+await etapa('gestora vê a marcação e a foto (pelo servidor), que confere com o hash; a cadeia é verificável', async () => {
   const snaps = await getDocs(collection(gestora.db, 'empresas', empresaA, 'registros'))
   assert.equal(snaps.size, 1)
+  const registroId = snaps.docs[0].id
   const r = snaps.docs[0].data()
   assert.equal(r.funcionarioId, maria)
   assert.equal(r.origem, 'dispositivo')
   assert.equal(r.dispositivoId, uidAparelho)
   assert.equal(r.hashAnterior, '0'.repeat(64))
   const esperado = sha256(
-    [r.hashAnterior, r.nsr, empresaA, r.funcionarioId, r.funcionarioCpf, r.dataHora.toDate().toISOString(), r.fotoSha256, r.dispositivoId].join('|'),
+    [
+      r.hashAnterior,
+      r.nsr,
+      empresaA,
+      r.funcionarioId,
+      r.funcionarioCpf,
+      r.dataHora.toDate().toISOString(),
+      r.dataLocal,
+      r.horaLocal,
+      r.fotoSha256,
+      r.dispositivoId,
+    ].join('|'),
   )
   assert.equal(r.hash, esperado)
   assert.ok(r.miniatura.startsWith('data:image/jpeg;base64,'))
 
-  const url = await getDownloadURL(ref(gestora.storage, r.fotoPath))
-  const bytes = Buffer.from(await (await fetch(url)).arrayBuffer())
-  assert.equal(sha256(bytes), r.fotoSha256)
-  assert.equal(bytes.toString('base64'), fotoMaria.split(',')[1])
+  const { foto, confere } = await gestora.chamar('obterFoto', { empresaId: empresaA, registroId })
+  assert.equal(confere, true)
+  assert.equal(sha256(Buffer.from(foto.split(',')[1], 'base64')), r.fotoSha256)
+  assert.equal(foto, fotoMaria)
 })
 
-await etapa('foto não é visível para quem não tem acesso à empresa', async () => {
+await etapa('foto não sai para quem não tem acesso à empresa, nem direto do Storage', async () => {
   await admin.chamar('salvarUsuario', {
     nome: 'Olga Outra',
     email: 'outra@teste.com',
@@ -245,9 +310,14 @@ await etapa('foto não é visível para quem não tem acesso à empresa', async 
     ativo: true,
   })
   await outraGestora.entrar('outra@teste.com', 'senha-outra-12')
-  const r = (await getDocs(collection(gestora.db, 'empresas', empresaA, 'registros'))).docs[0].data()
-  await falha(getDownloadURL(ref(outraGestora.storage, r.fotoPath)), 'storage/unauthorized')
-  await falha(getDownloadURL(ref(aparelho.storage, r.fotoPath)), 'storage/unauthorized')
+  const doc0 = (await getDocs(collection(gestora.db, 'empresas', empresaA, 'registros'))).docs[0]
+  const pedido = { empresaId: empresaA, registroId: doc0.id }
+  await falha(outraGestora.chamar('obterFoto', pedido), 'functions/permission-denied')
+  await falha(aparelho.chamar('obterFoto', pedido), 'functions/permission-denied')
+  await falha(anonimo.chamar('obterFoto', pedido), 'functions/unauthenticated')
+  // Nem quem tem acesso à empresa lê o arquivo direto: não existe link público.
+  await falha(getBytes(ref(gestora.storage, doc0.get('fotoPath'))), 'storage/unauthorized')
+  await falha(getBytes(ref(aparelho.storage, doc0.get('fotoPath'))), 'storage/unauthorized')
 })
 
 await etapa('segunda batida vira saída e encadeia com o hash anterior', async () => {
@@ -262,7 +332,7 @@ await etapa('segunda batida vira saída e encadeia com o hash anterior', async (
   })
   // Editar sem enviar o início do controle não o apaga.
   assert.equal((await getDoc(doc(admin.db, 'empresas', empresaA))).get('inicioControle'), dataSaoPaulo())
-  const segundo = await aparelho.chamar('registrarPonto', { idRequisicao: id(), matricula: '12', pin: '2580', foto: jpeg(1200), miniatura: jpeg(300) })
+  const segundo = await aparelho.chamar('registrarPonto', { idRequisicao: id(), matricula: '12', pin: PIN_MARIA, foto: jpeg(1200), miniatura: jpeg(300) })
   assert.equal(segundo.nsr, 2)
   assert.equal(segundo.tipo, 'saida')
   assert.equal(segundo.ordinal, 2)
@@ -270,23 +340,44 @@ await etapa('segunda batida vira saída e encadeia com o hash anterior', async (
   assert.equal(regs[1].hashAnterior, regs[0].hash)
 })
 
-await etapa('5 PINs errados bloqueiam a matrícula; redefinir o PIN desbloqueia', async () => {
+await etapa('PIN errado: bloqueio da matrícula com foto na auditoria, inclusive contra tentativas em paralelo', async () => {
   const tentativa = (pin) => aparelho.chamar('registrarPonto', { idRequisicao: id(), matricula: '7', pin, foto: jpeg(800), miniatura: jpeg(200) })
   for (let i = 0; i < 5; i++) await falha(tentativa('0001'), 'functions/permission-denied')
   await falha(tentativa('1357'), 'functions/resource-exhausted', /Muitas tentativas/)
-  await gestora.chamar('salvarFuncionario', {
-    empresaId: empresaA,
-    id: joao,
-    nome: 'João Lima',
-    cpf: '11144477735',
-    matricula: '7',
-    cargo: '',
-    admissao: null,
-    jornada: JORNADA,
-    ativo: true,
-    pin: '8642',
-  })
-  const ok = await tentativa('8642')
+  const bloqueios = (await getDocs(query(collection(gestora.db, 'empresas', empresaA, 'auditoria'), where('acao', '==', 'pin.bloqueado')))).docs
+  assert.equal(bloqueios.length, 1)
+  assert.match(bloqueios[0].get('descricao'), /Matrícula 7 \(João Lima\) bloqueada por 15 min/)
+  assert.ok(bloqueios[0].get('detalhes').foto.startsWith('data:image/jpeg;base64,'))
+
+  const redefinir = () =>
+    gestora.chamar('salvarFuncionario', {
+      empresaId: empresaA,
+      id: joao,
+      nome: 'João Lima',
+      cpf: '11144477735',
+      matricula: '7',
+      cargo: '',
+      admissao: null,
+      jornada: JORNADA,
+      ativo: true,
+      pin: '8642',
+    })
+  await redefinir()
+  assert.equal((await getDoc(doc(gestora.db, 'empresas', empresaA, 'funcionarios', joao))).get('pinProvisorio'), true)
+
+  // Ataque em paralelo: 12 PINs errados disparados juntos. Cada tentativa é
+  // reservada antes da conferência, então no máximo 5 PINs chegam a ser testados.
+  const resultados = await Promise.allSettled(Array.from({ length: 12 }, (_, i) => tentativa(String(4000 + i * 7))))
+  assert.equal(resultados.filter((r) => r.status === 'fulfilled').length, 0)
+  const testados = resultados.filter((r) => r.reason?.code === 'functions/permission-denied').length
+  assert.ok(testados <= 5, testados + ' PINs foram testados em paralelo (o máximo é 5)')
+  for (let i = testados; i < 5; i++) await falha(tentativa('0002'), 'functions/permission-denied')
+  await falha(tentativa('8642'), 'functions/resource-exhausted', /Muitas tentativas/)
+
+  // Para quem esqueceu: o gestor redefine (provisório de novo) e o funcionário cria o PIN pessoal.
+  await redefinir()
+  await aparelho.chamar('definirPin', { matricula: '7', pin: '8642', novoPin: PIN_JOAO, miniatura: null })
+  const ok = await tentativa(PIN_JOAO)
   assert.equal(ok.nsr, 3)
   assert.equal(ok.funcionarioNome, 'João Lima')
 })
@@ -357,7 +448,7 @@ await etapa('abonos: feriado coletivo e férias individuais, sem duplicar; só q
 
 await etapa('solicitações: funcionário pede no aparelho, gestora aprova ou recusa, admin registra pelo painel', async () => {
   const ontem = dataSaoPaulo(-1)
-  const pedido = { matricula: '7', pin: '8642', data: ontem, hora: '18:00', motivo: 'Esqueci de registrar', miniatura: jpeg(400) }
+  const pedido = { matricula: '7', pin: PIN_JOAO, data: ontem, hora: '18:00', motivo: 'Esqueci de registrar', miniatura: jpeg(400) }
   await falha(aparelho.chamar('solicitarMarcacao', { ...pedido, pin: '0001' }), 'functions/permission-denied', /inválidos/)
   await falha(aparelho.chamar('solicitarMarcacao', { ...pedido, data: dataSaoPaulo(1) }), 'functions/invalid-argument', /futuro/)
   await falha(aparelho.chamar('solicitarMarcacao', { ...pedido, data: dataSaoPaulo(-40) }), 'functions/invalid-argument', /últimos/)
@@ -470,13 +561,13 @@ await etapa('fechamento do mês: espelho congelado, assinado ou contestado no ap
 
   // Maria confere e assina no aparelho.
   await falha(aparelho.chamar('consultarEspelhosPendentes', { matricula: '12', pin: '9999' }), 'functions/permission-denied')
-  const pendentes = await aparelho.chamar('consultarEspelhosPendentes', { matricula: '12', pin: '2580' })
+  const pendentes = await aparelho.chamar('consultarEspelhosPendentes', { matricula: '12', pin: PIN_MARIA })
   assert.equal(pendentes.funcionarioNome, 'Maria Souza')
   assert.equal(pendentes.espelhos.length, 1)
   const espelho = pendentes.espelhos[0]
   assert.equal(espelho.hash, fechado.get('hash'))
   assert.equal(espelho.documento.dias.length > 27, true)
-  const assinar = (dados) => aparelho.chamar('assinarEspelho', { matricula: '12', pin: '2580', espelhoId: espelho.id, miniatura: jpeg(300), ...dados })
+  const assinar = (dados) => aparelho.chamar('assinarEspelho', { matricula: '12', pin: PIN_MARIA, espelhoId: espelho.id, miniatura: jpeg(300), ...dados })
   await falha(assinar({ hash: '0'.repeat(64), concordo: true }), 'functions/failed-precondition', /atualizado/)
   const assinado = await assinar({ hash: espelho.hash, concordo: true })
   assert.equal(assinado.status, 'assinado')
@@ -507,14 +598,14 @@ await etapa('fechamento do mês: espelho congelado, assinado ou contestado no ap
   assert.equal(versao1.get('assinatura').codigo, assinado.codigo)
 
   // João contesta; a gestora reenvia com motivo.
-  const doJoao = (await aparelho.chamar('consultarEspelhosPendentes', { matricula: '7', pin: '8642' })).espelhos[0]
+  const doJoao = (await aparelho.chamar('consultarEspelhosPendentes', { matricula: '7', pin: PIN_JOAO })).espelhos[0]
   await falha(
-    aparelho.chamar('assinarEspelho', { matricula: '7', pin: '8642', espelhoId: doJoao.id, hash: doJoao.hash, concordo: false, motivo: 'ok' }),
+    aparelho.chamar('assinarEspelho', { matricula: '7', pin: PIN_JOAO, espelhoId: doJoao.id, hash: doJoao.hash, concordo: false, motivo: 'ok' }),
     'functions/invalid-argument',
   )
   const contestado = await aparelho.chamar('assinarEspelho', {
     matricula: '7',
-    pin: '8642',
+    pin: PIN_JOAO,
     espelhoId: doJoao.id,
     hash: doJoao.hash,
     concordo: false,
@@ -596,9 +687,49 @@ await etapa('exportação por empresa com filtros: marcações, espelho diário,
   await falha(exportar({ tipo: 'marcacoes', funcionarioIds: [] }), 'functions/invalid-argument')
 })
 
+await etapa('verificação de integridade aponta marcação adulterada direto no banco', async () => {
+  const limpa = await gestora.chamar('verificarIntegridade', { empresaId: empresaA })
+  assert.equal(limpa.totalProblemas, 0)
+  assert.equal(limpa.marcacoesAparelho, 3)
+  assert.equal(limpa.ultimoNsr, 3)
+  assert.ok(limpa.marcacoesManuais > 0)
+  await falha(outraGestora.chamar('verificarIntegridade', { empresaId: empresaA }), 'functions/permission-denied')
+
+  // Alguém muda o horário de uma marcação direto no banco (como pelo Console do Firebase).
+  const alvo = (await getDocs(query(collection(gestora.db, 'empresas', empresaA, 'registros'), where('nsr', '==', 2)))).docs[0]
+  const original = alvo.get('horaLocal')
+  await adulterar(`empresas/${empresaA}/registros/${alvo.id}`, 'horaLocal', '06:00:00')
+  const adulterada = await gestora.chamar('verificarIntegridade', { empresaId: empresaA })
+  assert.equal(adulterada.totalProblemas, 1)
+  assert.equal(adulterada.problemas[0].registroId, alvo.id)
+  assert.match(adulterada.problemas[0].descricao, /NSR 2 .*alterados/)
+  await adulterar(`empresas/${empresaA}/registros/${alvo.id}`, 'horaLocal', original)
+  assert.equal((await gestora.chamar('verificarIntegridade', { empresaId: empresaA })).totalProblemas, 0)
+})
+
+await etapa('aparelho bloqueia depois de 25 tentativas inválidas (PIN comum testado em várias matrículas)', async () => {
+  const celular = cliente('celular')
+  const cred = await gestora.chamar('ativarDispositivo', { empresaId: empresaA, nome: 'Celular de teste' })
+  await celular.entrar(cred.email, cred.senha)
+  const tentativa = (matricula, pin) =>
+    celular.chamar('registrarPonto', { idRequisicao: id(), matricula, pin, foto: jpeg(800), miniatura: jpeg(200) })
+  // Nenhuma matrícula chega a 5 erros, mas o aparelho soma todos.
+  for (let i = 0; i < 25; i++) await falha(tentativa(String(500 + i), '2468'), 'functions/permission-denied')
+  await falha(tentativa('12', PIN_MARIA), 'functions/resource-exhausted', /neste aparelho/)
+  const bloqueios = await getDocs(query(collection(gestora.db, 'empresas', empresaA, 'auditoria'), where('acao', '==', 'aparelho.bloqueado')))
+  assert.equal(bloqueios.size, 1)
+  // O outro aparelho da loja continua funcionando.
+  const ok = await aparelho.chamar('registrarPonto', { idRequisicao: id(), matricula: '12', pin: PIN_MARIA, foto: jpeg(900), miniatura: jpeg(200) })
+  assert.equal(ok.nsr, 4)
+})
+
 await etapa('auditoria registra as ações; a do sistema é só do admin', async () => {
   const acoes = (await getDocs(collection(gestora.db, 'empresas', empresaA, 'auditoria'))).docs.map((d) => d.get('acao'))
   for (const acao of [
+    'pin.criado',
+    'pin.bloqueado',
+    'aparelho.bloqueado',
+    'integridade.verificada',
     'funcionario.criado',
     'funcionario.atualizado',
     'dispositivo.ativado',
@@ -625,7 +756,7 @@ await etapa('auditoria registra as ações; a do sistema é só do admin', async
 await etapa('aparelho desativado para de registrar na hora', async () => {
   await gestora.chamar('desativarDispositivo', { empresaId: empresaA, dispositivoId: uidAparelho })
   await falha(
-    aparelho.chamar('registrarPonto', { idRequisicao: id(), matricula: '12', pin: '2580', foto: jpeg(900), miniatura: jpeg(200) }),
+    aparelho.chamar('registrarPonto', { idRequisicao: id(), matricula: '12', pin: PIN_MARIA, foto: jpeg(900), miniatura: jpeg(200) }),
     'functions/permission-denied',
     /desativado/,
   )

@@ -10,6 +10,7 @@ import { db } from '../../firebase'
 import { useColecao } from '../../hooks/useColecao'
 import { mensagemErro } from '../../lib/erros'
 import { cpfValido, formatarCpf, normalizarBusca, somenteDigitos } from '../../lib/formatos'
+import { problemaNoPin } from '../../lib/pin'
 import { hhmmParaMinutos, minutosParaHHMM, NOMES_DIAS_LONGOS } from '../../lib/tempo'
 import { JORNADA_PADRAO, ordenarPorNome, paraFuncionario, type Empresa, type Funcionario } from '../../tipos'
 
@@ -107,7 +108,11 @@ export default function Funcionarios() {
                     <td>{totalSemanal(f.jornada)}/sem</td>
                     <td>
                       {f.ativo ? <Selo cor="verde">Ativo</Selo> : <Selo>Inativo</Selo>}{' '}
-                      {!f.pinDefinido && <Selo cor="amarelo">Sem PIN</Selo>}
+                      {!f.pinDefinido ? (
+                        <Selo cor="amarelo">Sem PIN</Selo>
+                      ) : (
+                        f.pinProvisorio && <Selo cor="amarelo">PIN provisório</Selo>
+                      )}
                     </td>
                     <td>
                       <button type="button" className="botao-icone" aria-label={`Editar ${f.nome}`}>
@@ -173,7 +178,8 @@ function FormFuncionario({
     if (!/^\d{1,10}$/.test(matricula.trim())) return setErro('A matrícula deve ter apenas números (até 10 dígitos).')
     if (minutos.some((m) => Number.isNaN(m))) return setErro('Jornada: use o formato HH:MM em todos os dias (00:00 para folga).')
     if (alterarPin) {
-      if (!/^\d{4,6}$/.test(pin)) return setErro('O PIN deve ter de 4 a 6 números.')
+      const problema = problemaNoPin(pin)
+      if (problema) return setErro(problema)
       if (pin !== confirmacaoPin) return setErro('Os PINs digitados não conferem.')
     }
 
@@ -266,15 +272,22 @@ function FormFuncionario({
 
       <fieldset className="grupo">
         <legend>PIN do ponto</legend>
+        <p className="texto-suave">
+          O PIN definido aqui é <strong>provisório</strong>: no primeiro uso, o aparelho pede que o funcionário crie o PIN
+          pessoal dele. Assim ninguém da empresa conhece o PIN que bate o ponto e assina o espelho.
+          {!novo &&
+            funcionario?.pinDefinido &&
+            (funcionario.pinProvisorio ? ' Este funcionário ainda não criou o PIN pessoal.' : ' Este funcionário já usa o PIN pessoal.')}
+        </p>
         {!novo && funcionario?.pinDefinido && (
           <label className="caixa-marcar">
             <input type="checkbox" checked={alterarPin} onChange={(e) => setAlterarPin(e.target.checked)} />
-            Redefinir o PIN (também desbloqueia quem errou o PIN várias vezes)
+            Redefinir o PIN (para quem esqueceu: ele volta a ser provisório e a matrícula é desbloqueada)
           </label>
         )}
         {alterarPin && (
           <div className="grade-2">
-            <Campo rotulo="Novo PIN" ajuda="4 a 6 números. Evite sequências (1234) e repetições (1111).">
+            <Campo rotulo="PIN provisório" ajuda="4 a 6 números. Evite sequências (1234) e repetições (1111).">
               <input
                 type="password"
                 inputMode="numeric"
@@ -283,7 +296,7 @@ function FormFuncionario({
                 onChange={(e) => setPin(somenteDigitos(e.target.value).slice(0, 6))}
               />
             </Campo>
-            <Campo rotulo="Confirme o PIN">
+            <Campo rotulo="Confirme o PIN provisório">
               <input
                 type="password"
                 inputMode="numeric"

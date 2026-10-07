@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cnpjOpcional, cnpjValido, cpf, cpfValido, matricula, normalizarMatricula, pin, pinTrivial } from "./validacao";
+import { cnpjOpcional, cnpjValido, cpf, cpfValido, matricula, normalizarMatricula, pin, pinTrivial, texto } from "./validacao";
 
 describe("CPF", () => {
   it("aceita CPF válido com ou sem máscara", () => {
@@ -64,5 +64,25 @@ describe("Matrícula", () => {
   it("aceita apenas números", () => {
     expect(() => matricula("A12")).toThrow();
     expect(() => matricula("12345678901")).toThrow();
+  });
+});
+
+describe("Texto livre", () => {
+  it("remove caracteres invisíveis que disfarçam o texto", () => {
+    // U+202E inverte a direção do texto na tela; U+200B é um espaço de largura zero.
+    expect(texto("Maria‮ anuoS", "Nome")).toBe("Maria anuoS");
+    expect(texto("Jo​ão", "Nome")).toBe("João");
+  });
+
+  it("troca caracteres de controle por espaço e junta espaços repetidos", () => {
+    expect(texto("Esqueci\u0000de\nregistrar\t  hoje", "Motivo")).toBe("Esqueci de registrar hoje");
+  });
+
+  it("normaliza acentos para a mesma forma", () => {
+    expect(texto("João", "Nome")).toBe("João");
+  });
+
+  it("recusa texto gigante antes de processar", () => {
+    expect(() => texto("a".repeat(10_000), "Nome", { max: 120 })).toThrow(/máximo/);
   });
 });
