@@ -1,4 +1,4 @@
-import { signInWithEmailAndPassword } from 'firebase/auth'
+import { browserSessionPersistence, setPersistence, signInWithEmailAndPassword } from 'firebase/auth'
 import { doc, getDoc } from 'firebase/firestore'
 import { Fingerprint } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
@@ -38,6 +38,7 @@ export default function ConfiguracaoInicial() {
     setEnviando(true)
     try {
       await api.configurarPrimeiroAdmin({ nome: nome.trim(), email: email.trim(), senha, codigo: codigo.trim() })
+      await setPersistence(auth, browserSessionPersistence)
       await signInWithEmailAndPassword(auth, email.trim(), senha)
       navigate('/admin', { replace: true })
     } catch (err) {
@@ -85,7 +86,7 @@ export default function ConfiguracaoInicial() {
             <Campo rotulo="E-mail">
               <input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />
             </Campo>
-            <Campo rotulo="Senha" ajuda="Mínimo de 8 caracteres.">
+            <Campo rotulo="Senha" ajuda="Mínimo de 8 caracteres. Senhas comuns (12345678, senha123) e com o próprio e-mail são recusadas.">
               <input type="password" autoComplete="new-password" value={senha} onChange={(e) => setSenha(e.target.value)} required />
             </Campo>
             <Campo rotulo="Confirme a senha">

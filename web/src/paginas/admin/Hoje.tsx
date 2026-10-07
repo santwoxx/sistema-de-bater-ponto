@@ -2,6 +2,7 @@ import { collection, query, where } from 'firebase/firestore'
 import { Clock, Tablet, UserCheck, Users } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router'
+import AlertasSeguranca from '../../componentes/AlertasSeguranca'
 import { Aviso, CabecalhoPagina, Carregando, Selo, Vazio } from '../../componentes/Basicos'
 import { DetalhesRegistro, Miniatura } from '../../componentes/Marcacoes'
 import { useEmpresaAtual } from '../../contexto/Empresa'
@@ -63,6 +64,7 @@ export default function Hoje() {
     <>
       <CabecalhoPagina titulo="Hoje" descricao={`${empresa.nome} · ${dataPorExtenso(new Date(agora), empresa.fusoHorario)}`} />
       {erro && <Aviso tipo="erro">{erro}</Aviso>}
+      <AlertasSeguranca empresa={empresa} />
 
       <div className="indicadores">
         <div className="indicador">

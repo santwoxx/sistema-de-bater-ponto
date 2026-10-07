@@ -2395,3 +2395,59 @@ html.modo-ponto body {
   margin: 8px 0 4px;
   padding-left: 18px;
 }
+
+/* Alertas de segurança (faixa no topo e cartão na página Hoje) */
+
+.faixa-alerta {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 12px 16px;
+  border-radius: var(--raio);
+  background: #fde8e8;
+  border: 1px solid #f5b5b5;
+  color: #8a1c1c;
+}
+
+.faixa-alerta svg {
+  flex: none;
+  margin-top: 2px;
+}
+
+.alertas-seguranca h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #8a1c1c;
+}
+
+.alertas-seguranca ul {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+}
+
+.alertas-seguranca li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--borda);
+}
+
+.alertas-seguranca li:first-child {
+  border-top: none;
+}
+
+.alertas-seguranca img {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: none;
+}
+
+.alertas-seguranca p {
+  margin: 2px 0 0;
+}

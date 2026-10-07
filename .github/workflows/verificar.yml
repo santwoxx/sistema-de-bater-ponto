@@ -1,0 +1,56 @@
+# A cada envio ao GitHub: build, lint, testes unitários, auditoria das
+# dependências do backend e o teste de ponta a ponta com os emuladores.
+# Não publica nada e não tem acesso ao Firebase de produção.
+name: Verificar
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            functions/package-lock.json
+            web/package-lock.json
+      - run: npm ci
+      - run: npm run preparar
+      - run: npm run verificar
+      - name: Dependências do backend sem vulnerabilidades altas
+        run: npm audit --prefix functions --omit=dev --audit-level=high
+
+  ponta-a-ponta:
+    needs: verificar
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            functions/package-lock.json
+            web/package-lock.json
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: emuladores-firebase-${{ hashFiles('package-lock.json') }}
+      - run: npm ci
+      - run: npm run preparar
+      - run: npm run testar:e2e

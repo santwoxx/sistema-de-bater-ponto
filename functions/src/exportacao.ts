@@ -12,6 +12,7 @@ import {
   type MarcacaoBruta,
   type ResumoEspelho,
 } from "./espelho";
+import { consumirLimite } from "./limites";
 import { dataLocal } from "./tempo";
 import { booleano, dataISO, idDocumento, listaIds, objeto, opcao } from "./validacao";
 
@@ -177,6 +178,8 @@ export const exportarDados = onCall({ timeoutSeconds: 300, memory: "1GiB" }, asy
   const meses = mesesDoPeriodo(de, ate);
   const deConsulta = tipo === "espelhos" ? `${meses[0]}-01` : de;
   const ateConsulta = tipo === "espelhos" ? `${meses[meses.length - 1]}-31` : ate;
+
+  await consumirLimite(usuario.uid, "exportarDados");
 
   const empresaRef = db.doc(`empresas/${empresaId}`);
   const [funcionariosSnap, registrosSnap, abonosSnap, fechadosSnap] = await Promise.all([

@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { Suspense, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router'
+import { FaixaIntegridade } from '../../componentes/AlertasSeguranca'
 import { Carregando, Vazio } from '../../componentes/Basicos'
 import SeletorEmpresa from '../../componentes/SeletorEmpresa'
 import { useEmpresas } from '../../contexto/Empresa'
@@ -131,7 +132,10 @@ export default function LayoutAdmin() {
           </button>
           {empresas.length > 0 && <SeletorEmpresa />}
         </header>
-        <main className="admin-conteudo">{conteudo}</main>
+        <main className="admin-conteudo">
+          {empresa && !paginaGlobal && <FaixaIntegridade empresa={empresa} />}
+          {conteudo}
+        </main>
       </div>
     </div>
   )

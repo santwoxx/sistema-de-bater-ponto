@@ -176,7 +176,7 @@ function FormUsuario({ usuario, eu, empresas, aoFechar }: { usuario: Perfil | nu
           <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" />
         </Campo>
       </div>
-      <Campo rotulo={usuario ? 'Nova senha (deixe em branco para manter)' : 'Senha inicial'} ajuda="Mínimo de 8 caracteres.">
+      <Campo rotulo={usuario ? 'Nova senha (deixe em branco para manter)' : 'Senha inicial'} ajuda="Mínimo de 8 caracteres. Senhas comuns (12345678, senha123) e com o próprio e-mail são recusadas.">
         <input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} autoComplete="new-password" />
       </Campo>
 

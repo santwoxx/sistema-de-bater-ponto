@@ -34,7 +34,7 @@ if ((await getDoc(doc(db, 'sistema', 'estado'))).exists()) {
   process.exit(0)
 }
 
-const SENHA = 'senha1234'
+const SENHA = 'ponto-teste-2026'
 // Código de instalação dos emuladores (functions/.env.demo-ponto).
 await chamar('configurarPrimeiroAdmin', { nome: 'Administrador', email: 'admin@teste.com', senha: SENHA, codigo: 'TESTE-LOCAL' })
 await signInWithEmailAndPassword(auth, 'admin@teste.com', SENHA)

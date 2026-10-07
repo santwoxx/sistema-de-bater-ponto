@@ -9,13 +9,13 @@ import { db } from '../../firebase'
 import { useColecao } from '../../hooks/useColecao'
 import { mensagemErro } from '../../lib/erros'
 import { formatarDataHora } from '../../lib/tempo'
-import { paraAuditoria } from '../../tipos'
+import { paraAuditoria, type Empresa } from '../../tipos'
 
 const POR_PAGINA = 300
 
 // Confere, no servidor, a sequência de NSR e a cadeia de hashes das marcações
 // feitas no aparelho: aponta marcação apagada, inserida ou alterada.
-function Integridade({ empresaId }: { empresaId: string }) {
+function Integridade({ empresa }: { empresa: Empresa }) {
   const [resultado, setResultado] = useState<ResultadoIntegridade | null>(null)
   const [verificando, setVerificando] = useState(false)
   const [erro, setErro] = useState('')
@@ -24,7 +24,7 @@ function Integridade({ empresaId }: { empresaId: string }) {
     setErro('')
     setVerificando(true)
     try {
-      setResultado(await api.verificarIntegridade({ empresaId }))
+      setResultado(await api.verificarIntegridade({ empresaId: empresa.id }))
     } catch (e) {
       setErro(mensagemErro(e))
     } finally {
@@ -46,6 +46,16 @@ function Integridade({ empresaId }: { empresaId: string }) {
           <ShieldCheck size={18} aria-hidden /> {verificando ? 'Verificando...' : 'Verificar agora'}
         </button>
       </div>
+      {!resultado && empresa.integridade?.verificadaEm && (
+        <p className="texto-suave">
+          Última verificação {empresa.integridade.automatica ? 'automática' : 'feita no painel'} em{' '}
+          {formatarDataHora(empresa.integridade.verificadaEm.toDate(), empresa.fusoHorario)}:{' '}
+          {empresa.integridade.problemas === 0
+            ? `cadeia íntegra (${empresa.integridade.marcacoes} marcação(ões) do aparelho).`
+            : `${empresa.integridade.problemas} problema(s) encontrado(s). Clique em "Verificar agora" para ver a lista.`}{' '}
+          A verificação automática roda toda segunda-feira de madrugada.
+        </p>
+      )}
       {erro && <Aviso tipo="erro">{erro}</Aviso>}
       {resultado &&
         (resultado.totalProblemas === 0 ? (
@@ -113,7 +123,7 @@ export default function Auditoria() {
         }
       />
 
-      {escopo === 'empresa' && <Integridade key={empresa.id} empresaId={empresa.id} />}
+      {escopo === 'empresa' && <Integridade key={empresa.id} empresa={empresa} />}
 
       {entradas.erro && <Aviso tipo="erro">{entradas.erro}</Aviso>}
 

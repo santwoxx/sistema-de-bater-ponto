@@ -12,9 +12,11 @@ import {
   getDoc,
   getDocs,
   getFirestore,
+  limit,
   orderBy,
   query,
   setDoc,
+  Timestamp,
   where,
 } from 'firebase/firestore'
 import { connectFunctionsEmulator, getFunctions, httpsCallable } from 'firebase/functions'
@@ -148,18 +150,21 @@ await etapa('ninguém lê o hash do PIN nem grava direto no banco', async () => 
   await falha(getDoc(doc(admin.db, 'empresas', empresaA, 'credenciais', maria)), 'permission-denied')
   await falha(setDoc(doc(admin.db, 'empresas', empresaA, 'funcionarios', maria), { nome: 'Hack' }), 'permission-denied')
   await falha(setDoc(doc(admin.db, 'empresas', empresaA, 'registros', 'falso'), { nsr: 1 }), 'permission-denied')
+  // Contadores de limite de uso e de NSR também são só do servidor.
+  await falha(getDoc(doc(admin.db, 'limites', `${admin.auth.currentUser.uid}_exportarDados`)), 'permission-denied')
+  await falha(getDoc(doc(admin.db, 'empresas', empresaA, 'privado', 'controle')), 'permission-denied')
 })
 
 await etapa('gestora só acessa as empresas liberadas para ela', async () => {
   await admin.chamar('salvarUsuario', {
     nome: 'Gisele Gestora',
     email: 'gestora@teste.com',
-    senha: 'senha-gestora-1',
+    senha: 'cafe-da-loja-centro-7',
     papel: 'gestor',
     empresas: [empresaA],
     ativo: true,
   })
-  await gestora.entrar('gestora@teste.com', 'senha-gestora-1')
+  await gestora.entrar('gestora@teste.com', 'cafe-da-loja-centro-7')
   assert.equal((await getDoc(doc(gestora.db, 'empresas', empresaA))).get('nome'), 'Loja Centro')
   await falha(getDoc(doc(gestora.db, 'empresas', empresaB)), 'permission-denied')
   await falha(getDocs(collection(gestora.db, 'empresas', empresaB, 'registros')), 'permission-denied')
@@ -190,6 +195,13 @@ await etapa('admin não consegue remover o próprio acesso', async () => {
     admin.chamar('salvarUsuario', { uid, nome: 'Ana Admin', email: 'admin@teste.com', papel: 'gestor', empresas: [], ativo: true }),
     'functions/failed-precondition',
   )
+})
+
+await etapa('senhas comuns ou com o próprio e-mail são recusadas', async () => {
+  const usuario = { nome: 'Fábio Fraco', email: 'fabio@teste.com', papel: 'gestor', empresas: [empresaA], ativo: true }
+  await falha(admin.chamar('salvarUsuario', { ...usuario, senha: '12345678' }), 'functions/invalid-argument', /comum/)
+  await falha(admin.chamar('salvarUsuario', { ...usuario, senha: 'Senha123' }), 'functions/invalid-argument', /comum/)
+  await falha(admin.chamar('salvarUsuario', { ...usuario, senha: 'fabio-2026!' }), 'functions/invalid-argument', /e-mail/)
 })
 
 await etapa('gestora ativa um aparelho; ele não lê nada do banco, só fala com as funções', async () => {
@@ -304,12 +316,12 @@ await etapa('foto não sai para quem não tem acesso à empresa, nem direto do S
   await admin.chamar('salvarUsuario', {
     nome: 'Olga Outra',
     email: 'outra@teste.com',
-    senha: 'senha-outra-12',
+    senha: 'pao-de-queijo-quente-42',
     papel: 'gestor',
     empresas: [empresaB],
     ativo: true,
   })
-  await outraGestora.entrar('outra@teste.com', 'senha-outra-12')
+  await outraGestora.entrar('outra@teste.com', 'pao-de-queijo-quente-42')
   const doc0 = (await getDocs(collection(gestora.db, 'empresas', empresaA, 'registros'))).docs[0]
   const pedido = { empresaId: empresaA, registroId: doc0.id }
   await falha(outraGestora.chamar('obterFoto', pedido), 'functions/permission-denied')
@@ -687,12 +699,14 @@ await etapa('exportação por empresa com filtros: marcações, espelho diário,
   await falha(exportar({ tipo: 'marcacoes', funcionarioIds: [] }), 'functions/invalid-argument')
 })
 
-await etapa('verificação de integridade aponta marcação adulterada direto no banco', async () => {
+await etapa('verificação de integridade aponta marcação adulterada direto no banco e avisa o painel', async () => {
+  const integridade = async () => (await getDoc(doc(gestora.db, 'empresas', empresaA))).get('integridade')
   const limpa = await gestora.chamar('verificarIntegridade', { empresaId: empresaA })
   assert.equal(limpa.totalProblemas, 0)
   assert.equal(limpa.marcacoesAparelho, 3)
   assert.equal(limpa.ultimoNsr, 3)
   assert.ok(limpa.marcacoesManuais > 0)
+  assert.equal((await integridade()).problemas, 0)
   await falha(outraGestora.chamar('verificarIntegridade', { empresaId: empresaA }), 'functions/permission-denied')
 
   // Alguém muda o horário de uma marcação direto no banco (como pelo Console do Firebase).
@@ -703,8 +717,18 @@ await etapa('verificação de integridade aponta marcação adulterada direto no
   assert.equal(adulterada.totalProblemas, 1)
   assert.equal(adulterada.problemas[0].registroId, alvo.id)
   assert.match(adulterada.problemas[0].descricao, /NSR 2 .*alterados/)
+  // O painel mostra o alerta (faixa no topo) e a auditoria registra.
+  assert.equal((await integridade()).problemas, 1)
+  const alerta = await getDocs(query(collection(gestora.db, 'empresas', empresaA, 'auditoria'), where('acao', '==', 'integridade.alerta')))
+  assert.equal(alerta.size, 1)
+
   await adulterar(`empresas/${empresaA}/registros/${alvo.id}`, 'horaLocal', original)
   assert.equal((await gestora.chamar('verificarIntegridade', { empresaId: empresaA })).totalProblemas, 0)
+  assert.equal((await integridade()).problemas, 0)
+
+  // Limite de uso: nos emuladores o máximo é 4 por hora (LIMITE_VERIFICAR_INTEGRIDADE em functions/.env.demo-ponto).
+  await gestora.chamar('verificarIntegridade', { empresaId: empresaA })
+  await falha(gestora.chamar('verificarIntegridade', { empresaId: empresaA }), 'functions/resource-exhausted', /Limite de 4/)
 })
 
 await etapa('aparelho bloqueia depois de 25 tentativas inválidas (PIN comum testado em várias matrículas)', async () => {
@@ -730,6 +754,7 @@ await etapa('auditoria registra as ações; a do sistema é só do admin', async
     'pin.bloqueado',
     'aparelho.bloqueado',
     'integridade.verificada',
+    'integridade.alerta',
     'funcionario.criado',
     'funcionario.atualizado',
     'dispositivo.ativado',
@@ -748,6 +773,17 @@ await etapa('auditoria registra as ações; a do sistema é só do admin', async
   ]) {
     assert.ok(acoes.includes(acao), `faltou ${acao} na auditoria`)
   }
+  // Consulta do cartão "Alertas de segurança" (página Hoje): bloqueios e integridade dos últimos 7 dias.
+  const alertas = await getDocs(
+    query(
+      collection(gestora.db, 'empresas', empresaA, 'auditoria'),
+      where('acao', 'in', ['pin.bloqueado', 'aparelho.bloqueado', 'integridade.alerta']),
+      where('em', '>=', Timestamp.fromMillis(Date.now() - 7 * 86_400_000)),
+      orderBy('em', 'desc'),
+      limit(10),
+    ),
+  )
+  assert.deepEqual(new Set(alertas.docs.map((d) => d.get('acao'))), new Set(['pin.bloqueado', 'aparelho.bloqueado', 'integridade.alerta']))
   await falha(getDocs(collection(gestora.db, 'auditoria')), 'permission-denied')
   const sistema = (await getDocs(collection(admin.db, 'auditoria'))).docs.map((d) => d.get('acao'))
   assert.ok(sistema.includes('empresa.criada') && sistema.includes('usuario.criado') && sistema.includes('sistema.configurado'))

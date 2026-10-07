@@ -27,6 +27,15 @@ export interface Empresa {
   toleranciaMinutos: number
   /** Antes desta data (AAAA-MM-DD), dias sem marcação não contam como falta. */
   inicioControle: string | null
+  /** Última verificação da cadeia de hashes (manual ou automática, semanal). */
+  integridade: Integridade | null
+}
+
+export interface Integridade {
+  verificadaEm: Timestamp | null
+  automatica: boolean
+  marcacoes: number
+  problemas: number
 }
 
 export interface Funcionario {
@@ -205,6 +214,14 @@ export function paraEmpresa(snap: DocumentSnapshot): Empresa {
     intervaloMinimoMinutos: d.intervaloMinimoMinutos ?? 2,
     toleranciaMinutos: d.toleranciaMinutos ?? 10,
     inicioControle: typeof d.inicioControle === 'string' ? d.inicioControle : null,
+    integridade: d.integridade
+      ? {
+          verificadaEm: d.integridade.verificadaEm ?? null,
+          automatica: d.integridade.automatica === true,
+          marcacoes: Number(d.integridade.marcacoes ?? 0),
+          problemas: Number(d.integridade.problemas ?? 0),
+        }
+      : null,
   }
 }
 

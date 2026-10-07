@@ -85,9 +85,25 @@ export function email(valor: unknown): string {
   return limpo;
 }
 
-export function senha(valor: unknown): string {
+// Senhas que aparecem no topo das listas de vazamentos (e variações locais).
+const SENHAS_COMUNS = new Set([
+  "12345678", "123456789", "1234567890", "87654321", "12341234", "11223344", "00000000", "11111111",
+  "123123123", "password", "password1", "password123", "passw0rd", "qwerty123", "qwertyuiop", "abc12345",
+  "abcd1234", "iloveyou", "admin123", "admin1234", "administrador", "senha123", "senha1234", "senha12345",
+  "minhasenha", "mudar123", "trocar123", "brasil123", "brasil2026", "teste123", "teste1234", "ponto123",
+]);
+
+/** Senha de administrador ou gestor: cada login dá acesso aos dados das empresas. */
+export function senha(valor: unknown, emailDoUsuario?: string): string {
   if (typeof valor !== "string" || valor.length < 8) invalido("Senha", "mínimo de 8 caracteres.");
   if (valor.length > 128) invalido("Senha", "máximo de 128 caracteres.");
+  const minuscula = valor.toLowerCase();
+  const sequencia = "0123456789012345678901234567890".includes(valor) || "abcdefghijklmnopqrstuvwxyz".includes(minuscula);
+  if (SENHAS_COMUNS.has(minuscula) || /^(.)\1+$/.test(valor) || sequencia) {
+    invalido("Senha", "muito comum ou fácil de adivinhar. Use uma frase ou combine palavras e números.");
+  }
+  const usuario = emailDoUsuario?.split("@")[0]?.toLowerCase() ?? "";
+  if (usuario.length >= 4 && minuscula.includes(usuario)) invalido("Senha", "não use o seu e-mail na senha.");
   return valor;
 }
 

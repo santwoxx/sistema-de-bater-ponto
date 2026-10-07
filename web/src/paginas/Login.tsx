@@ -1,4 +1,11 @@
-import { sendPasswordResetEmail, signInWithEmailAndPassword, signOut } from 'firebase/auth'
+import {
+  browserSessionPersistence,
+  indexedDBLocalPersistence,
+  sendPasswordResetEmail,
+  setPersistence,
+  signInWithEmailAndPassword,
+  signOut,
+} from 'firebase/auth'
 import { doc, getDoc } from 'firebase/firestore'
 import { Fingerprint } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
@@ -7,12 +14,16 @@ import { Aviso, Campo, Carregando } from '../componentes/Basicos'
 import { useSessao } from '../contexto/Sessao'
 import { auth, db, NOME_SISTEMA } from '../firebase'
 import { mensagemErro } from '../lib/erros'
+import { gravarLocal, lerLocal } from '../lib/util'
+
+const CHAVE_LEMBRAR = 'ponto.lembrarLogin'
 
 export default function Login() {
   const sessao = useSessao()
   const location = useLocation()
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
+  const [lembrar, setLembrar] = useState(() => lerLocal(CHAVE_LEMBRAR) === 'sim')
   const [enviando, setEnviando] = useState(false)
   const [erro, setErro] = useState('')
   const [info, setInfo] = useState('')
@@ -37,6 +48,9 @@ export default function Login() {
     setInfo('')
     setEnviando(true)
     try {
+      // Sem "manter conectado", a sessão acaba quando o navegador é fechado (computador compartilhado).
+      await setPersistence(auth, lembrar ? indexedDBLocalPersistence : browserSessionPersistence)
+      gravarLocal(CHAVE_LEMBRAR, lembrar ? 'sim' : null)
       await signInWithEmailAndPassword(auth, email.trim(), senha)
     } catch (err) {
       setErro(mensagemErro(err))
@@ -89,6 +103,10 @@ export default function Login() {
         <Campo rotulo="Senha">
           <input type="password" autoComplete="current-password" value={senha} onChange={(e) => setSenha(e.target.value)} required />
         </Campo>
+        <label className="caixa-marcar">
+          <input type="checkbox" checked={lembrar} onChange={(e) => setLembrar(e.target.checked)} />
+          Manter conectado neste computador (deixe desmarcado em computador compartilhado)
+        </label>
 
         {erro && <Aviso tipo="erro">{erro}</Aviso>}
         {info && <Aviso tipo="sucesso">{info}</Aviso>}

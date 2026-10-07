@@ -2,6 +2,7 @@ import { HttpsError, onCall } from "firebase-functions/https";
 import * as logger from "firebase-functions/logger";
 import { bucket, db } from "./admin";
 import { exigirAcessoEmpresa } from "./acesso";
+import { consumirLimite } from "./limites";
 import { sha256 } from "./seguranca";
 import { idDocumento, objeto } from "./validacao";
 
@@ -14,6 +15,7 @@ export const obterFoto = onCall({ memory: "512MiB" }, async (request) => {
   const empresaId = idDocumento(dados.empresaId, "Empresa");
   const registroId = idDocumento(dados.registroId, "Marcação");
   const { usuario } = await exigirAcessoEmpresa(request, empresaId);
+  await consumirLimite(usuario.uid, "obterFoto");
 
   const registro = (await db.doc(`empresas/${empresaId}/registros/${registroId}`).get()).data();
   const caminho = typeof registro?.fotoPath === "string" ? registro.fotoPath : "";

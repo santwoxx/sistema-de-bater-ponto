@@ -1,0 +1,20 @@
+{
+  "name": "ponto-digital",
+  "private": true,
+  "description": "Sistema de ponto com foto para várias empresas. Tudo roda no Firebase: site (Hosting), regras de negócio (Cloud Functions), banco (Firestore) e fotos (Storage).",
+  "engines": {
+    "node": "24"
+  },
+  "scripts": {
+    "preparar": "npm ci --prefix functions && npm ci --prefix web",
+    "verificar": "npm --prefix functions run build && npm --prefix functions test && npm --prefix web run lint && npm --prefix web test && npm --prefix web run build",
+    "testar:e2e": "npm --prefix web run test:e2e",
+    "emuladores": "npm --prefix functions run build && firebase emulators:start --project demo-ponto --only auth,firestore,functions,storage",
+    "dados:exemplo": "npm --prefix web run dados:exemplo",
+    "publicar": "node scripts/publicar.mjs",
+    "logs": "firebase functions:log --project producao"
+  },
+  "devDependencies": {
+    "firebase-tools": "15.32.1"
+  }
+}

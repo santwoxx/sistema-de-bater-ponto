@@ -15,6 +15,14 @@
         { "fieldPath": "funcionarioId", "order": "ASCENDING" },
         { "fieldPath": "dataLocal", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "auditoria",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "acao", "order": "ASCENDING" },
+        { "fieldPath": "em", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": [
@@ -27,6 +35,7 @@
     { "collectionGroup": "espelhos", "fieldPath": "contestacao", "indexes": [] },
     { "collectionGroup": "versoes", "fieldPath": "documento", "indexes": [] },
     { "collectionGroup": "versoes", "fieldPath": "assinatura", "indexes": [] },
-    { "collectionGroup": "versoes", "fieldPath": "contestacao", "indexes": [] }
+    { "collectionGroup": "versoes", "fieldPath": "contestacao", "indexes": [] },
+    { "collectionGroup": "auditoria", "fieldPath": "detalhes", "indexes": [] }
   ]
 }

@@ -15,7 +15,7 @@ export const salvarUsuario = onCall(async (request) => {
   const papel = opcao(dados.papel, "Papel", ["admin", "gestor"] as const);
   const empresas = papel === "admin" ? [] : listaIds(dados.empresas ?? [], "Empresas", 300);
   const ativo = dados.ativo === undefined ? true : booleano(dados.ativo, "Ativo");
-  const novaSenha = dados.senha ? senha(dados.senha) : null;
+  const novaSenha = dados.senha ? senha(dados.senha, emailUsuario) : null;
 
   if (!uidExistente && !novaSenha) throw new HttpsError("invalid-argument", "Senha: defina uma senha inicial.");
   if (uidExistente === admin.uid && (papel !== "admin" || !ativo)) {

@@ -22,6 +22,8 @@ export function useColecao<T>(
   useEffect(() => {
     const consulta = criarConsulta()
     if (!consulta) {
+      // Sem consulta (ex.: nada selecionado): limpa o estado da consulta anterior.
+      // oxlint-disable-next-line react/set-state-in-effect
       setEstado({ dados: [], carregando: false, erro: null })
       return
     }
@@ -32,6 +34,7 @@ export function useColecao<T>(
       (erro) => setEstado({ dados: [], carregando: false, erro: mensagemErro(erro) }),
     )
     // A consulta é recriada a cada render; `chave` é o que define quando trocar.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [chave])
 
   return estado

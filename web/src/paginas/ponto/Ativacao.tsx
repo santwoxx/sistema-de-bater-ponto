@@ -1,4 +1,4 @@
-import { signInWithEmailAndPassword } from 'firebase/auth'
+import { indexedDBLocalPersistence, setPersistence, signInWithEmailAndPassword } from 'firebase/auth'
 import { collection, doc, getDoc, getDocs } from 'firebase/firestore'
 import { Fingerprint, Tablet } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
@@ -79,6 +79,8 @@ export default function Ativacao() {
     setOcupado(true)
     try {
       const credenciais = await api.ativarDispositivo({ empresaId, nome: nome.trim() }, temporaria.current.functions)
+      // O aparelho fica sempre conectado (a sessão do painel pode ser só desta janela).
+      await setPersistence(auth, indexedDBLocalPersistence)
       const { user } = await signInWithEmailAndPassword(auth, credenciais.email, credenciais.senha)
       gravarLocal(CHAVE_APARELHO, JSON.stringify({ uid: user.uid, empresaId }))
       await temporaria.current.encerrar()

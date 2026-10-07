@@ -17,7 +17,7 @@ export const configurarPrimeiroAdmin = onCall(async (request) => {
   const dados = objeto(request.data);
   const nome = texto(dados.nome, "Nome", { min: 3, max: 120 });
   const emailAdmin = email(dados.email);
-  const senhaAdmin = senha(dados.senha);
+  const senhaAdmin = senha(dados.senha, emailAdmin);
 
   const estadoRef = db.doc("sistema/estado");
   if ((await estadoRef.get()).exists) {

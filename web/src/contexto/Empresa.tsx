@@ -26,6 +26,8 @@ export function EmpresaProvider({ children }: { children: ReactNode }) {
   const chaveAcesso = `${perfil.papel}:${perfil.empresas.join(',')}`
 
   useEffect(() => {
+    // Nova escuta das empresas (sistema externo): marca como carregando até responder.
+    // oxlint-disable-next-line react/set-state-in-effect
     setCarregando(true)
     if (perfil.papel === 'admin') {
       return onSnapshot(
@@ -68,6 +70,7 @@ export function EmpresaProvider({ children }: { children: ReactNode }) {
     )
     return () => paradas.forEach((parar) => parar())
     // chaveAcesso resume perfil.papel + perfil.empresas
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [chaveAcesso])
 
   const selecionar = useCallback((id: string) => {

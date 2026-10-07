@@ -5,10 +5,7 @@
   "scripts": {
     "build": "tsc",
     "build:watch": "tsc --watch",
-    "test": "vitest run",
-    "serve": "npm run build && firebase emulators:start --project demo-ponto --only auth,firestore,functions,storage",
-    "deploy": "firebase deploy --only functions",
-    "logs": "firebase functions:log"
+    "test": "vitest run"
   },
   "engines": {
     "node": "24"

@@ -41,13 +41,15 @@ function mensagemCamera(erro: unknown): string {
   }
 }
 
+export type EstadoCamera = 'iniciando' | 'pronta' | 'erro'
+
 export function useCamera() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   // Cada tentativa de abrir a câmera recebe um número; respostas atrasadas de
   // tentativas antigas são descartadas (e a câmera delas é desligada).
   const tentativaRef = useRef(0)
-  const [estado, setEstado] = useState<'iniciando' | 'pronta' | 'erro'>('iniciando')
+  const [estado, setEstado] = useState<EstadoCamera>('iniciando')
   const [erro, setErro] = useState('')
 
   const parar = useCallback(() => {
@@ -94,6 +96,8 @@ export function useCamera() {
   }, [parar])
 
   useEffect(() => {
+    // Sincroniza com um sistema externo; o estado só muda quando ele responde.
+    // oxlint-disable-next-line react/set-state-in-effect
     void iniciar()
     const aoVoltar = () => {
       if (document.visibilityState === 'visible' && !streamRef.current?.active) void iniciar()

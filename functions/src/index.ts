@@ -14,4 +14,4 @@ export { incluirAbono, removerAbono } from "./abonos";
 export { solicitarMarcacao, criarSolicitacao, decidirSolicitacao } from "./solicitacoes";
 export { fecharEspelhos, consultarEspelhosPendentes, assinarEspelho } from "./fechamentos";
 export { exportarDados } from "./exportacao";
-export { verificarIntegridade } from "./integridade";
+export { verificarIntegridade, verificarIntegridadeSemanal } from "./integridade";

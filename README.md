@@ -1,6 +1,6 @@
 # Ponto Digital: registro de ponto com foto para várias empresas
 
-Sistema de controle de ponto para lojas e pequenas empresas, feito com Firebase.
+Sistema de controle de ponto para lojas e pequenas empresas. **Tudo roda no Firebase** (site, regras de negócio, banco, fotos e login) e é publicado com um comando: `npm run publicar`.
 
 - **Aparelho de ponto na loja** (tablet, celular ou computador com câmera): o funcionário digita a **matrícula** e o **PIN**, a foto é tirada automaticamente e o horário oficial vem do **servidor**, não do relógio do aparelho.
 - **Painel do gestor** (navegador): escolha da empresa com busca por nome ou CNPJ, quem está em expediente agora, marcações com foto, espelho de ponto mensal com horas, saldo e faltas, além de funcionários, aparelhos, abonos e auditoria.
@@ -9,16 +9,15 @@ Sistema de controle de ponto para lojas e pequenas empresas, feito com Firebase.
 ## Sumário
 
 1. [Funcionalidades](#funcionalidades)
-2. [Posso usar o Firebase?](#posso-usar-o-firebase)
+2. [Tudo roda no Firebase](#tudo-roda-no-firebase)
 3. [Como o sistema é organizado](#como-o-sistema-é-organizado)
 4. [Colocar no ar, passo a passo](#colocar-no-ar-passo-a-passo)
 5. [Uso no dia a dia](#uso-no-dia-a-dia)
 6. [Dados, histórico e backups](#dados-histórico-e-backups)
-7. [Publicar o site na Vercel (opcional)](#publicar-o-site-na-vercel-opcional)
-8. [Testar no computador, sem tocar na nuvem](#testar-no-computador-sem-tocar-na-nuvem)
-9. [Segurança](#segurança)
-10. [Aspectos legais: leia antes de usar com a equipe](#aspectos-legais-leia-antes-de-usar-com-a-equipe)
-11. [Limitações conhecidas e próximos passos](#limitações-conhecidas-e-próximos-passos)
+7. [Testar no computador, sem tocar na nuvem](#testar-no-computador-sem-tocar-na-nuvem)
+8. [Segurança](#segurança)
+9. [Aspectos legais: leia antes de usar com a equipe](#aspectos-legais-leia-antes-de-usar-com-a-equipe)
+10. [Limitações conhecidas e próximos passos](#limitações-conhecidas-e-próximos-passos)
 
 ---
 
@@ -54,17 +53,16 @@ Sistema de controle de ponto para lojas e pequenas empresas, feito com Firebase.
 
 ---
 
-## Posso usar o Firebase?
-
-**Sim.** O sistema foi feito para ele. Usa:
+## Tudo roda no Firebase
 
 | Serviço | Para quê |
 |---|---|
+| Hosting | O site (painel e tela do ponto), com HTTPS (necessário para a câmera) e cabeçalhos de segurança |
+| Cloud Functions | Toda gravação de dados: validação, horário oficial, NSR, auditoria, fotos e exportações |
+| Cloud Firestore | Empresas, funcionários, marcações, abonos, espelhos e auditoria |
+| Cloud Storage | Fotos das marcações (só as funções leem e gravam) |
 | Authentication | Login dos gestores e conta própria de cada aparelho de ponto |
-| Cloud Firestore | Empresas, funcionários, marcações, abonos e auditoria |
-| Cloud Storage | Fotos das marcações |
-| Cloud Functions | Toda gravação de dados: validação, horário oficial, NSR e auditoria |
-| Hosting | O site (painel e tela do ponto), com HTTPS, necessário para usar a câmera |
+| Cloud Scheduler | Verificação automática da integridade das marcações, toda segunda-feira |
 
 > **É preciso ativar o plano Blaze** (pago conforme o uso). Cloud Functions e Cloud Storage não funcionam no plano gratuito Spark. O Blaze mantém as cotas gratuitas e só cobra o que passar delas; para uma loja, o uso costuma ficar perto de zero. **Configure um alerta de orçamento** (ex.: R$ 20/mês) no Google Cloud para não ter surpresas.
 
@@ -82,18 +80,24 @@ O aparelho só fala com as funções. O painel lê o Firestore direto (as regras
 
 ```
 Sistema bater ponto/
-├── firebase.json            configuração do Firebase (hosting, functions, emuladores)
+├── package.json             comandos do projeto (preparar, verificar, publicar...) e o Firebase CLI fixado
+├── firebase.json            configuração do Firebase (hosting, functions, banco, emuladores)
+├── .firebaserc              projetos: "producao" (real) e "demo-ponto" (só emuladores)
 ├── firestore.rules          quem pode ler o quê no banco (ninguém grava direto)
 ├── firestore.indexes.json   índices do banco
 ├── storage.rules            fotos: nenhum navegador lê ou grava direto
+├── scripts/
+│   ├── publicar.mjs         publicação completa, com conferências antes e depois
+│   └── conferir-configuracao.mjs  impede publicar o site apontando para o projeto errado
 ├── functions/               backend (Cloud Functions, TypeScript)
 │   └── src/
 │       ├── ponto.ts         registro do ponto: foto, NSR, cadeia de hashes
-│       ├── cadeia.ts        cálculo e verificação da cadeia de hashes
-│       ├── integridade.ts   verificação de integridade pedida no painel
-│       ├── fotos.ts         entrega da foto ao painel, com conferência do hash
 │       ├── identificacao.ts matrícula + PIN no aparelho, com bloqueios por erro
 │       ├── pinPessoal.ts    o funcionário cria ou troca o próprio PIN
+│       ├── cadeia.ts        cálculo e verificação da cadeia de hashes
+│       ├── integridade.ts   verificação de integridade (no painel e toda segunda-feira)
+│       ├── fotos.ts         entrega da foto ao painel, com conferência do hash
+│       ├── limites.ts       limite de uso por usuário nas funções pesadas
 │       ├── solicitacoes.ts  pedidos de marcação esquecida (pedir, aprovar, recusar)
 │       ├── espelho.ts       cálculo do espelho (fonte única: servidor e painel usam o mesmo)
 │       ├── fechamentos.ts   fechamento mensal, assinatura e contestação do espelho
@@ -103,9 +107,8 @@ Sistema bater ponto/
 │       ├── funcionarios.ts, empresas.ts, usuarios.ts, dispositivos.ts, sistema.ts
 │       └── validacao.ts, tempo.ts, seguranca.ts, acesso.ts, auditoria.ts
 └── web/                     site (React + Vite, TypeScript)
-    ├── src/paginas/ponto/   tela do aparelho de ponto
+    ├── src/paginas/ponto/   tela do aparelho de ponto (Terminal.tsx + componentes em terminal/)
     ├── src/paginas/admin/   painel do gestor
-    ├── vercel.json          configuração para publicar o site na Vercel (opcional)
     └── testes/e2e.mjs       teste de ponta a ponta com os emuladores
 ```
 
@@ -115,7 +118,8 @@ Sistema bater ponto/
 sistema/estado
 usuarios/{uid}                          nome, e-mail, papel (admin|gestor), empresas[]
 auditoria/{id}                          ações globais (empresas, usuários)
-empresas/{empresaId}                    nome, CNPJ, fuso, regras
+limites/{uid}_{acao}                    contadores de limite de uso (inacessível pelo navegador)
+empresas/{empresaId}                    nome, CNPJ, fuso, regras e resultado da verificação de integridade
   ├── funcionarios/{id}                 nome, CPF, matrícula, jornada
   ├── credenciais/{funcionarioId}       hash do PIN, se é provisório e bloqueios (inacessível pelo navegador)
   ├── registros/{id}                    marcações (imutáveis)
@@ -132,14 +136,15 @@ empresas/{empresaId}                    nome, CNPJ, fuso, regras
 
 ## Colocar no ar, passo a passo
 
-### 1. Instale as ferramentas no computador
+### 1. Instale as ferramentas
 
 1. **Node.js 24 LTS**: <https://nodejs.org> (instalador do Windows, opções padrão).
-2. **Firebase CLI**: abra o terminal e rode:
+2. Na pasta do projeto, abra o terminal e rode:
    ```
-   npm install -g firebase-tools
-   firebase login
+   npm install
+   npm run preparar
    ```
+   O primeiro instala o **Firebase CLI na versão usada pelo projeto** (não precisa instalar nada global); o segundo, as dependências do site e das funções.
 
 > **Windows:** se o PowerShell disser que "a execução de scripts foi desabilitada", use o **Prompt de Comando (cmd)** ou rode uma vez `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` no PowerShell.
 
@@ -150,74 +155,55 @@ No [Console do Firebase](https://console.firebase.google.com):
 1. **Adicionar projeto**, com o nome que quiser (ex.: `ponto-minhaloja`).
 2. **Upgrade para o plano Blaze** (canto inferior esquerdo) e configure o alerta de orçamento.
 3. **Authentication**: "Vamos começar" → método **E-mail/senha** → ativar. Depois, em **Configurações → Ações do usuário**, desmarque **"Ativar criação (inscrição)"** e **"Ativar exclusão"**: as contas são criadas só pelo administrador, então ninguém precisa se cadastrar sozinho.
-4. **Firestore Database**: não precisa criar. Se o banco ainda não existir, o primeiro deploy cria o banco em São Paulo (`southamerica-east1`, definido no `firebase.json`). Se preferir criar pelo console, escolha a edição **Standard**, esse mesmo local e o modo **produção**. O local não pode ser mudado depois.
-5. **Storage**: "Vamos começar" → modo **produção** → local **southamerica-east1 (São Paulo)**. O console destaca as regiões dos EUA como "sem custo". Em São Paulo as fotos custam centavos por mês e ficam na mesma região do servidor.
-6. **Configurações do projeto** (engrenagem) → **Seus apps** → ícone **Web `</>`** → registre o app (não precisa marcar Hosting aqui). Copie os valores de `firebaseConfig`.
+4. **Storage**: "Vamos começar" → modo **produção** → local **southamerica-east1 (São Paulo)**. O console destaca as regiões dos EUA como "sem custo"; em São Paulo as fotos custam centavos por mês e ficam na mesma região do servidor.
+5. **Configurações do projeto** (engrenagem) → **Seus apps** → ícone **Web `</>`** → registre o app (não precisa marcar Hosting aqui). Copie os valores de `firebaseConfig`.
 
-### 3. Configure o site
+O **banco (Firestore)** não precisa ser criado: a primeira publicação cria em São Paulo (`southamerica-east1`, definido no `firebase.json`). O local não pode ser mudado depois.
 
-Na pasta `web`, copie o arquivo `.env.example` para `.env` e preencha com os valores copiados:
+### 3. Configure o projeto
 
-```
-VITE_FIREBASE_API_KEY=AIza...
-VITE_FIREBASE_AUTH_DOMAIN=ponto-minhaloja.firebaseapp.com
-VITE_FIREBASE_PROJECT_ID=ponto-minhaloja
-VITE_FIREBASE_STORAGE_BUCKET=ponto-minhaloja.firebasestorage.app
-VITE_FIREBASE_MESSAGING_SENDER_ID=1234567890
-VITE_FIREBASE_APP_ID=1:1234567890:web:abc123
-VITE_NOME_SISTEMA=Ponto Digital
-```
+1. Na pasta `web`, copie `.env.example` para `.env` e preencha com os valores copiados (o arquivo fica fora do Git):
+   ```
+   VITE_FIREBASE_API_KEY=AIza...
+   VITE_FIREBASE_AUTH_DOMAIN=ponto-minhaloja.firebaseapp.com
+   VITE_FIREBASE_PROJECT_ID=ponto-minhaloja
+   VITE_FIREBASE_STORAGE_BUCKET=ponto-minhaloja.firebasestorage.app
+   VITE_FIREBASE_MESSAGING_SENDER_ID=1234567890
+   VITE_FIREBASE_APP_ID=1:1234567890:web:abc123
+   VITE_NOME_SISTEMA=Ponto Digital
+   ```
+2. No `.firebaserc`, o apelido **`producao`** aponta para o ID do projeto (hoje, `ponto-digital-2e2f9`). Troque se for outro.
 
-### 4. Instale as dependências
-
-Na pasta raiz do projeto:
-
-```
-npm --prefix functions install
-npm --prefix web install
-```
-
-### 5. Escolha o projeto e publique
-
-Antes do primeiro deploy, crie o **código de instalação**: um segredo que a tela de configuração inicial vai exigir, para que um estranho que abra o site logo após a publicação não consiga se tornar o administrador. Crie o arquivo `functions/.env.SEU-PROJETO` (ex.: `functions/.env.ponto-digital-2e2f9`; ele fica fora do Git) com uma linha:
+### 4. Publique
 
 ```
-CODIGO_INSTALACAO=ESCOLHA-UM-CODIGO-LONGO
+npx firebase login
+npm run publicar
 ```
 
-Depois publique:
+O `firebase login` é feito uma vez por computador (entre com a conta Google dona do projeto). O `npm run publicar` faz tudo, em ordem, e para no primeiro problema, explicando o que corrigir:
 
-```
-firebase login
-firebase deploy --project producao
-```
+1. confere o login e o acesso ao projeto;
+2. confere se o `web/.env` é do mesmo projeto (nunca publica um site falando com o projeto errado) e gera o **código de instalação** em `functions/.env.SEU-PROJETO` (fora do Git);
+3. confere se o login por e-mail/senha está ativo no Authentication;
+4. roda `npm run verificar`: build, lint e testes. **Se algo falhar, nada é publicado**;
+5. publica site, funções, regras e índices (`firebase deploy`);
+6. liga a **proteção contra exclusão**, a **recuperação pontual** e o **backup diário** do banco;
+7. confere o site no ar (inclusive os cabeçalhos de segurança) e, no primeiro uso, mostra o código de instalação e abre a tela de configuração inicial.
 
-O apelido `producao` já aponta para o projeto `ponto-digital-2e2f9` no arquivo `.firebaserc`. Para usar outro projeto, troque o ID ali ou rode `firebase use --add`. Sem `--project`, o CLI usa o projeto de testes `demo-ponto`, que só existe nos emuladores, então nada vai para a nuvem por engano.
+No primeiro deploy, o Firebase pode perguntar sobre a **política de limpeza de imagens** das funções e o **nome do site**: aperte Enter para aceitar o padrão. O índice do banco termina de ser criado alguns minutos depois; até lá, o filtro por funcionário pode avisar que o índice "está sendo criado".
 
-O primeiro deploy leva alguns minutos. Durante ele:
+**Para atualizar o sistema depois de qualquer mudança, é o mesmo comando:** `npm run publicar`. Sem `--project`, os comandos do Firebase usam o projeto de testes `demo-ponto`, que só existe nos emuladores: nada vai para a nuvem por engano.
 
-- Se perguntar sobre **política de limpeza de imagens** das Functions, aceite o padrão.
-- Se perguntar o **nome do site**, aceite o sugerido (o ID do projeto).
-- O índice do banco termina de ser criado alguns minutos depois. Até lá, o filtro por funcionário pode avisar que o índice "está sendo criado".
+### 5. Primeiro acesso
 
-Ao final aparece o endereço do site, algo como `https://ponto-minhaloja.web.app`.
-
-Depois do primeiro deploy, proteja o banco contra exclusão e ligue a recuperação e os backups diários (veja [Dados, histórico e backups](#dados-histórico-e-backups)):
-
-```
-firebase firestore:databases:update "(default)" --delete-protection ENABLED --point-in-time-recovery ENABLED --project producao
-firebase firestore:backups:schedules:create --recurrence DAILY --retention 98d --project producao
-```
-
-### 6. Primeiro acesso
-
-1. Abra `https://SEU-PROJETO.web.app` → clique em **"Configure o sistema e crie o administrador"**.
-2. Informe o **código de instalação** e crie a sua conta de administrador (só funciona uma vez). Faça isso logo depois do deploy.
+1. Ao fim do `npm run publicar`, a tela **Configuração inicial** abre sozinha (ou abra `https://SEU-PROJETO.web.app/configuracao-inicial`).
+2. Informe o **código de instalação** mostrado no terminal e crie a sua conta de administrador (só funciona uma vez). Faça isso logo depois da publicação.
 3. Em **Empresas**, cadastre a primeira empresa.
 4. Em **Usuários**, crie a conta da gestora e marque as empresas que ela pode acessar.
 5. Em **Funcionários**, cadastre a equipe com matrícula e um **PIN provisório**. Entregue o PIN a cada pessoa: no primeiro uso do aparelho ela cria o PIN pessoal.
 
-### 7. Coloque o aparelho na loja
+### 6. Coloque o aparelho na loja
 
 1. No tablet ou celular, abra `https://SEU-PROJETO.web.app/ponto`.
 2. Entre com o e-mail e a senha de um gestor, escolha a empresa e dê um nome ao aparelho (ex.: "Tablet do caixa").
@@ -245,7 +231,8 @@ firebase firestore:backups:schedules:create --recurrence DAILY --retention 98d -
 - **Funcionário avisou que esqueceu:** Solicitações → **Nova solicitação** → marque "Aprovar e incluir a marcação agora" (ou deixe pendente para outra pessoa analisar). Também dá para incluir direto pelo Espelho de ponto → botão **+** no dia.
 - **Batida duplicada ou errada:** abra a marcação → **Desconsiderar** (com motivo). A original continua guardada.
 - **Feriado, atestado ou férias:** Espelho de ponto → **Lançar abono** (ou o ícone de calendário no dia).
-- **Esqueceu o PIN ou foi bloqueado** (5 erros seguidos bloqueiam por 15 minutos): Funcionários → editar → **Redefinir o PIN**.
+- **Esqueceu o PIN ou foi bloqueado** (5 erros seguidos bloqueiam por 15 minutos; se repetir, 30 e depois 60): Funcionários → editar → **Redefinir o PIN**. O PIN volta a ser provisório e o funcionário cria um novo no aparelho.
+- **Alertas de segurança:** a página **Hoje** mostra os bloqueios por PIN errado dos últimos 7 dias, com a foto de quem tentou. Se a verificação de integridade (automática, toda segunda-feira) encontrar marcação alterada ou apagada, uma faixa vermelha aparece no topo de todas as páginas.
 - **Fechamento do mês** (no início do mês seguinte): **Fechamento mensal** → escolha o mês → **Fechar mês e enviar para assinatura**. Acompanhe quem assinou; quem contestou aparece com o motivo, e depois de corrigir você clica em **Reenviar**. O **CSV do mês** traz os totais de todos para a folha.
 - **Consultar meses anteriores:** todas as telas aceitam qualquer período (Marcações, Espelho, Fechamento, Auditoria e Solicitações, com "carregar mais antigos"). Nada é apagado.
 - **Algo mudou depois da assinatura:** o espelho avisa. No Fechamento mensal, use **Reabrir** com motivo: uma nova versão vai para assinatura e a assinada fica guardada.
@@ -272,7 +259,7 @@ firebase firestore:backups:schedules:create --recurrence DAILY --retention 98d -
 
 - **Nada expira:** marcações, fotos, espelhos assinados (e suas versões anteriores), solicitações, abonos e auditoria ficam guardados sem prazo. Qualquer mês antigo pode ser consultado, fechado, assinado e impresso.
 - **O que já protege os dados:** toda escrita passa pelo servidor com transações (sem registro pela metade ou duplicado), marcações nunca são apagadas, e a cadeia de hashes e a auditoria mostram qualquer alteração.
-- **Ative os backups do Firestore** (recomendado antes de usar em produção). Use os comandos do fim do [passo 5](#5-escolha-o-projeto-e-publique) ou o Console do Google Cloud → Firestore → **Disaster recovery**:
+- **Backups do Firestore:** o `npm run publicar` já liga os três itens abaixo (dá para conferir no Console do Google Cloud → Firestore → **Disaster recovery**):
   1. **Proteção contra exclusão**: impede que o banco seja apagado por engano.
   2. **Recuperação pontual (PITR)**: permite voltar o banco a qualquer minuto dos últimos 7 dias.
   3. **Backups agendados**: um por dia, guardado por 14 semanas (98 dias).
@@ -283,51 +270,34 @@ firebase firestore:backups:schedules:create --recurrence DAILY --retention 98d -
 
 ---
 
-## Publicar o site na Vercel (opcional)
-
-O sistema tem duas partes:
-
-- **Site** (painel e tela do ponto): pode ficar no Firebase Hosting (já configurado) **ou** na Vercel.
-- **Banco, fotos, login e regras de negócio**: ficam **sempre no Firebase**. A Vercel não hospeda o Firestore, o Storage nem as Cloud Functions, então o passo 5 (`firebase deploy`) continua necessário.
-
-Para usar a Vercel no lugar do Firebase Hosting:
-
-1. Em <https://vercel.com/new>, importe o repositório do GitHub.
-2. **Root Directory:** `web`. Deixe marcada a opção de incluir arquivos fora do Root Directory: o cálculo do espelho fica em `functions/src/espelho.ts` e é compartilhado com o site.
-3. **Environment Variables:** as mesmas do `web/.env` (`VITE_FIREBASE_API_KEY` etc.).
-4. **Deploy.** O `web/vercel.json` já configura as rotas, a permissão de câmera e o cache. Cada envio ao GitHub publica uma versão nova.
-5. Publique o backend com `firebase deploy --project producao --only functions,firestore,storage` (sem o Hosting).
-
-> O plano gratuito da Vercel (Hobby) é para uso pessoal e **não comercial**. Para empresas, os termos pedem o plano Pro (pago). O Firebase Hosting não tem essa restrição e já está incluído no projeto.
-
----
-
 ## Testar no computador, sem tocar na nuvem
 
 Os emuladores do Firebase rodam tudo localmente (exigem **Java 21 ou mais novo**).
 
 ```
-npm --prefix functions run build
-firebase emulators:start --project demo-ponto --only auth,firestore,functions,storage
+npm run emuladores
 ```
 
-Em outro terminal:
+Em outro terminal, o site (fica rodando):
 
 ```
-cd web
-npm run dev:emuladores
+npm --prefix web run dev:emuladores
 ```
+
+Para ter dados de exemplo, num terceiro terminal: `npm run dados:exemplo`.
 
 Abra <http://localhost:5173>. Os dados somem quando os emuladores são fechados. Nos emuladores, o código de instalação é `TESTE-LOCAL` (arquivo `functions/.env.demo-ponto`).
 
-**Testes automáticos:**
+**Comandos (na pasta raiz):**
 
-| Comando (na pasta indicada) | O que testa |
+| Comando | O que faz |
 |---|---|
-| `functions`: `npm test` | CPF, CNPJ (inclusive alfanumérico), PIN, matrícula, limpeza de textos, fusos horários, hash do PIN e a verificação da cadeia de hashes (alteração, exclusão e hash refeito) |
-| `web`: `npm test` | Cálculo do espelho (pares, saldo, tolerância, faltas, abonos, início do controle), regra do PIN e mensagens de erro |
-| `web`: `npm run test:e2e` | 22 etapas de ponta a ponta com os emuladores: permissões de cada papel, registro com foto, NSR, cadeia de hashes, bloqueio de PIN, ajustes, abonos, solicitações, fechamento e assinatura do espelho, exportação com filtros, auditoria e desativação de aparelho |
-| `web`: `npm run dados:exemplo` | Com os emuladores ligados, cria administrador, gestora, empresas, funcionários e o histórico do mês anterior, pronto para fechar e assinar (senha `senha1234`) |
+| `npm run verificar` | Build das funções e do site, lint (sem nenhum aviso permitido) e testes unitários: CPF, CNPJ, PIN, senhas, limpeza de textos, fusos, hash do PIN, limites de uso, cadeia de hashes, cálculo do espelho e textos do aparelho. O `npm run publicar` roda isto antes de publicar |
+| `npm run testar:e2e` | 26 etapas de ponta a ponta com os emuladores: permissões de cada papel, código de instalação, PIN provisório e pessoal, registro com foto, NSR e cadeia de hashes, bloqueios (inclusive com tentativas em paralelo), fotos só pelo servidor, ajustes, abonos, solicitações, fechamento e assinatura, exportação, adulteração detectada, limites de uso, auditoria e desativação de aparelho |
+| `npm run dados:exemplo` | Com os emuladores ligados, cria administrador, gestora, empresas, funcionários e o histórico do mês anterior, pronto para fechar e assinar (senha `ponto-teste-2026`; os PINs são provisórios) |
+| `npm run logs` | Últimos registros das funções em produção |
+
+No GitHub, cada envio roda o `npm run verificar`, a auditoria das dependências do backend e o teste de ponta a ponta (aba **Actions**). Essa verificação não tem acesso ao Firebase de produção.
 
 ---
 
@@ -340,6 +310,7 @@ Abra <http://localhost:5173>. Os dados somem quando os emuladores são fechados.
 - **Aparelhos de ponto não leem nada do banco:** falam só com as funções, e cada um fica preso a uma empresa (no máximo 50 ativos por empresa).
 - **Fotos sem link público.** O Storage não libera leitura para nenhum navegador; o painel recebe a foto pela função `obterFoto`, que confere o acesso e se o arquivo é o mesmo gravado na batida (aviso se tiver sido trocado).
 - **Textos limpos:** caracteres invisíveis (que poderiam disfarçar nomes e motivos) são removidos, e o CSV neutraliza fórmulas do Excel.
+- **Limites de uso por usuário** nas funções pesadas ou sensíveis (por hora: 30 exportações, 30 fechamentos, 10 verificações de integridade e 300 fotos abertas). Se uma conta for invadida, o estrago e o custo ficam contidos. Ajustáveis por projeto com `LIMITE_<AÇÃO>` no `functions/.env.SEU-PROJETO`.
 
 **PIN e identificação no aparelho**
 
@@ -352,13 +323,21 @@ Abra <http://localhost:5173>. Os dados somem quando os emuladores são fechados.
 
 - **Horário do servidor:** mudar o relógio do tablet não altera a hora da batida.
 - **Marcações imutáveis:** correções viram inclusões ou desconsiderações com justificativa. Nada é apagado.
-- **NSR sequencial e cadeia de hashes (SHA-256)** por empresa: cada registro inclui o hash do anterior, da foto, da data e da hora. A **verificação de integridade** (página Auditoria) refaz a conta e aponta qualquer marcação apagada, inserida ou alterada, mesmo direto no banco.
+- **NSR sequencial e cadeia de hashes (SHA-256)** por empresa: cada registro inclui o hash do anterior, da foto, da data e da hora. A **verificação de integridade** refaz a conta e aponta qualquer marcação apagada, inserida ou alterada, mesmo direto no banco. Ela roda **sozinha toda segunda-feira de madrugada** e também pode ser pedida na página Auditoria; se achar problema, o painel mostra uma faixa vermelha e a auditoria registra o alerta.
 - **Sem batida duplicada:** intervalo mínimo entre batidas, e o reenvio automático após queda de internet nunca cria dois registros.
 
-**Site e instalação**
+**Painel e logins**
+
+- **Senhas de administradores e gestores:** mínimo de 8 caracteres, sem senhas comuns (12345678, senha123...) e sem o próprio e-mail.
+- **"Manter conectado neste computador"** fica desmarcado por padrão: a sessão do painel termina quando o navegador fecha, o que protege computadores compartilhados. O aparelho de ponto continua sempre conectado.
+- **Alertas de segurança** na página Hoje: bloqueios por PIN errado dos últimos 7 dias, com a foto de quem tentou.
+
+**Site, publicação e código**
 
 - **Política de segurança de conteúdo (CSP) estrita:** o site só carrega código dele mesmo e só se conecta ao Firebase; não pode ser embutido em outro site; a câmera só funciona nele.
 - **Código de instalação** para criar o primeiro administrador.
+- **Publicação conferida:** o `npm run publicar` só publica se build, lint e testes passarem, e o próprio deploy se recusa a publicar um site configurado para outro projeto ou para os emuladores.
+- **Ferramentas fixadas:** o Firebase CLI tem versão fixa no `package.json` da raiz e as dependências vêm dos `package-lock.json` (`npm ci`).
 
 **Configurações recomendadas no Console** (além das do passo 2):
 

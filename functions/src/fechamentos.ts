@@ -5,6 +5,7 @@ import { autor, exigirAcessoEmpresa, exigirDispositivo } from "./acesso";
 import { auditarNa, registrarAuditoria } from "./auditoria";
 import { calcularEspelho, documentoDoEspelho, type AbonoBruto, type MarcacaoBruta } from "./espelho";
 import { decodificarJpeg, identificarNoAparelho, lerMatriculaPin, MAX_MINIATURA_BYTES } from "./identificacao";
+import { consumirLimite } from "./limites";
 import { sha256 } from "./seguranca";
 import { dataLocal } from "./tempo";
 import { booleano, idDocumento, listaIds, objeto, texto } from "./validacao";
@@ -41,6 +42,8 @@ export const fecharEspelhos = onCall({ timeoutSeconds: 120, memory: "512MiB" }, 
   const mes = validarMes(dados.mes, empresa.fusoHorario);
   const escolhidos = dados.funcionarioIds == null ? null : listaIds(dados.funcionarioIds, "Funcionários", 500);
   const motivoReabertura = dados.motivoReabertura ? texto(dados.motivoReabertura, "Motivo da reabertura", { min: 5, max: 300 }) : null;
+
+  await consumirLimite(usuario.uid, "fecharEspelhos");
 
   const empresaRef = db.doc(`empresas/${empresaId}`);
   const [funcionarios, registros, abonosSnap] = await Promise.all([

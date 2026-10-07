@@ -1,109 +1,31 @@
-import { signInWithEmailAndPassword, signOut } from 'firebase/auth'
-import {
-  Camera,
-  Check,
-  CircleAlert,
-  CircleCheck,
-  ClockAlert,
-  Delete,
-  FileSignature,
-  Fingerprint,
-  Info,
-  KeyRound,
-  LoaderCircle,
-  Maximize,
-  Send,
-  Settings,
-  WifiOff,
-} from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import { api, type ComprovantePonto, type EspelhoParaAssinar, type Sincronizacao } from '../../api'
-import { Aviso, Campo } from '../../componentes/Basicos'
-import Modal from '../../componentes/Modal'
-import { CHAVE_APARELHO } from '../../contexto/Sessao'
-import { auth, criarSessaoTemporaria } from '../../firebase'
+import { api, type ComprovantePonto, type EspelhoParaAssinar } from '../../api'
 import { useCamera, useTelaSempreAcesa } from '../../hooks/useCamera'
 import { useAgora } from '../../hooks/useColecao'
 import { erroDeRede, mensagemErro, pinProvisorio } from '../../lib/erros'
-import { formatarNsr } from '../../lib/formatos'
 import { problemaNoPin } from '../../lib/pin'
 import { somErro, somFoto, somSucesso } from '../../lib/sons'
-import { dataLocal, dataPorExtenso, formatarData, horaLocal, nomeMes, somarDias } from '../../lib/tempo'
-import { gerarId, gravarLocal, lerLocal } from '../../lib/util'
+import { dataLocal } from '../../lib/tempo'
+import { gerarId } from '../../lib/util'
 import ConferenciaEspelho from './ConferenciaEspelho'
+import CameraPonto from './terminal/CameraPonto'
+import { AparelhoDesativado, ConfiguracoesAparelho } from './terminal/CicloDoAparelho'
+import FormularioSolicitacao from './terminal/FormularioSolicitacao'
+import { EspelhoRespondido, FalhaNoAparelho, PinAlterado, PontoRegistrado, SolicitacaoEnviada, TudoEmDia } from './terminal/Resultados'
+import TecladoPonto, { type Rodape, type Visor } from './terminal/TecladoPonto'
+import { instrucaoDaTela, textoDeEspera, tituloDaTela } from './terminal/textos'
+import { ETAPAS_DE_RESULTADO, OUTRO_MOTIVO, PEDIDO_VAZIO, type Etapa, type Modo, type Pedido } from './terminal/tipos'
+import TopoTerminal from './terminal/TopoTerminal'
+import { useSincronizacao } from './terminal/useSincronizacao'
 
-type Etapa =
-  | 'matricula'
-  | 'pin'
-  // O funcionário cria o PIN pessoal (ou troca o PIN): digita o novo e confirma.
-  | 'novoPin'
-  | 'confirmarPin'
-  | 'foto'
-  | 'formulario'
-  | 'enviando'
-  | 'espelho'
-  | 'sucesso'
-  | 'solicitado'
-  | 'assinado'
-  | 'informacao'
-  | 'pinDefinido'
-  | 'erro'
-type InfoAparelho = Extract<Sincronizacao, { ativo: true }>
+// Tela do aparelho de ponto: a máquina de estados (etapa + modo) e as chamadas
+// ao servidor. A apresentação fica nos componentes da pasta ./terminal.
 
-const CHAVE_INFO = 'ponto.info'
-const SINCRONIZAR_A_CADA_MS = 5 * 60_000
+/** Volta ao início depois de tanto tempo parado em cada situação. */
 const INATIVIDADE_MS = 20_000
 const FORMULARIO_MS = 90_000
 const CONFERENCIA_MS = 3 * 60_000
 const RESULTADO_MS = 6_000
-const ETAPAS_DE_RESULTADO: Etapa[] = ['sucesso', 'erro', 'solicitado', 'assinado', 'informacao', 'pinDefinido']
-const TECLAS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'apagar', '0', 'ok']
-const OUTRO_MOTIVO = 'Outro motivo'
-const MOTIVOS = ['Esqueci de registrar', 'O aparelho estava sem internet ou com problema', 'Estava em trabalho externo', OUTRO_MOTIVO]
-
-// Hora oficial: o relógio do aparelho pode estar errado, então a tela usa a
-// hora do servidor (corrigida pela latência). O registro em si é sempre
-// carimbado pelo servidor.
-function useSincronizacao() {
-  const [info, setInfo] = useState<InfoAparelho | null>(() => JSON.parse(lerLocal(CHAVE_INFO) ?? 'null'))
-  const [deslocamento, setDeslocamento] = useState(0)
-  const [conectado, setConectado] = useState(() => navigator.onLine)
-  const [desativado, setDesativado] = useState(false)
-
-  const sincronizar = useCallback(async () => {
-    const inicio = Date.now()
-    try {
-      const resposta = await api.sincronizarDispositivo({})
-      const fim = Date.now()
-      setConectado(true)
-      setDeslocamento(resposta.agora - (inicio + fim) / 2)
-      if (!resposta.ativo) {
-        setDesativado(true)
-        return
-      }
-      setInfo(resposta)
-      gravarLocal(CHAVE_INFO, JSON.stringify(resposta))
-    } catch {
-      setConectado(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    void sincronizar()
-    const id = setInterval(sincronizar, SINCRONIZAR_A_CADA_MS)
-    const online = () => void sincronizar()
-    const offline = () => setConectado(false)
-    window.addEventListener('online', online)
-    window.addEventListener('offline', offline)
-    return () => {
-      clearInterval(id)
-      window.removeEventListener('online', online)
-      window.removeEventListener('offline', offline)
-    }
-  }, [sincronizar])
-
-  return { info, deslocamento, conectado, desativado, setConectado }
-}
 
 function esperar(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -117,17 +39,14 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
   const fuso = info?.empresa.fusoHorario ?? 'America/Sao_Paulo'
 
   const [etapa, setEtapa] = useState<Etapa>('matricula')
+  const [modo, setModo] = useState<Modo>('ponto')
   const [matricula, setMatricula] = useState('')
   const [pin, setPin] = useState('')
   const [contagem, setContagem] = useState(3)
   const [comprovante, setComprovante] = useState<{ dados: ComprovantePonto; foto: string } | null>(null)
   const [mensagem, setMensagem] = useState('')
   const [configuracoes, setConfiguracoes] = useState(false)
-  // "solicitacao": o funcionário esqueceu de bater e pede a inclusão do horário.
-  // "assinatura": o funcionário confere e assina o espelho de um mês fechado.
-  // "trocarPin": o funcionário troca o próprio PIN.
-  const [modo, setModo] = useState<'ponto' | 'solicitacao' | 'assinatura' | 'trocarPin'>('ponto')
-  const [pedido, setPedido] = useState({ data: '', hora: '', motivo: MOTIVOS[0], outroMotivo: '' })
+  const [pedido, setPedido] = useState<Pedido>(PEDIDO_VAZIO)
   const [pedidoEnviado, setPedidoEnviado] = useState<{ funcionarioNome: string; data: string; hora: string } | null>(null)
   const [erroPedido, setErroPedido] = useState('')
   const [espelhos, setEspelhos] = useState<EspelhoParaAssinar[]>([])
@@ -175,6 +94,13 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
     setErroPin('')
     setEtapa('novoPin')
   }, [])
+
+  const escolherModo = useCallback((novo: Exclude<Modo, 'ponto'>) => {
+    setMatricula('')
+    setModo(novo)
+  }, [])
+
+  // --- Ações no servidor ----------------------------------------------------
 
   const enviar = useCallback(async () => {
     const captura = capturar()
@@ -241,27 +167,30 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
     }
   }
 
-  const buscarEspelhos = useCallback(async (pinUsado: string) => {
-    setEtapa('enviando')
-    try {
-      const resposta = await api.consultarEspelhosPendentes({ matricula, pin: pinUsado })
-      setConectado(true)
-      if (resposta.espelhos.length === 0) {
-        setPin('')
-        setMensagem(`${resposta.funcionarioNome}, não há espelho de ponto aguardando a sua assinatura.`)
-        setEtapa('informacao')
-        return
+  const buscarEspelhos = useCallback(
+    async (pinUsado: string) => {
+      setEtapa('enviando')
+      try {
+        const resposta = await api.consultarEspelhosPendentes({ matricula, pin: pinUsado })
+        setConectado(true)
+        if (resposta.espelhos.length === 0) {
+          setPin('')
+          setMensagem(`${resposta.funcionarioNome}, não há espelho de ponto aguardando a sua assinatura.`)
+          setEtapa('informacao')
+          return
+        }
+        setEspelhos(resposta.espelhos)
+        setIndiceEspelho(0)
+        setErroAssinatura('')
+        setEtapa('espelho')
+      } catch (e) {
+        if (pinProvisorio(e)) return pedirPinPessoal()
+        if (erroDeRede(e)) setConectado(false)
+        falhar(mensagemErro(e))
       }
-      setEspelhos(resposta.espelhos)
-      setIndiceEspelho(0)
-      setErroAssinatura('')
-      setEtapa('espelho')
-    } catch (e) {
-      if (pinProvisorio(e)) return pedirPinPessoal()
-      if (erroDeRede(e)) setConectado(false)
-      falhar(mensagemErro(e))
-    }
-  }, [matricula, falhar, setConectado, pedirPinPessoal])
+    },
+    [matricula, falhar, setConectado, pedirPinPessoal],
+  )
 
   async function assinar(concordo: boolean, motivo?: string) {
     const espelho = espelhos[indiceEspelho]
@@ -334,6 +263,8 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
     }
   }, [indiceEspelho, espelhos.length, reiniciar])
 
+  // --- Tempo ------------------------------------------------------------------
+
   // Contagem regressiva antes da foto (começa em 3 ao entrar na etapa "foto").
   const enviarRef = useRef(enviar)
   useEffect(() => {
@@ -374,6 +305,8 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
     return () => clearTimeout(id)
   }, [etapa, matricula, pin, novoPin, modo, pedido, indiceEspelho, reiniciar, continuarAposAssinatura])
 
+  // --- Teclado ----------------------------------------------------------------
+
   const teclar = useCallback(
     (tecla: string) => {
       if (configuracoes) return
@@ -394,7 +327,7 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
           if (pin.length < 4) return
           if (modo === 'solicitacao') {
             // O PIN é conferido no servidor junto com o pedido.
-            setPedido({ data: dataLocal(new Date(Date.now() + deslocamento), fuso), hora: '', motivo: MOTIVOS[0], outroMotivo: '' })
+            setPedido({ ...PEDIDO_VAZIO, data: dataLocal(new Date(Date.now() + deslocamento), fuso) })
             setErroPedido('')
             setEtapa('formulario')
           } else if (modo === 'assinatura') {
@@ -470,335 +403,69 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
     return () => window.removeEventListener('keydown', aoTeclar)
   }, [teclar, reiniciar, configuracoes, etapa])
 
-  if (desativado) {
-    return (
-      <div className="tela-acesso escuro">
-        <div className="cartao-acesso">
-          <h1>Aparelho desativado</h1>
-          <Aviso tipo="alerta">Este aparelho foi desativado pelo gestor e não registra mais ponto.</Aviso>
-          <button
-            type="button"
-            className="botao primario grande"
-            onClick={() => {
-              gravarLocal(CHAVE_APARELHO, null)
-              gravarLocal(CHAVE_INFO, null)
-              void signOut(auth)
-            }}
-          >
-            Ativar novamente
-          </button>
-        </div>
-      </div>
-    )
-  }
+  // --- Tela ---------------------------------------------------------------------
+
+  if (desativado) return <AparelhoDesativado />
 
   const criandoPin = etapa === 'novoPin' || etapa === 'confirmarPin'
+  const bloqueado = etapa === 'foto' || etapa === 'enviando'
   const podeConfirmar =
     etapa === 'matricula' ? matricula.length > 0 : etapa === 'pin' ? pin.length >= 4 : criandoPin ? novoPin.length >= 4 : false
-  const bloqueado = etapa === 'foto' || etapa === 'enviando'
-  const hojeLocal = dataLocal(agora, fuso)
-  const textoAguarde = salvandoPin
-    ? 'Salvando seu PIN...'
-    : modo === 'solicitacao'
-      ? 'Enviando a solicitação...'
-      : modo === 'assinatura'
-        ? 'Buscando seus espelhos...'
-        : 'Registrando...'
-  const titulo =
-    etapa === 'novoPin'
-      ? modo === 'trocarPin'
-        ? 'Digite o novo PIN'
-        : 'Crie seu PIN pessoal'
-      : etapa === 'confirmarPin'
-        ? 'Digite o novo PIN de novo'
-        : etapa === 'pin'
-          ? modo === 'trocarPin'
-            ? 'Digite seu PIN atual'
-            : 'Digite seu PIN'
-          : etapa === 'enviando' && (salvandoPin || modo === 'assinatura')
-            ? textoAguarde
-            : modo === 'solicitacao'
-              ? 'Esqueceu de bater? Digite sua matrícula'
-              : modo === 'assinatura'
-                ? 'Assinar espelho: digite sua matrícula'
-                : modo === 'trocarPin'
-                  ? 'Trocar PIN: digite sua matrícula'
-                  : etapa === 'foto'
-                    ? 'Olhe para a câmera'
-                    : etapa === 'enviando'
-                      ? 'Registrando...'
-                      : 'Digite sua matrícula'
-  const instrucao = criandoPin
-    ? erroPin ||
-      (etapa === 'confirmarPin'
-        ? 'Confirme digitando o mesmo PIN.'
-        : modo === 'trocarPin'
-          ? '4 a 6 números, sem sequências (1234) nem repetições (1111).'
-          : 'Primeiro acesso: o PIN que você recebeu é provisório. Escolha um de 4 a 6 números que só você saiba.')
-    : etapa === 'pin'
-      ? modo === 'solicitacao'
-        ? 'Depois do PIN, informe o dia e o horário que ficou sem marcação.'
-        : modo === 'assinatura'
-          ? 'Depois do PIN, confira o espelho do mês e assine.'
-          : modo === 'trocarPin'
-            ? 'Depois, escolha o novo PIN.'
-            : 'Ao confirmar, olhe para a câmera: a foto é tirada automaticamente.'
-      : bloqueado
-        ? modo === 'ponto' && !salvandoPin
-          ? 'Fique parado, olhando para a câmera.'
-          : 'Aguarde um instante.'
-        : 'Matrícula, depois o PIN.'
+  const estadoTexto = { etapa, modo, salvandoPin, erroPin }
+  const visor: Visor = criandoPin
+    ? { tipo: 'pin', legenda: `Matrícula ${matricula} · novo PIN`, digitos: novoPin.length }
+    : etapa === 'pin' || (bloqueado && pin)
+      ? { tipo: 'pin', legenda: `Matrícula ${matricula}`, digitos: pin.length }
+      : { tipo: 'matricula', valor: matricula }
+  const rodape: Rodape = modo !== 'ponto' || criandoPin ? 'cancelar' : etapa === 'matricula' ? 'atalhos' : null
 
   return (
     <div className="terminal">
-      <header className="terminal-topo">
-        <div className="terminal-empresa">
-          <Fingerprint size={28} aria-hidden />
-          <div>
-            <strong>{info?.empresa.nome ?? 'Ponto'}</strong>
-            <small>{info?.dispositivo.nome ?? ''}</small>
-          </div>
-        </div>
-        <div className="terminal-relogio">
-          <strong>{horaLocal(agora, fuso)}</strong>
-          <span>{dataPorExtenso(agora, fuso)}</span>
-        </div>
-        <div className="terminal-acoes">
-          {!conectado && (
-            <span className="terminal-offline">
-              <WifiOff size={16} aria-hidden /> Sem internet
-            </span>
-          )}
-          {document.fullscreenEnabled && !document.fullscreenElement && (
-            <button
-              type="button"
-              className="botao-icone"
-              onClick={() => void document.documentElement.requestFullscreen().catch(() => undefined)}
-              aria-label="Tela cheia"
-            >
-              <Maximize size={20} />
-            </button>
-          )}
-          <button type="button" className="botao-icone" onClick={() => setConfiguracoes(true)} aria-label="Configurações do aparelho">
-            <Settings size={20} />
-          </button>
-        </div>
-      </header>
-
-      {info && !info.empresa.ativo && <div className="terminal-faixa">Empresa desativada no painel: os registros serão recusados.</div>}
+      <TopoTerminal info={info} agora={agora} fuso={fuso} conectado={conectado} aoAbrirConfiguracoes={() => setConfiguracoes(true)} />
 
       <div className="terminal-corpo">
-        <section className="terminal-camera">
-          <video ref={videoRef} autoPlay playsInline muted />
-          <div className="moldura-rosto" aria-hidden />
-          {estadoCamera !== 'pronta' && (
-            <div className="camera-aviso">
-              {estadoCamera === 'iniciando' ? (
-                <>
-                  <LoaderCircle className="girando" aria-hidden /> Ligando a câmera...
-                </>
-              ) : (
-                <>
-                  <Camera aria-hidden />
-                  <p>{erroCamera}</p>
-                  <button type="button" className="botao" onClick={() => void iniciarCamera()}>
-                    Tentar novamente
-                  </button>
-                </>
-              )}
-            </div>
-          )}
-          {etapa === 'foto' && (
-            <div className="contagem" aria-live="assertive">
-              <span key={contagem}>{contagem}</span>
-              <p>Olhe para a câmera</p>
-            </div>
-          )}
-          {etapa === 'enviando' && (
-            <div className="camera-aviso">
-              <LoaderCircle className="girando" aria-hidden /> {textoAguarde}
-            </div>
-          )}
-        </section>
-
+        <CameraPonto
+          videoRef={videoRef}
+          estado={estadoCamera}
+          erro={erroCamera}
+          aoTentarDeNovo={() => void iniciarCamera()}
+          contagem={etapa === 'foto' ? contagem : null}
+          aguardando={etapa === 'enviando' ? textoDeEspera(estadoTexto) : null}
+        />
         <section className="terminal-painel">
           {etapa === 'formulario' || (etapa === 'enviando' && modo === 'solicitacao') ? (
-            <form className="terminal-formulario" onSubmit={enviarPedido}>
-              <h1>Qual marcação ficou faltando?</h1>
-              <p className="terminal-instrucao">
-                Matrícula {matricula}. A marcação só passa a valer depois que o gestor aprovar.
-              </p>
-              <div className="terminal-campos">
-                <label>
-                  Dia
-                  <input
-                    type="date"
-                    value={pedido.data}
-                    min={somarDias(hojeLocal, -31)}
-                    max={hojeLocal}
-                    onChange={(e) => setPedido({ ...pedido, data: e.target.value })}
-                  />
-                </label>
-                <label>
-                  Horário
-                  <input type="time" value={pedido.hora} onChange={(e) => setPedido({ ...pedido, hora: e.target.value })} />
-                </label>
-              </div>
-              <label>
-                Motivo
-                <select value={pedido.motivo} onChange={(e) => setPedido({ ...pedido, motivo: e.target.value })}>
-                  {MOTIVOS.map((m) => (
-                    <option key={m}>{m}</option>
-                  ))}
-                </select>
-              </label>
-              {pedido.motivo === OUTRO_MOTIVO && (
-                <label>
-                  Explique
-                  <input
-                    value={pedido.outroMotivo}
-                    maxLength={300}
-                    onChange={(e) => setPedido({ ...pedido, outroMotivo: e.target.value })}
-                    autoFocus
-                  />
-                </label>
-              )}
-              {erroPedido && <p className="terminal-erro">{erroPedido}</p>}
-              <div className="terminal-botoes">
-                <button type="button" className="tecla tecla-apagar" onClick={reiniciar} disabled={etapa === 'enviando'}>
-                  Cancelar
-                </button>
-                <button type="submit" className="tecla tecla-ok" disabled={etapa === 'enviando'}>
-                  <Send size={22} aria-hidden /> Enviar pedido
-                </button>
-              </div>
-            </form>
+            <FormularioSolicitacao
+              matricula={matricula}
+              pedido={pedido}
+              aoMudar={setPedido}
+              hoje={dataLocal(agora, fuso)}
+              erro={erroPedido}
+              enviando={etapa === 'enviando'}
+              aoEnviar={(e) => void enviarPedido(e)}
+              aoCancelar={reiniciar}
+            />
           ) : (
-            <>
-            <h1>{titulo}</h1>
-            <div className="visor" aria-live="polite">
-              {criandoPin ? (
-                <>
-                  <small>Matrícula {matricula} · novo PIN</small>
-                  <div className="pontos-pin">
-                    {Array.from({ length: Math.max(4, novoPin.length) }, (_, i) => (
-                      <span key={i} className={i < novoPin.length ? 'cheio' : ''} />
-                    ))}
-                  </div>
-                </>
-              ) : etapa === 'pin' || (bloqueado && pin) ? (
-                <>
-                  <small>Matrícula {matricula}</small>
-                  <div className="pontos-pin">
-                    {Array.from({ length: Math.max(4, pin.length) }, (_, i) => (
-                      <span key={i} className={i < pin.length ? 'cheio' : ''} />
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <span className="visor-numero">{matricula || <span className="visor-dica">0000</span>}</span>
-              )}
-            </div>
-            <div className="teclado">
-              {TECLAS.map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  className={`tecla ${t === 'ok' ? 'tecla-ok' : ''} ${t === 'apagar' ? 'tecla-apagar' : ''}`}
-                  disabled={bloqueado || (t === 'ok' && !podeConfirmar)}
-                  onClick={() => teclar(t)}
-                  aria-label={t === 'ok' ? 'Confirmar' : t === 'apagar' ? 'Apagar' : t}
-                >
-                  {t === 'ok' ? <Check size={30} /> : t === 'apagar' ? <Delete size={28} /> : t}
-                </button>
-              ))}
-            </div>
-            {modo !== 'ponto' || criandoPin ? (
-              <button type="button" className="terminal-link" onClick={reiniciar} disabled={bloqueado}>
-                Cancelar e voltar ao ponto
-              </button>
-            ) : (
-              etapa === 'matricula' && (
-                <div className="terminal-atalhos">
-                  <button
-                    type="button"
-                    className="terminal-esqueci"
-                    onClick={() => {
-                      setMatricula('')
-                      setModo('solicitacao')
-                    }}
-                  >
-                    <ClockAlert size={20} aria-hidden /> Esqueci de bater o ponto
-                  </button>
-                  <button
-                    type="button"
-                    className="terminal-esqueci"
-                    onClick={() => {
-                      setMatricula('')
-                      setModo('assinatura')
-                    }}
-                  >
-                    <FileSignature size={20} aria-hidden /> Assinar meu espelho
-                  </button>
-                  <button
-                    type="button"
-                    className="terminal-esqueci"
-                    onClick={() => {
-                      setMatricula('')
-                      setModo('trocarPin')
-                    }}
-                  >
-                    <KeyRound size={20} aria-hidden /> Trocar meu PIN
-                  </button>
-                </div>
-              )
-            )}
-            <p className={`terminal-instrucao ${criandoPin && erroPin ? 'terminal-erro' : ''}`}>{instrucao}</p>
-            </>
+            <TecladoPonto
+              titulo={tituloDaTela(estadoTexto)}
+              visor={visor}
+              podeConfirmar={podeConfirmar}
+              bloqueado={bloqueado}
+              aoTeclar={teclar}
+              rodape={rodape}
+              aoCancelar={reiniciar}
+              aoEscolherModo={escolherModo}
+              instrucao={instrucaoDaTela(estadoTexto)}
+              instrucaoComErro={criandoPin && erroPin !== ''}
+            />
           )}
         </section>
       </div>
 
       {etapa === 'sucesso' && comprovante && (
-        <div className="resultado resultado-sucesso" onClick={reiniciar} role="status">
-          <CircleCheck size={72} aria-hidden />
-          <h2>Ponto registrado!</h2>
-          <img src={comprovante.foto} alt="" className="resultado-foto" />
-          <strong className="resultado-nome">{comprovante.dados.funcionarioNome}</strong>
-          <span className={`resultado-tipo resultado-${comprovante.dados.tipo}`}>
-            {comprovante.dados.tipo === 'entrada' ? 'Entrada' : 'Saída'} · {comprovante.dados.ordinal}ª marcação do dia
-          </span>
-          <span className="resultado-hora">{comprovante.dados.horaLocal}</span>
-          <span>{dataPorExtenso(new Date(comprovante.dados.dataHora), fuso)}</span>
-          <small>
-            NSR {formatarNsr(comprovante.dados.nsr)} · Código {comprovante.dados.codigoVerificacao}
-          </small>
-          {pinPessoalCriado && <small>Seu PIN pessoal foi criado: use-o a partir de agora.</small>}
-        </div>
+        <PontoRegistrado comprovante={comprovante.dados} foto={comprovante.foto} fuso={fuso} pinCriado={pinPessoalCriado} aoFechar={reiniciar} />
       )}
-
-      {etapa === 'pinDefinido' && (
-        <div className="resultado resultado-sucesso" onClick={reiniciar} role="status">
-          <KeyRound size={64} aria-hidden />
-          <h2>PIN alterado!</h2>
-          <p>Use o novo PIN a partir de agora. Ninguém da empresa tem acesso a ele.</p>
-          <small>Toque para voltar</small>
-        </div>
-      )}
-
-      {etapa === 'solicitado' && pedidoEnviado && (
-        <div className="resultado resultado-solicitado" onClick={reiniciar} role="status">
-          <Send size={64} aria-hidden />
-          <h2>Solicitação enviada!</h2>
-          <strong className="resultado-nome">{pedidoEnviado.funcionarioNome}</strong>
-          <p>
-            Marcação de {formatarData(pedidoEnviado.data)} às {pedidoEnviado.hora}
-          </p>
-          <small>Ela passa a valer depois que o gestor aprovar.</small>
-          {pinPessoalCriado && <small>Seu PIN pessoal foi criado: use-o a partir de agora.</small>}
-        </div>
-      )}
-
+      {etapa === 'pinDefinido' && <PinAlterado aoFechar={reiniciar} />}
+      {etapa === 'solicitado' && pedidoEnviado && <SolicitacaoEnviada pedido={pedidoEnviado} pinCriado={pinPessoalCriado} aoFechar={reiniciar} />}
       {etapa === 'espelho' && espelhos[indiceEspelho] && (
         <ConferenciaEspelho
           key={espelhos[indiceEspelho].id}
@@ -811,105 +478,19 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
           aoSair={reiniciar}
         />
       )}
-
       {etapa === 'assinado' && assinatura && (
-        <div
-          className={`resultado ${assinatura.status === 'assinado' ? 'resultado-sucesso' : 'resultado-solicitado'}`}
-          onClick={continuarAposAssinatura}
-          role="status"
-        >
-          {assinatura.status === 'assinado' ? <FileSignature size={64} aria-hidden /> : <Send size={64} aria-hidden />}
-          <h2>{assinatura.status === 'assinado' ? 'Espelho assinado!' : 'Contestação enviada'}</h2>
-          <p>
-            {assinatura.status === 'assinado'
-              ? `Espelho de ${nomeMes(assinatura.mes)} assinado eletronicamente.`
-              : `O gestor vai analisar o espelho de ${nomeMes(assinatura.mes)} e enviar uma versão corrigida.`}
-          </p>
-          <small>Código {assinatura.codigo}</small>
-          {indiceEspelho + 1 < espelhos.length && <small>Toque para conferir o próximo espelho.</small>}
-        </div>
+        <EspelhoRespondido assinatura={assinatura} temProximo={indiceEspelho + 1 < espelhos.length} aoContinuar={continuarAposAssinatura} />
       )}
-
-      {etapa === 'informacao' && (
-        <div className="resultado resultado-solicitado" onClick={reiniciar} role="status">
-          <Info size={64} aria-hidden />
-          <h2>Tudo em dia</h2>
-          <p>{mensagem}</p>
-          {pinPessoalCriado && <small>Seu PIN pessoal foi criado: use-o a partir de agora.</small>}
-          <small>Toque para voltar</small>
-        </div>
-      )}
-
+      {etapa === 'informacao' && <TudoEmDia mensagem={mensagem} pinCriado={pinPessoalCriado} aoFechar={reiniciar} />}
       {etapa === 'erro' && (
-        <div className="resultado resultado-erro" onClick={reiniciar} role="alert">
-          <CircleAlert size={72} aria-hidden />
-          <h2>{modo === 'ponto' ? 'Não foi possível registrar' : 'Não foi possível concluir'}</h2>
-          <p>{mensagem}</p>
-          <small>Toque para tentar de novo</small>
-        </div>
+        <FalhaNoAparelho
+          titulo={modo === 'ponto' ? 'Não foi possível registrar' : 'Não foi possível concluir'}
+          mensagem={mensagem}
+          aoFechar={reiniciar}
+        />
       )}
 
-      {configuracoes && (
-        <ConfiguracoesAparelho empresaId={empresaId} info={info} aoFechar={() => setConfiguracoes(false)} />
-      )}
+      {configuracoes && <ConfiguracoesAparelho empresaId={empresaId} info={info} aoFechar={() => setConfiguracoes(false)} />}
     </div>
-  )
-}
-
-function ConfiguracoesAparelho({ empresaId, info, aoFechar }: { empresaId: string; info: InfoAparelho | null; aoFechar: () => void }) {
-  const [email, setEmail] = useState('')
-  const [senha, setSenha] = useState('')
-  const [erro, setErro] = useState('')
-  const [ocupado, setOcupado] = useState(false)
-
-  async function desativar(e: FormEvent) {
-    e.preventDefault()
-    const dispositivoId = auth.currentUser?.uid
-    if (!dispositivoId) return
-    setErro('')
-    setOcupado(true)
-    const temporaria = criarSessaoTemporaria()
-    try {
-      await signInWithEmailAndPassword(temporaria.auth, email.trim(), senha)
-      await api.desativarDispositivo({ empresaId, dispositivoId }, temporaria.functions)
-      gravarLocal(CHAVE_APARELHO, null)
-      gravarLocal(CHAVE_INFO, null)
-      await signOut(auth)
-    } catch (err) {
-      setErro(mensagemErro(err))
-    } finally {
-      await temporaria.encerrar()
-      setOcupado(false)
-    }
-  }
-
-  return (
-    <Modal titulo="Configurações do aparelho" aoFechar={aoFechar} largura="pequena">
-      <dl className="lista-dados">
-        <dt>Empresa</dt>
-        <dd>{info?.empresa.nome ?? '—'}</dd>
-        <dt>Aparelho</dt>
-        <dd>{info?.dispositivo.nome ?? '—'}</dd>
-      </dl>
-      <div className="acoes-detalhe">
-        <button type="button" className="botao" onClick={() => window.location.reload()}>
-          Recarregar a tela
-        </button>
-      </div>
-      <form onSubmit={desativar} className="formulario">
-        <h3>Desativar este aparelho</h3>
-        <p className="texto-suave">Exige e-mail e senha de um gestor da empresa.</p>
-        <Campo rotulo="E-mail do gestor">
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" required />
-        </Campo>
-        <Campo rotulo="Senha">
-          <input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} autoComplete="off" required />
-        </Campo>
-        {erro && <Aviso tipo="erro">{erro}</Aviso>}
-        <button type="submit" className="botao perigo" disabled={ocupado}>
-          {ocupado ? 'Desativando...' : 'Desativar aparelho'}
-        </button>
-      </form>
-    </Modal>
   )
 }

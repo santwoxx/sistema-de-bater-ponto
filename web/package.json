@@ -11,7 +11,7 @@
     "test": "vitest run",
     "dados:exemplo": "node testes/dados-exemplo.mjs",
     "test:e2e": "npm --prefix ../functions run build && firebase emulators:exec --project demo-ponto --only auth,firestore,functions,storage \"node testes/e2e.mjs\"",
-    "lint": "oxlint",
+    "lint": "oxlint --deny-warnings",
     "preview": "vite preview"
   },
   "dependencies": {

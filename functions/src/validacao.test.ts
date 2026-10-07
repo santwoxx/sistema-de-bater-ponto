@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cnpjOpcional, cnpjValido, cpf, cpfValido, matricula, normalizarMatricula, pin, pinTrivial, texto } from "./validacao";
+import { cnpjOpcional, cnpjValido, cpf, cpfValido, matricula, normalizarMatricula, pin, pinTrivial, senha, texto } from "./validacao";
 
 describe("CPF", () => {
   it("aceita CPF válido com ou sem máscara", () => {
@@ -84,5 +84,23 @@ describe("Texto livre", () => {
 
   it("recusa texto gigante antes de processar", () => {
     expect(() => texto("a".repeat(10_000), "Nome", { max: 120 })).toThrow(/máximo/);
+  });
+});
+
+describe("Senha de administrador e gestor", () => {
+  it("aceita senhas longas e pouco previsíveis", () => {
+    expect(senha("cafe-com-pao-2026")).toBe("cafe-com-pao-2026");
+    expect(senha("Loja Centro tem 3 caixas", "ana@loja.com")).toBe("Loja Centro tem 3 caixas");
+  });
+
+  it("recusa senhas curtas, comuns, repetidas ou em sequência", () => {
+    for (const fraca of ["curta1", "12345678", "Senha123", "PASSWORD", "aaaaaaaa", "abcdefgh", "23456789"]) {
+      expect(() => senha(fraca), fraca).toThrow(/Senha/);
+    }
+  });
+
+  it("recusa senha que contém o próprio e-mail", () => {
+    expect(() => senha("gisele2026!", "gisele@loja.com")).toThrow(/e-mail/);
+    expect(senha("gisele2026!", "ana@loja.com")).toBe("gisele2026!");
   });
 });
