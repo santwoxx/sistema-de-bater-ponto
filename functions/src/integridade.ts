@@ -83,7 +83,7 @@ async function registrarResultado(empresaId: string, resultado: ResultadoVerific
   await lote.commit();
 }
 
-export const verificarIntegridade = onCall({ timeoutSeconds: 300, memory: "1GiB" }, async (request) => {
+export const verificarIntegridade = onCall({ timeoutSeconds: 300, memory: "1GiB", maxInstances: 2 }, async (request) => {
   const dados = objeto(request.data);
   const empresaId = idDocumento(dados.empresaId, "Empresa");
   const { usuario } = await exigirAcessoEmpresa(request, empresaId);
@@ -102,7 +102,7 @@ export const verificarIntegridade = onCall({ timeoutSeconds: 300, memory: "1GiB"
 
 // Toda segunda-feira às 3h (horário de Brasília), todas as empresas.
 export const verificarIntegridadeSemanal = onSchedule(
-  { schedule: "0 3 * * 1", timeZone: "America/Sao_Paulo", timeoutSeconds: 540, memory: "1GiB", retryCount: 1 },
+  { schedule: "0 3 * * 1", timeZone: "America/Sao_Paulo", timeoutSeconds: 540, memory: "1GiB", retryCount: 1, maxInstances: 1 },
   async () => {
     const empresas = await db.collection("empresas").select().get();
     for (const empresa of empresas.docs) {

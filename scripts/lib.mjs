@@ -3,6 +3,7 @@
 
 import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -66,6 +67,36 @@ export function firebaseSaida(args) {
   exigirCli()
   const r = spawnSync(process.execPath, [CLI_FIREBASE, ...args], { cwd: RAIZ, encoding: 'utf8' })
   return { status: r.status ?? 1, saida: r.stdout ?? '' }
+}
+
+/**
+ * Funções cuja versão mais recente não está no ar no Cloud Run. O deploy pode
+ * terminar sem erro deixando uma função sem revisão pronta (ex.: falta de cota
+ * de CPU): o Cloud Functions continua dizendo ACTIVE, e o CLI a pula no deploy
+ * seguinte por não ver mudança. Usa a conta já logada no Firebase CLI.
+ */
+export async function funcoesForaDoAr(projeto, regiao) {
+  exigirCli()
+  const cli = createRequire(CLI_FIREBASE)
+  const { configstore } = cli('../configstore')
+  const { requireAuth } = cli('../requireAuth')
+  const { Client } = cli('../apiv2')
+  await requireAuth({ user: configstore.get('user'), tokens: configstore.get('tokens') })
+  const listar = (api, recurso) =>
+    new Client({ urlPrefix: `https://${api}.googleapis.com`, apiVersion: 'v2', auth: true })
+      .get(`/projects/${projeto}/locations/${regiao}/${recurso}`, { queryParams: { pageSize: 500 } })
+      .then((r) => r.body[recurso] ?? [])
+  const [funcoes, servicos] = await Promise.all([listar('cloudfunctions', 'functions'), listar('run', 'services')])
+  const ultimo = (nome) => nome?.split('/').pop()
+  const servicoPorId = new Map(servicos.map((s) => [ultimo(s.name), s]))
+  return funcoes
+    .filter((f) => f.environment !== 'GEN_1')
+    .flatMap((f) => {
+      const s = servicoPorId.get(ultimo(f.serviceConfig?.service))
+      if (s?.latestReadyRevision && s.latestReadyRevision === s.latestCreatedRevision) return []
+      const motivo = (s?.terminalCondition?.message ?? `estado ${f.state}`).split('\n')[0].slice(0, 200)
+      return [{ nome: ultimo(f.name), motivo }]
+    })
 }
 
 /** Roda um script do package.json da raiz (ex.: "verificar"). */

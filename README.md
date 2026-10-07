@@ -187,11 +187,13 @@ O `firebase login` é feito uma vez por computador (entre com a conta Google don
 2. confere se o `web/.env` é do mesmo projeto (nunca publica um site falando com o projeto errado) e gera o **código de instalação** em `functions/.env.SEU-PROJETO` (fora do Git);
 3. confere se o login por e-mail/senha está ativo no Authentication;
 4. roda `npm run verificar`: build, lint e testes. **Se algo falhar, nada é publicado**;
-5. publica site, funções, regras e índices (`firebase deploy`);
+5. publica site, funções, regras e índices (`firebase deploy`) e confere no Cloud Run se cada função ficou no ar com a versão nova (as que não ficaram são publicadas de novo, só elas);
 6. liga a **proteção contra exclusão**, a **recuperação pontual** e o **backup diário** do banco;
 7. confere o site no ar (inclusive os cabeçalhos de segurança) e, no primeiro uso, mostra o código de instalação e abre a tela de configuração inicial.
 
-No primeiro deploy, o Firebase pode perguntar sobre a **política de limpeza de imagens** das funções e o **nome do site**: aperte Enter para aceitar o padrão. O índice do banco termina de ser criado alguns minutos depois; até lá, o filtro por funcionário pode avisar que o índice "está sendo criado".
+A publicação não faz perguntas: cria o site do Hosting se faltar e aceita a limpeza automática das imagens antigas das funções. O índice do banco termina de ser criado alguns minutos depois; até lá, o filtro por funcionário pode avisar que o índice "está sendo criado".
+
+**Cota de CPU.** Projetos novos têm 20 vCPU por região no Cloud Run, e cada cópia de função em execução reserva a sua parte (o deploy sobe uma cópia de cada função para testar). Por isso as funções usam CPU proporcional à memória (`gcf_gen1`, como as de 1ª geração) e poucas cópias (`maxInstances`); o teste `functions/src/cota.test.ts` garante que, mesmo com todas no máximo ao mesmo tempo, a soma cabe na cota. Para crescer além disso, peça mais "Total CPU allocation" do Cloud Run em Google Cloud > IAM e administrador > Cotas e só então aumente os `maxInstances`.
 
 **Para atualizar o sistema depois de qualquer mudança, é o mesmo comando:** `npm run publicar`. Sem `--project`, os comandos do Firebase usam o projeto de testes `demo-ponto`, que só existe nos emuladores: nada vai para a nuvem por engano.
 

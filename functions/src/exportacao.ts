@@ -160,7 +160,7 @@ function linhasDeMarcacoes(registros: Registro[], incluirDesconsideradas: boolea
     ]);
 }
 
-export const exportarDados = onCall({ timeoutSeconds: 300, memory: "1GiB" }, async (request) => {
+export const exportarDados = onCall({ timeoutSeconds: 300, memory: "1GiB", maxInstances: 2 }, async (request) => {
   const dados = objeto(request.data);
   const empresaId = idDocumento(dados.empresaId, "Empresa");
   const { usuario, empresa } = await exigirAcessoEmpresa(request, empresaId);

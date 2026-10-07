@@ -31,7 +31,9 @@ function erroRequisicaoDeOutro(): HttpsError {
   return new HttpsError("already-exists", "Requisição duplicada.");
 }
 
-export const registrarPonto = onCall({ memory: "512MiB", timeoutSeconds: 30 }, async (request) => {
+// 1 vCPU (as outras usam "gcf_gen1", ver admin.ts): quem está no aparelho espera
+// por esta função, que começa mais rápido e atende várias marcações na mesma cópia.
+export const registrarPonto = onCall({ memory: "512MiB", cpu: 1, timeoutSeconds: 30, maxInstances: 5 }, async (request) => {
   const { dispositivoId, empresaId } = exigirDispositivo(request);
   const dados = objeto(request.data);
 

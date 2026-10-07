@@ -10,7 +10,7 @@ import { idDocumento, objeto } from "./validacao";
 // download): só saem por aqui, para quem tem acesso à empresa. Cada consulta
 // fica no log, e a foto é conferida com o hash gravado no momento do registro.
 
-export const obterFoto = onCall({ memory: "512MiB" }, async (request) => {
+export const obterFoto = onCall({ memory: "512MiB", maxInstances: 2 }, async (request) => {
   const dados = objeto(request.data);
   const empresaId = idDocumento(dados.empresaId, "Empresa");
   const registroId = idDocumento(dados.registroId, "Marcação");

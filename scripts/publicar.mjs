@@ -10,7 +10,8 @@
 //  2. confere a configuração do site e gera o código de instalação, se faltar;
 //  3. confere se o login por e-mail/senha está ativo no Authentication;
 //  4. "npm run verificar" (build, lint e testes): se falhar, nada é publicado;
-//  5. firebase deploy (no primeiro deploy o CLI pode fazer perguntas: aceite o padrão);
+//  5. firebase deploy, sem perguntas (cria o site do Hosting se faltar e aceita os padrões),
+//     e confere no Cloud Run se cada função ficou no ar (republica as que não ficaram);
 //  6. liga a proteção contra exclusão, a recuperação pontual e o backup diário do banco;
 //  7. confere o site no ar e, se o sistema ainda não foi configurado, mostra o código
 //     de instalação e abre a tela de configuração inicial.
@@ -19,7 +20,7 @@ import { randomInt } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { appendFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { conferirConfiguracaoDoSite, cor, firebase, firebaseSaida, idDoProjeto, lerEnv, npmRun, parar, RAIZ } from './lib.mjs'
+import { conferirConfiguracaoDoSite, cor, firebase, firebaseSaida, funcoesForaDoAr, idDoProjeto, lerEnv, npmRun, parar, RAIZ } from './lib.mjs'
 
 const args = process.argv.slice(2)
 const indiceProjeto = args.indexOf('--projeto')
@@ -30,6 +31,7 @@ if (!/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(projeto)) parar(`Projeto inválido: "
 if (projeto.startsWith('demo-')) parar('Projetos "demo-" só existem nos emuladores: não há o que publicar.')
 
 const site = `https://${projeto}.web.app`
+const REGIAO_FUNCOES = 'southamerica-east1' // a mesma de functions/src/admin.ts
 const etapa = (n, texto) => console.log(`\n${cor.titulo(`[${n}/7] ${texto}`)}`)
 
 console.log(cor.titulo(`\nPublicar o Ponto Digital no Firebase: ${projeto}`))
@@ -38,10 +40,10 @@ console.log(cor.titulo(`\nPublicar o Ponto Digital no Firebase: ${projeto}`))
 etapa(1, 'Conta do Firebase')
 const contas = () => JSON.parse(firebaseSaida(['login:list', '--json']).saida || '{}').result ?? []
 if (contas().length === 0) {
-  if (!process.stdin.isTTY) parar('Faça login antes: npx firebase login')
+  if (!process.stdin.isTTY) parar('Faça login antes, num terminal comum: npx firebase login')
   console.log('O navegador vai abrir: entre com a conta Google dona do projeto.')
   firebase(['login'])
-  if (contas().length === 0) parar('O login não foi concluído.')
+  if (contas().length === 0) parar('O login não foi concluído. Rode "npx firebase login" num terminal comum e tente de novo.')
 }
 const listaProjetos = JSON.parse(firebaseSaida(['projects:list', '--json']).saida || '{}').result ?? []
 if (!listaProjetos.some((p) => p.projectId === projeto)) {
@@ -103,16 +105,45 @@ if (verificar) {
 
 // 5. Deploy ------------------------------------------------------------------------
 etapa(5, 'Publicando site, funções, banco, regras e índices')
-console.log('Se o Firebase fizer alguma pergunta, aperte Enter para aceitar a resposta padrão.')
-if (firebase(['deploy', '--project', apelido]) !== 0) {
+// O site padrão do Hosting (mesmo nome do projeto) só existe depois do primeiro deploy,
+// e o CLI pergunta o nome dele; criamos antes para não depender de pergunta.
+if (firebaseSaida(['hosting:sites:get', projeto, '--project', apelido]).status !== 0) {
+  if (firebase(['hosting:sites:create', projeto, '--project', apelido]) !== 0) {
+    parar(`Não consegui criar o site ${projeto}.web.app no Hosting. Veja a mensagem acima.`)
+  }
+}
+// O repositório é a fonte da verdade: --force aceita as respostas padrão do CLI
+// (limpeza automática das imagens antigas das funções) e remove funções que não
+// existem mais no código. Assim a publicação não depende de perguntas no terminal.
+if (firebase(['deploy', '--project', apelido, '--force']) !== 0) {
   parar(
     'O deploy não terminou. Veja a mensagem acima:\n' +
       '  - "Blaze" ou "billing": o projeto precisa do plano Blaze.\n' +
       '  - "Storage has not been set up": falta o "Vamos começar" do Storage no Console.\n' +
+      '  - "Quota exceeded for total allowable CPU": veja "Cota de CPU" no README.\n' +
       '  - Logo depois de ativar o Blaze, o Google pode levar alguns minutos para liberar tudo.\n' +
       'Depois, rode "npm run publicar" de novo: o que já subiu não é duplicado.',
   )
 }
+
+// Confere no Cloud Run se cada função está com a versão nova no ar; as que não
+// estiverem são publicadas de novo, só elas (com --only o CLI não as pula).
+const conferirFuncoes = () =>
+  funcoesForaDoAr(projeto, REGIAO_FUNCOES).catch((e) => {
+    console.log(cor.aviso(`Não consegui conferir as funções no Cloud Run (${e.message}).`))
+    return []
+  })
+const listarFuncoes = (lista) => lista.map((f) => `  - ${f.nome}: ${f.motivo}`).join('\n')
+let foraDoAr = await conferirFuncoes()
+if (foraDoAr.length > 0) {
+  console.log(cor.aviso(`Estas funções ficaram sem a versão nova no ar; publicando de novo só elas:\n${listarFuncoes(foraDoAr)}`))
+  firebase(['deploy', '--only', foraDoAr.map((f) => `functions:${f.nome}`).join(','), '--project', apelido, '--force'])
+  foraDoAr = await conferirFuncoes()
+  if (foraDoAr.length > 0) {
+    parar(`Estas funções não ficaram no ar:\n${listarFuncoes(foraDoAr)}\nSe o motivo for "Quota exceeded", veja "Cota de CPU" no README.`)
+  }
+}
+console.log(cor.ok('Todas as funções estão no ar com a versão nova.'))
 
 // 6. Proteção do banco -----------------------------------------------------------
 etapa(6, 'Proteção e backups do banco')
