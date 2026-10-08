@@ -1290,6 +1290,11 @@ iframe[src*='/emulator/auth/iframe'] {
   vertical-align: middle;
 }
 
+/* CPF, horários e NSR não quebram no meio; a tabela rola de lado na tela estreita. */
+.tabela td.numeros {
+  white-space: nowrap;
+}
+
 .tabela tbody tr:last-child td {
   border-bottom: none;
 }
@@ -1723,11 +1728,13 @@ html.modo-ponto body {
   transform: scaleX(-1);
 }
 
+/* Pela altura da câmera: a moldura inteira sempre cabe, com o aparelho em pé ou deitado. */
 .moldura-rosto {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: min(56%, 300px);
+  height: min(82%, 420px);
+  max-width: 88%;
   aspect-ratio: 3 / 4;
   transform: translate(-50%, -50%);
   border: 3px dashed rgb(255 255 255 / 45%);
@@ -1934,6 +1941,11 @@ html.modo-ponto body {
 /* Número ímpar de atalhos: o último ocupa a linha inteira. */
 .terminal-atalhos .terminal-esqueci:last-child:nth-child(odd) {
   grid-column: 1 / -1;
+}
+
+/* Nome curto dos atalhos: só no celular (ver "Responsivo"). */
+.rotulo-curto {
+  display: none;
 }
 
 /* Conferência do espelho no aparelho de ponto */
@@ -2284,8 +2296,46 @@ html.modo-ponto body {
 }
 
 @media (max-width: 560px) {
+  .cabecalho-pagina {
+    margin-bottom: 14px;
+  }
+
+  .cabecalho-pagina h1 {
+    font-size: 1.35rem;
+  }
+
   .indicadores {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .indicador {
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .indicador > svg {
+    width: 32px;
+    height: 32px;
+    padding: 6px;
+  }
+
+  .indicador strong {
+    font-size: 1.3rem;
+  }
+
+  .indicador span {
+    font-size: 0.78rem;
+  }
+
+  /* Filtros dois a dois (ex.: "De" e "Até" lado a lado). */
+  .filtros .campo {
+    flex-basis: 130px;
+  }
+
+  .tabela th,
+  .tabela td {
+    padding: 9px 10px;
   }
 
   .grade-2 {
@@ -2314,13 +2364,39 @@ html.modo-ponto body {
   }
 }
 
-/* Aparelho em pé (tablet/celular na vertical): câmera em cima, teclado embaixo. */
+/* Aparelho em pé (tablet/celular na vertical): câmera em cima, teclado embaixo.
+   A câmera tem altura própria e o teclado se ajusta ao espaço que sobra; na hora
+   da foto, a câmera ocupa a tela toda (o teclado não é usado nesse momento). */
 @media (orientation: portrait), (max-width: 760px) {
   .terminal-corpo {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(0, 0.8fr) auto;
-    gap: 14px;
-    padding: 14px 16px max(14px, env(safe-area-inset-bottom));
+    grid-template-rows: clamp(130px, 28vh, 440px) minmax(0, 1fr);
+    grid-template-rows: clamp(130px, 28dvh, 440px) minmax(0, 1fr);
+    gap: 12px;
+    padding: 12px 16px max(12px, env(safe-area-inset-bottom));
+  }
+
+  .terminal-painel {
+    gap: 10px;
+  }
+
+  .teclado {
+    flex: 1 1 0;
+    min-height: 0;
+    max-height: 440px;
+    grid-template-rows: repeat(4, minmax(0, 1fr));
+  }
+
+  .tecla {
+    min-height: 40px;
+  }
+
+  .terminal-capturando .terminal-corpo {
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .terminal-capturando .terminal-painel {
+    display: none;
   }
 
   .terminal-topo {
@@ -2356,9 +2432,254 @@ html.modo-ponto body {
   }
 }
 
-@media (max-width: 480px) {
+/* Celular: topo numa linha só (sem a data), selos só com o ícone, teclado e
+   atalhos compactos (os atalhos com o nome curto, lado a lado). */
+@media (max-width: 560px) {
+  .terminal-topo {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 8px;
+    padding: max(8px, env(safe-area-inset-top)) 12px 8px;
+  }
+
+  .terminal-relogio {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .terminal-relogio strong {
+    font-size: 1.45rem;
+  }
+
+  .terminal-relogio span,
+  .terminal-rotulo {
+    display: none;
+  }
+
+  .terminal-empresa {
+    gap: 8px;
+  }
+
+  .terminal-empresa svg {
+    width: 22px;
+    height: 22px;
+  }
+
+  .terminal-empresa strong {
+    font-size: 0.95rem;
+  }
+
+  .terminal-empresa small {
+    font-size: 0.75rem;
+  }
+
+  .terminal-acoes {
+    gap: 2px;
+  }
+
+  .terminal-acoes .botao-icone {
+    width: 32px;
+    height: 32px;
+  }
+
+  .terminal-offline,
+  .terminal-guardadas {
+    padding: 5px 7px;
+  }
+
+  .terminal-corpo {
+    gap: 10px;
+    padding: 10px 12px max(10px, env(safe-area-inset-bottom));
+  }
+
+  .terminal-camera {
+    border-radius: 16px;
+  }
+
+  .terminal-painel {
+    gap: 8px;
+  }
+
+  .terminal-painel h1 {
+    font-size: 1.05rem;
+  }
+
+  .visor {
+    min-height: 0;
+    padding: 8px;
+    border-radius: 12px;
+  }
+
+  .visor small {
+    font-size: 0.85rem;
+  }
+
+  .visor-numero {
+    font-size: 1.9rem;
+  }
+
+  .pontos-pin {
+    gap: 12px;
+  }
+
+  .pontos-pin span {
+    width: 16px;
+    height: 16px;
+  }
+
+  .teclado {
+    gap: 8px;
+  }
+
+  .tecla {
+    border-radius: 12px;
+    font-size: 1.5rem;
+  }
+
   .terminal-atalhos {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .terminal-atalhos .terminal-esqueci {
+    flex-direction: column;
+    gap: 2px;
+    min-height: 0;
+    padding: 6px 4px;
+    border-radius: 10px;
+    font-size: 0.74rem;
+    line-height: 1.15;
+  }
+
+  .terminal-atalhos .terminal-esqueci:last-child:nth-child(odd) {
+    grid-column: auto;
+  }
+
+  .rotulo-longo {
+    display: none;
+  }
+
+  .rotulo-curto {
+    display: inline;
+  }
+
+  .tela-acesso {
+    align-items: flex-start;
+    padding: 12px;
+  }
+
+  .cartao-acesso {
+    padding: 22px 18px;
+  }
+}
+
+/* Celular deitado: pouca altura. Câmera à esquerda, teclado à direita, sem título. */
+@media (orientation: landscape) and (max-height: 520px) {
+  .terminal-topo {
+    padding: 6px 16px;
+  }
+
+  .terminal-relogio strong {
+    font-size: 1.5rem;
+  }
+
+  .terminal-relogio span,
+  .terminal-instrucao,
+  .terminal-painel h1 {
+    display: none;
+  }
+
+  .terminal-corpo {
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    gap: 12px;
+    padding: 8px 16px max(8px, env(safe-area-inset-bottom));
+  }
+
+  .terminal-painel {
+    justify-content: flex-start;
+    gap: 6px;
+  }
+
+  .visor {
+    min-height: 0;
+    padding: 4px 8px;
+  }
+
+  .visor-numero {
+    font-size: 1.5rem;
+  }
+
+  .teclado {
+    flex: 1 1 0;
+    min-height: 0;
+    grid-template-rows: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .tecla {
+    min-height: 32px;
+    border-radius: 10px;
+    font-size: 1.3rem;
+  }
+
+  .terminal-atalhos {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .terminal-atalhos .terminal-esqueci {
+    min-height: 0;
+    padding: 6px 4px;
+    font-size: 0.78rem;
+  }
+
+  .terminal-atalhos .terminal-esqueci:last-child:nth-child(odd) {
+    grid-column: auto;
+  }
+
+  .rotulo-longo {
+    display: none;
+  }
+
+  .rotulo-curto {
+    display: inline;
+  }
+}
+
+/* Tela baixa: o resultado da batida (foto, hora, avisos) cabe sem cortar. */
+@media (max-height: 720px) {
+  .resultado {
+    gap: 6px;
+    padding: 16px;
+    overflow-y: auto;
+    justify-content: safe center;
+  }
+
+  .resultado > svg {
+    width: 48px;
+    height: 48px;
+  }
+
+  .resultado h2 {
+    font-size: 1.6rem;
+  }
+
+  .resultado p {
+    font-size: 1.05rem;
+  }
+
+  .resultado-foto {
+    width: 96px;
+    height: 96px;
+  }
+
+  .resultado-tipo {
+    padding: 4px 12px;
+    font-size: 0.95rem;
+  }
+
+  .resultado-hora {
+    font-size: 2.4rem;
   }
 }
 

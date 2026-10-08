@@ -35,15 +35,23 @@ export default function TopoTerminal({
           <span>{dataPorExtenso(agora, fuso)}</span>
         </div>
         <div className="terminal-acoes">
+          {/* No celular, os selos mostram só o ícone (e o número de batidas guardadas). */}
           {!conectado && (
-            <span className="terminal-offline">
-              <WifiOff size={16} aria-hidden /> Sem internet
+            <span className="terminal-offline" title="Sem internet">
+              <WifiOff size={16} aria-hidden /> <span className="terminal-rotulo">Sem internet</span>
             </span>
           )}
           {guardadas > 0 && (
             <span className="terminal-guardadas" title="Batidas feitas sem internet, esperando a conexão para serem enviadas">
               <CloudUpload size={16} aria-hidden />{' '}
-              {enviandoGuardadas ? 'Enviando batidas...' : guardadas === 1 ? '1 batida guardada' : `${guardadas} batidas guardadas`}
+              {enviandoGuardadas ? (
+                <span className="terminal-rotulo">Enviando batidas...</span>
+              ) : (
+                <>
+                  {guardadas}
+                  <span className="terminal-rotulo">{guardadas === 1 ? ' batida guardada' : ' batidas guardadas'}</span>
+                </>
+              )}
             </span>
           )}
           {document.fullscreenEnabled && !document.fullscreenElement && (

@@ -445,6 +445,8 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
 
   const criandoPin = etapa === 'novoPin' || etapa === 'confirmarPin'
   const bloqueado = etapa === 'foto' || etapa === 'enviando'
+  // Na hora da foto, com o aparelho em pé, a câmera ocupa a tela toda (ver estilos.css).
+  const capturando = modo === 'ponto' && bloqueado
   const podeConfirmar =
     etapa === 'matricula' ? matricula.length > 0 : etapa === 'pin' ? pin.length >= 4 : criandoPin ? novoPin.length >= 4 : false
   const estadoTexto = { etapa, modo, salvandoPin, erroPin }
@@ -456,7 +458,7 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
   const rodape: Rodape = modo !== 'ponto' || criandoPin ? 'cancelar' : etapa === 'matricula' ? 'atalhos' : null
 
   return (
-    <div className="terminal">
+    <div className={capturando ? 'terminal terminal-capturando' : 'terminal'}>
       <TopoTerminal
         info={info}
         agora={agora}

@@ -32,6 +32,7 @@ Sistema de controle de ponto para lojas e pequenas empresas. **Tudo roda no Fire
 - **PIN pessoal**: o PIN que o gestor cadastra é provisório. No primeiro uso, o aparelho pede que o funcionário crie o dele, e ninguém da empresa fica sabendo. **"Trocar meu PIN"** permite trocá-lo quando quiser.
 - **Sem internet, o ponto continua:** a batida (com foto) fica guardada no aparelho, cifrada, e é enviada sozinha quando a conexão volta. O topo da tela mostra quantas estão guardadas; o PIN é conferido quando a batida chega ao servidor, e as recusadas (PIN errado, por exemplo) aparecem nos alertas do painel. Vale para até 72 horas sem internet; "Esqueci de bater o ponto", "Assinar meu espelho" e "Trocar meu PIN" precisam de conexão.
 - Relógio sincronizado com o servidor, aviso de "Sem internet", tela sempre acesa e tela cheia. Pode ser instalado como aplicativo (PWA).
+- Funciona em tablet, computador e **celular** (em pé ou deitado): a moldura do rosto sempre cabe inteira na câmera e, no celular em pé, na hora da foto a câmera ocupa a tela toda.
 - Ativado uma única vez por um gestor e desativável pelo painel a qualquer momento.
 
 ### No painel (`/admin`)

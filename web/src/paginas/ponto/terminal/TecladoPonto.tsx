@@ -9,10 +9,11 @@ export type Visor = { tipo: 'matricula'; valor: string } | { tipo: 'pin'; legend
 /** Atalhos da tela inicial ou o botão de cancelar (fora do modo ponto). */
 export type Rodape = 'atalhos' | 'cancelar' | null
 
-const ATALHOS: Array<{ modo: Exclude<Modo, 'ponto'>; rotulo: string; Icone: typeof ClockAlert }> = [
-  { modo: 'solicitacao', rotulo: 'Esqueci de bater o ponto', Icone: ClockAlert },
-  { modo: 'assinatura', rotulo: 'Assinar meu espelho', Icone: FileSignature },
-  { modo: 'trocarPin', rotulo: 'Trocar meu PIN', Icone: KeyRound },
+// O nome curto aparece no celular, onde os três atalhos ficam lado a lado.
+const ATALHOS: Array<{ modo: Exclude<Modo, 'ponto'>; rotulo: string; curto: string; Icone: typeof ClockAlert }> = [
+  { modo: 'solicitacao', rotulo: 'Esqueci de bater o ponto', curto: 'Esqueci o ponto', Icone: ClockAlert },
+  { modo: 'assinatura', rotulo: 'Assinar meu espelho', curto: 'Assinar espelho', Icone: FileSignature },
+  { modo: 'trocarPin', rotulo: 'Trocar meu PIN', curto: 'Trocar PIN', Icone: KeyRound },
 ]
 
 /** Título, visor, teclado numérico, atalhos e instrução do aparelho. */
@@ -78,9 +79,10 @@ export default function TecladoPonto({
       )}
       {rodape === 'atalhos' && (
         <div className="terminal-atalhos">
-          {ATALHOS.map(({ modo, rotulo, Icone }) => (
-            <button key={modo} type="button" className="terminal-esqueci" onClick={() => aoEscolherModo(modo)}>
-              <Icone size={20} aria-hidden /> {rotulo}
+          {ATALHOS.map(({ modo, rotulo, curto, Icone }) => (
+            <button key={modo} type="button" className="terminal-esqueci" onClick={() => aoEscolherModo(modo)} aria-label={rotulo}>
+              <Icone size={20} aria-hidden /> <span className="rotulo-longo">{rotulo}</span>
+              <span className="rotulo-curto">{curto}</span>
             </button>
           ))}
         </div>
