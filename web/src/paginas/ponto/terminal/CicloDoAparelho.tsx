@@ -7,18 +7,32 @@ import { CHAVE_APARELHO } from '../../../contexto/Sessao'
 import { auth, criarSessaoTemporaria, entrarComGoogle } from '../../../firebase'
 import { cancelouJanela, mensagemErro } from '../../../lib/erros'
 import { gravarLocal } from '../../../lib/util'
+import { CHAVE_REFERENCIA, esvaziarFila } from './semInternet'
 import { CHAVE_INFO, type InfoAparelho } from './useSincronizacao'
 
 // Ciclo de vida do aparelho: desativação (exige um gestor) e a tela de
-// aparelho desativado. Sair apaga o que o aparelho guardou localmente.
+// aparelho desativado. Sair apaga o que o aparelho guardou localmente,
+// inclusive batidas sem internet que não chegaram a ser enviadas.
 
 async function sairDoAparelho() {
   gravarLocal(CHAVE_APARELHO, null)
   gravarLocal(CHAVE_INFO, null)
+  gravarLocal(CHAVE_REFERENCIA, null)
+  await esvaziarFila().catch(() => undefined)
   await signOut(auth)
 }
 
-export function ConfiguracoesAparelho({ empresaId, info, aoFechar }: { empresaId: string; info: InfoAparelho | null; aoFechar: () => void }) {
+export function ConfiguracoesAparelho({
+  empresaId,
+  info,
+  guardadas,
+  aoFechar,
+}: {
+  empresaId: string
+  info: InfoAparelho | null
+  guardadas: number
+  aoFechar: () => void
+}) {
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
   const [erro, setErro] = useState('')
@@ -65,6 +79,14 @@ export function ConfiguracoesAparelho({ empresaId, info, aoFechar }: { empresaId
       <form onSubmit={desativarComSenha} className="formulario">
         <h3>Desativar este aparelho</h3>
         <p className="texto-suave">Exige um gestor da empresa: e-mail e senha ou a conta Google.</p>
+        {guardadas > 0 && (
+          <Aviso tipo="alerta">
+            {guardadas === 1
+              ? 'Há 1 batida feita sem internet que ainda não foi enviada.'
+              : `Há ${guardadas} batidas feitas sem internet que ainda não foram enviadas.`}{' '}
+            Se desativar agora, elas se perdem: deixe o aparelho com internet por alguns minutos antes.
+          </Aviso>
+        )}
         <Campo rotulo="E-mail do gestor">
           <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" required />
         </Campo>

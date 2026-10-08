@@ -1,8 +1,8 @@
-import { CircleAlert, CircleCheck, FileSignature, Info, KeyRound, Send } from 'lucide-react'
+import { CircleAlert, CircleCheck, CloudOff, FileSignature, Info, KeyRound, Send } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { ComprovantePonto } from '../../../api'
 import { formatarNsr } from '../../../lib/formatos'
-import { dataPorExtenso, formatarData, nomeMes } from '../../../lib/tempo'
+import { dataPorExtenso, formatarData, horaLocal, nomeMes } from '../../../lib/tempo'
 
 // Telas de resultado do aparelho: cobrem a tela, somem sozinhas depois de
 // alguns segundos (ver Terminal) ou com um toque.
@@ -57,6 +57,30 @@ export function PontoRegistrado({
         NSR {formatarNsr(comprovante.nsr)} · Código {comprovante.codigoVerificacao}
       </small>
       <AvisoPinCriado mostrar={pinCriado} />
+    </Resultado>
+  )
+}
+
+/** Batida feita sem internet: guardada no aparelho, vai sozinha quando a conexão voltar. */
+export function PontoGuardado({
+  guardada,
+  fuso,
+  aoFechar,
+}: {
+  guardada: { matricula: string; horario: number; foto: string }
+  fuso: string
+  aoFechar: () => void
+}) {
+  const horario = new Date(guardada.horario)
+  return (
+    <Resultado estilo="solicitado" aoTocar={aoFechar}>
+      <CloudOff size={64} aria-hidden />
+      <h2>Batida guardada</h2>
+      <img src={guardada.foto} alt="" className="resultado-foto" />
+      <strong className="resultado-nome">Matrícula {guardada.matricula}</strong>
+      <span className="resultado-hora">{horaLocal(horario, fuso)}</span>
+      <span>{dataPorExtenso(horario, fuso)}</span>
+      <p>Estamos sem internet. A batida ficou guardada neste aparelho e vai sozinha quando a conexão voltar; o PIN é conferido nessa hora.</p>
     </Resultado>
   )
 }

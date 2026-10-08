@@ -63,6 +63,27 @@ function FotoCompleta({ empresaId, registroId, alt }: { empresaId: string; regis
   )
 }
 
+// Batida feita sem internet: quando chegou e, se o horário merece conferência,
+// os dois horários apurados (relógio do aparelho e tempo desde a última conexão).
+function SemInternet({ dados, fuso }: { dados: NonNullable<Registro['semInternet']>; fuso: string }) {
+  const quando = (t: { toDate: () => Date }) => formatarDataHora(t.toDate(), fuso)
+  return (
+    <>
+      <dt>Sem internet</dt>
+      <dd>
+        Feita sem internet; chegou ao servidor em {quando(dados.recebidoEm)}. Última conexão antes da batida: {quando(dados.ultimaConexaoEm)}.
+        {dados.conferir && (
+          <Aviso tipo="alerta">
+            <strong>Confira o horário.</strong> {dados.motivo} Pelo relógio do aparelho: {quando(dados.horarioRelogio)}
+            {dados.horarioDecorrido && <>; pelo tempo desde a última conexão: {quando(dados.horarioDecorrido)}</>}. Se estiver errado,
+            desconsidere esta marcação e inclua o horário certo.
+          </Aviso>
+        )}
+      </dd>
+    </>
+  )
+}
+
 export function DetalhesRegistro({ registro, empresa, aoFechar }: { registro: Registro; empresa: Empresa; aoFechar: () => void }) {
   const notificar = useNotificar()
   const [motivo, setMotivo] = useState('')
@@ -126,6 +147,7 @@ export function DetalhesRegistro({ registro, empresa, aoFechar }: { registro: Re
               <>Aparelho "{registro.dispositivoNome}"</>
             )}
           </dd>
+          {registro.semInternet && <SemInternet dados={registro.semInternet} fuso={empresa.fusoHorario} />}
           {registro.nsr !== undefined && (
             <>
               <dt>NSR</dt>

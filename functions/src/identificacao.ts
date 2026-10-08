@@ -34,7 +34,7 @@ export function minutosDeBloqueio(bloqueiosSeguidos: number): number {
 }
 
 export function credenciaisInvalidas(): HttpsError {
-  return new HttpsError("permission-denied", "Matrícula ou PIN inválidos.");
+  return new HttpsError("permission-denied", "Matrícula ou PIN inválidos.", { motivo: "credenciais-invalidas" });
 }
 
 /** O PIN usado é o provisório definido pelo gestor: o funcionário precisa criar o dele. */

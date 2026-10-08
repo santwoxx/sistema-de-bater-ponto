@@ -11,6 +11,8 @@ export type Etapa =
   | 'enviando'
   | 'espelho'
   | 'sucesso'
+  // Sem internet: a batida ficou guardada no aparelho (ver semInternet.ts).
+  | 'guardado'
   | 'solicitado'
   | 'assinado'
   | 'informacao'
@@ -34,7 +36,7 @@ export interface Pedido {
 }
 
 /** Telas que mostram um resultado e voltam ao início sozinhas (ou com um toque). */
-export const ETAPAS_DE_RESULTADO: readonly Etapa[] = ['sucesso', 'erro', 'solicitado', 'assinado', 'informacao', 'pinDefinido']
+export const ETAPAS_DE_RESULTADO: readonly Etapa[] = ['sucesso', 'guardado', 'erro', 'solicitado', 'assinado', 'informacao', 'pinDefinido']
 
 export const OUTRO_MOTIVO = 'Outro motivo'
 export const MOTIVOS = ['Esqueci de registrar', 'O aparelho estava sem internet ou com problema', 'Estava em trabalho externo', OUTRO_MOTIVO]

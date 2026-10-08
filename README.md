@@ -30,6 +30,7 @@ Sistema de controle de ponto para lojas e pequenas empresas. **Tudo roda no Fire
 - **"Esqueci de bater o ponto"**: o funcionário se identifica com matrícula e PIN e pede a inclusão do horário que faltou (dia, horário e motivo). Uma foto pequena é tirada como prova, e a marcação só vale depois que o gestor aprovar.
 - **"Assinar meu espelho"**: com matrícula e PIN, o funcionário confere o espelho dos meses fechados (dia a dia e totais) e **assina** ou **contesta** explicando o que está errado. A assinatura registra data, hora, aparelho, foto e um código de verificação.
 - **PIN pessoal**: o PIN que o gestor cadastra é provisório. No primeiro uso, o aparelho pede que o funcionário crie o dele, e ninguém da empresa fica sabendo. **"Trocar meu PIN"** permite trocá-lo quando quiser.
+- **Sem internet, o ponto continua:** a batida (com foto) fica guardada no aparelho, cifrada, e é enviada sozinha quando a conexão volta. O topo da tela mostra quantas estão guardadas; o PIN é conferido quando a batida chega ao servidor, e as recusadas (PIN errado, por exemplo) aparecem nos alertas do painel. Vale para até 72 horas sem internet; "Esqueci de bater o ponto", "Assinar meu espelho" e "Trocar meu PIN" precisam de conexão.
 - Relógio sincronizado com o servidor, aviso de "Sem internet", tela sempre acesa e tela cheia. Pode ser instalado como aplicativo (PWA).
 - Ativado uma única vez por um gestor e desativável pelo painel a qualquer momento.
 
@@ -297,7 +298,7 @@ Abra <http://localhost:5173>. Os dados somem quando os emuladores são fechados.
 | Comando | O que faz |
 |---|---|
 | `npm run verificar` | Build das funções e do site, lint (sem nenhum aviso permitido) e testes unitários: CPF, CNPJ, PIN, senhas, limpeza de textos, fusos, hash do PIN, limites de uso, cadeia de hashes, cálculo do espelho e textos do aparelho. O `npm run publicar` roda isto antes de publicar |
-| `npm run testar:e2e` | 27 etapas de ponta a ponta com os emuladores: permissões de cada papel, código de instalação, login com Google (mesma conta do e-mail, ligação com senha, conta sem cadastro), PIN provisório e pessoal, registro com foto, NSR e cadeia de hashes, bloqueios (inclusive com tentativas em paralelo), fotos só pelo servidor, ajustes, abonos, solicitações, fechamento e assinatura, exportação, adulteração detectada, limites de uso, auditoria e desativação de aparelho |
+| `npm run testar:e2e` | 28 etapas de ponta a ponta com os emuladores: permissões de cada papel, código de instalação, login com Google (mesma conta do e-mail, ligação com senha, conta sem cadastro), batida sem internet (cifrada, horário conferido, recusas e cadeia íntegra), PIN provisório e pessoal, registro com foto, NSR e cadeia de hashes, bloqueios (inclusive com tentativas em paralelo), fotos só pelo servidor, ajustes, abonos, solicitações, fechamento e assinatura, exportação, adulteração detectada, limites de uso, auditoria e desativação de aparelho |
 | `npm run dados:exemplo` | Com os emuladores ligados, cria administrador, gestora, empresas, funcionários e o histórico do mês anterior, pronto para fechar e assinar (senha `ponto-teste-2026`; os PINs são provisórios) |
 | `npm run logs` | Últimos registros das funções em produção |
 
@@ -329,6 +330,13 @@ No GitHub, cada envio roda o `npm run verificar`, a auditoria das dependências 
 - **Marcações imutáveis:** correções viram inclusões ou desconsiderações com justificativa. Nada é apagado.
 - **NSR sequencial e cadeia de hashes (SHA-256)** por empresa: cada registro inclui o hash do anterior, da foto, da data e da hora. A **verificação de integridade** refaz a conta e aponta qualquer marcação apagada, inserida ou alterada, mesmo direto no banco. Ela roda **sozinha toda segunda-feira de madrugada** e também pode ser pedida na página Auditoria; se achar problema, o painel mostra uma faixa vermelha e a auditoria registra o alerta.
 - **Sem batida duplicada:** intervalo mínimo entre batidas, e o reenvio automático após queda de internet nunca cria dois registros.
+- **Batida sem internet, sem abrir brecha:**
+  - O que fica guardado no aparelho (PIN e foto) vai cifrado com a chave pública do servidor (RSA-OAEP 3072 + AES-256-GCM): quem mexer no tablet não lê nada. A chave privada fica num documento que nenhum navegador acessa.
+  - O PIN é conferido quando a batida chega, com os mesmos bloqueios de sempre, e o aparelho guarda no máximo 12 batidas por matrícula: não dá para "testar PINs" sem internet.
+  - Horário: a cada sincronização o servidor entrega uma âncora assinada com a hora dele; sem internet, o aparelho conta o tempo decorrido com um relógio que não muda quando alguém mexe no relógio do tablet. O servidor só aceita horários entre a última conexão e a chegada da batida (até 72 h).
+  - Se o relógio do tablet não bater com o tempo decorrido (relógio mudado, aparelho reiniciado ou em repouso), a batida entra marcada **"conferir horário"**, com os dois horários, e vai para os alertas.
+  - A marca "sem internet" entra na cadeia de hashes: apagá-la direto no banco aparece na verificação de integridade.
+  - Limite conhecido: um aparelho adulterado por alguém com acesso técnico a ele ainda escolhe o horário, mas só dentro da janela entre a última conexão e o envio.
 
 **Painel e logins**
 
@@ -367,7 +375,7 @@ No GitHub, cada envio roda o `npm run verificar`, a auditoria das dependências 
 
 ## Limitações conhecidas e próximos passos
 
-- **Exige internet no momento da batida.** A tela abre sem internet, mas o registro precisa de conexão. Registro offline com envio posterior é uma evolução possível.
+- **Sem internet, só a batida.** A batida é guardada e enviada depois (até 72 horas); pedir marcação esquecida, assinar o espelho e trocar o PIN precisam de conexão. O primeiro acesso de um funcionário (criar o PIN pessoal) também precisa: a batida feita com o PIN provisório sem internet é recusada quando chega, e o gestor vê o alerta.
 - **Turnos que atravessam a meia-noite** contam no dia de cada marcação. Para turnos noturnos, o espelho precisaria do conceito de "dia de trabalho".
 - **Escalas (12x36 etc.)** não são calculadas automaticamente: a jornada é por dia da semana. Use folgas e abonos para ajustar.
 - **Horas extras e adicional noturno** aparecem como saldo, sem percentuais (50%, 100%).

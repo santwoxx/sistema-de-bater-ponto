@@ -1,19 +1,23 @@
-import { Fingerprint, Maximize, Settings, WifiOff } from 'lucide-react'
+import { CloudUpload, Fingerprint, Maximize, Settings, WifiOff } from 'lucide-react'
 import { dataPorExtenso, horaLocal } from '../../../lib/tempo'
 import type { InfoAparelho } from './useSincronizacao'
 
-/** Empresa e aparelho, relógio oficial e ações (tela cheia, configurações). */
+/** Empresa e aparelho, relógio oficial, batidas guardadas sem internet e ações (tela cheia, configurações). */
 export default function TopoTerminal({
   info,
   agora,
   fuso,
   conectado,
+  guardadas,
+  enviandoGuardadas,
   aoAbrirConfiguracoes,
 }: {
   info: InfoAparelho | null
   agora: Date
   fuso: string
   conectado: boolean
+  guardadas: number
+  enviandoGuardadas: boolean
   aoAbrirConfiguracoes: () => void
 }) {
   return (
@@ -34,6 +38,12 @@ export default function TopoTerminal({
           {!conectado && (
             <span className="terminal-offline">
               <WifiOff size={16} aria-hidden /> Sem internet
+            </span>
+          )}
+          {guardadas > 0 && (
+            <span className="terminal-guardadas" title="Batidas feitas sem internet, esperando a conexão para serem enviadas">
+              <CloudUpload size={16} aria-hidden />{' '}
+              {enviandoGuardadas ? 'Enviando batidas...' : guardadas === 1 ? '1 batida guardada' : `${guardadas} batidas guardadas`}
             </span>
           )}
           {document.fullscreenEnabled && !document.fullscreenElement && (

@@ -133,11 +133,12 @@ export default function Hoje() {
                         type="button"
                         key={m.id}
                         className={`chip chip-${m.tipo}`}
-                        title={`${rotuloTipo(m.tipo)}${m.origem === 'manual' ? ' (manual)' : ''}`}
+                        title={`${rotuloTipo(m.tipo)}${m.origem === 'manual' ? ' (manual)' : ''}${m.semInternet ? ` (sem internet${m.semInternet.conferir ? ': conferir horário' : ''})` : ''}`}
                         onClick={() => setDetalhe(m)}
                       >
                         {m.horaLocal.slice(0, 5)}
                         {m.origem === 'manual' && '*'}
+                        {m.semInternet?.conferir && '!'}
                       </button>
                     ))}
                   </div>

@@ -11,11 +11,21 @@ import ConferenciaEspelho from './ConferenciaEspelho'
 import CameraPonto from './terminal/CameraPonto'
 import { AparelhoDesativado, ConfiguracoesAparelho } from './terminal/CicloDoAparelho'
 import FormularioSolicitacao from './terminal/FormularioSolicitacao'
-import { EspelhoRespondido, FalhaNoAparelho, PinAlterado, PontoRegistrado, SolicitacaoEnviada, TudoEmDia } from './terminal/Resultados'
+import {
+  EspelhoRespondido,
+  FalhaNoAparelho,
+  PinAlterado,
+  PontoGuardado,
+  PontoRegistrado,
+  SolicitacaoEnviada,
+  TudoEmDia,
+} from './terminal/Resultados'
+import { podeGuardar } from './terminal/semInternet'
 import TecladoPonto, { type Rodape, type Visor } from './terminal/TecladoPonto'
 import { instrucaoDaTela, textoDeEspera, tituloDaTela } from './terminal/textos'
 import { ETAPAS_DE_RESULTADO, OUTRO_MOTIVO, PEDIDO_VAZIO, type Etapa, type Modo, type Pedido } from './terminal/tipos'
 import TopoTerminal from './terminal/TopoTerminal'
+import { useBatidasGuardadas } from './terminal/useBatidasGuardadas'
 import { useSincronizacao } from './terminal/useSincronizacao'
 
 // Tela do aparelho de ponto: a máquina de estados (etapa + modo) e as chamadas
@@ -34,6 +44,8 @@ function esperar(ms: number) {
 export default function Terminal({ empresaId }: { empresaId: string }) {
   const { videoRef, estado: estadoCamera, erro: erroCamera, iniciar: iniciarCamera, capturar } = useCamera()
   const { info, deslocamento, conectado, desativado, setConectado } = useSincronizacao()
+  const guardadas = useBatidasGuardadas(conectado, () => setConectado(true))
+  const guardarNoAparelho = guardadas.guardar
   useTelaSempreAcesa()
   const agora = new Date(useAgora(1000) + deslocamento)
   const fuso = info?.empresa.fusoHorario ?? 'America/Sao_Paulo'
@@ -44,6 +56,7 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
   const [pin, setPin] = useState('')
   const [contagem, setContagem] = useState(3)
   const [comprovante, setComprovante] = useState<{ dados: ComprovantePonto; foto: string } | null>(null)
+  const [guardada, setGuardada] = useState<{ matricula: string; horario: number; foto: string } | null>(null)
   const [mensagem, setMensagem] = useState('')
   const [configuracoes, setConfiguracoes] = useState(false)
   const [pedido, setPedido] = useState<Pedido>(PEDIDO_VAZIO)
@@ -68,6 +81,7 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
     setPin('')
     setMensagem('')
     setComprovante(null)
+    setGuardada(null)
     setPedidoEnviado(null)
     setEspelhos([])
     setIndiceEspelho(0)
@@ -111,13 +125,32 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
     somFoto()
     setEtapa('enviando')
     const dados = { idRequisicao: gerarId(), matricula, pin, foto: captura.foto, miniatura: captura.miniatura }
+
+    // Sem internet: a batida fica guardada (cifrada) neste aparelho e vai sozinha
+    // quando a conexão voltar. Com o mesmo id: se chegou ao servidor, não duplica.
+    const guardarSemInternet = async () => {
+      try {
+        const resultado = await guardarNoAparelho({ ...dados, dispositivoId: info?.dispositivo.id ?? '' })
+        if ('erro' in resultado) return falhar(resultado.erro)
+        setGuardada({ matricula, horario: resultado.horario, foto: captura.foto })
+        setEtapa('guardado')
+        setPin('')
+        somSucesso()
+      } catch {
+        falhar('Estamos sem internet, e não foi possível guardar a batida neste aparelho. Tente de novo quando a conexão voltar.')
+      }
+    }
+    // A última conexão já falhou: guarda direto, sem deixar o funcionário esperando a rede.
+    if (!conectado && info && podeGuardar()) return guardarSemInternet()
+
     try {
+      const inicio = Date.now()
       let resultado: ComprovantePonto
       try {
         resultado = await api.registrarPonto(dados)
       } catch (e) {
-        // Uma nova tentativa com o mesmo id nunca duplica o registro.
-        if (!erroDeRede(e)) throw e
+        // Falha rápida de rede: uma nova tentativa com o mesmo id nunca duplica o registro.
+        if (!erroDeRede(e) || Date.now() - inicio > 5000) throw e
         await esperar(1500)
         resultado = await api.registrarPonto(dados)
       }
@@ -128,10 +161,13 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
       somSucesso()
     } catch (e) {
       if (pinProvisorio(e)) return pedirPinPessoal()
-      if (erroDeRede(e)) setConectado(false)
+      if (erroDeRede(e)) {
+        setConectado(false)
+        if (info && podeGuardar()) return guardarSemInternet()
+      }
       falhar(mensagemErro(e))
     }
-  }, [capturar, matricula, pin, falhar, setConectado, pedirPinPessoal])
+  }, [capturar, matricula, pin, falhar, setConectado, pedirPinPessoal, conectado, info, guardarNoAparelho])
 
   const motivoDoPedido = pedido.motivo === OUTRO_MOTIVO ? pedido.outroMotivo.trim() : pedido.motivo
 
@@ -421,7 +457,20 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
 
   return (
     <div className="terminal">
-      <TopoTerminal info={info} agora={agora} fuso={fuso} conectado={conectado} aoAbrirConfiguracoes={() => setConfiguracoes(true)} />
+      <TopoTerminal
+        info={info}
+        agora={agora}
+        fuso={fuso}
+        conectado={conectado}
+        guardadas={guardadas.pendentes}
+        enviandoGuardadas={guardadas.enviando}
+        aoAbrirConfiguracoes={() => setConfiguracoes(true)}
+      />
+      {guardadas.aviso && (
+        <div className={`terminal-faixa${guardadas.aviso.tipo === 'ok' ? ' terminal-faixa-ok' : ''}`} role="status">
+          {guardadas.aviso.texto}
+        </div>
+      )}
 
       <div className="terminal-corpo">
         <CameraPonto
@@ -464,6 +513,7 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
       {etapa === 'sucesso' && comprovante && (
         <PontoRegistrado comprovante={comprovante.dados} foto={comprovante.foto} fuso={fuso} pinCriado={pinPessoalCriado} aoFechar={reiniciar} />
       )}
+      {etapa === 'guardado' && guardada && <PontoGuardado guardada={guardada} fuso={fuso} aoFechar={reiniciar} />}
       {etapa === 'pinDefinido' && <PinAlterado aoFechar={reiniciar} />}
       {etapa === 'solicitado' && pedidoEnviado && <SolicitacaoEnviada pedido={pedidoEnviado} pinCriado={pinPessoalCriado} aoFechar={reiniciar} />}
       {etapa === 'espelho' && espelhos[indiceEspelho] && (
@@ -490,7 +540,9 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
         />
       )}
 
-      {configuracoes && <ConfiguracoesAparelho empresaId={empresaId} info={info} aoFechar={() => setConfiguracoes(false)} />}
+      {configuracoes && (
+        <ConfiguracoesAparelho empresaId={empresaId} info={info} guardadas={guardadas.pendentes} aoFechar={() => setConfiguracoes(false)} />
+      )}
     </div>
   )
 }

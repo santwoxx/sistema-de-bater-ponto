@@ -75,7 +75,9 @@ export default function Registros() {
       r.funcionarioMatricula,
       r.funcionarioCpf,
       tipos.has(r.id) ? rotuloTipo(tipos.get(r.id)!) : '',
-      r.origem === 'manual' ? `Manual (${r.incluidoPor?.nome ?? ''})` : r.dispositivoNome ?? '',
+      r.origem === 'manual'
+        ? `Manual (${r.incluidoPor?.nome ?? ''})`
+        : `${r.dispositivoNome ?? ''}${r.semInternet ? ` (sem internet${r.semInternet.conferir ? ', conferir horário' : ''})` : ''}`,
       r.nsr ?? '',
       r.justificativa ?? '',
       r.desconsiderado ? `Desconsiderada: ${r.desconsiderado.motivo}` : 'Válida',
@@ -180,7 +182,17 @@ export default function Registros() {
                     </td>
                     <td className="numeros">{r.horaLocal}</td>
                     <td>{tipos.has(r.id) ? rotuloTipo(tipos.get(r.id)!) : '—'}</td>
-                    <td>{r.origem === 'manual' ? <Selo cor="amarelo">Manual</Selo> : r.dispositivoNome}</td>
+                    <td>
+                      {r.origem === 'manual' ? <Selo cor="amarelo">Manual</Selo> : r.dispositivoNome}
+                      {r.semInternet && (
+                        <>
+                          {' '}
+                          <Selo cor={r.semInternet.conferir ? 'vermelho' : 'azul'}>
+                            {r.semInternet.conferir ? 'Sem internet: conferir horário' : 'Sem internet'}
+                          </Selo>
+                        </>
+                      )}
+                    </td>
                     <td className="numeros">{formatarNsr(r.nsr)}</td>
                     <td>{r.desconsiderado ? <Selo cor="vermelho">Desconsiderada</Selo> : <Selo cor="verde">Válida</Selo>}</td>
                   </tr>

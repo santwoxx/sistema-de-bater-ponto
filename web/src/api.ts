@@ -1,6 +1,7 @@
 import { httpsCallable, type Functions } from 'firebase/functions'
 import { functions } from './firebase'
 import type { DocumentoEspelho } from './lib/espelho'
+import type { DadosSemInternet, PacoteSelado, ResultadoEnvio } from './paginas/ponto/terminal/semInternet'
 import type { TipoAbono } from './tipos'
 
 // Chamadas às Cloud Functions, com tipos. O segundo parâmetro permite usar
@@ -67,6 +68,8 @@ export type Sincronizacao =
       agora: number
       dispositivo: { id: string; nome: string }
       empresa: { id: string; nome: string; fusoHorario: string; ativo: boolean }
+      /** Para guardar batidas se a internet cair (ver paginas/ponto/terminal/semInternet.ts). */
+      semInternet?: DadosSemInternet | null
     }
 
 export const api = {
@@ -83,6 +86,8 @@ export const api = {
     { idRequisicao: string; matricula: string; pin: string; foto: string; miniatura: string },
     ComprovantePonto
   >('registrarPonto', 25_000),
+  // Batida feita sem internet, guardada cifrada no aparelho e enviada quando a conexão volta.
+  registrarPontoGuardado: funcao<{ pacote: PacoteSelado }, ResultadoEnvio>('registrarPontoGuardado', 60_000),
   // O funcionário cria (no primeiro uso) ou troca o próprio PIN, no aparelho.
   definirPin: funcao<
     { matricula: string; pin: string; novoPin: string; miniatura: string | null },

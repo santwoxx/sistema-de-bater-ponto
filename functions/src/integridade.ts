@@ -26,6 +26,7 @@ const CAMPOS = [
   "horaLocal",
   "fotoSha256",
   "dispositivoId",
+  "semInternet",
 ];
 const MAX_PROBLEMAS_NA_RESPOSTA = 200;
 const VERIFICACAO_AUTOMATICA: Autor = { uid: "sistema", nome: "Verificação automática" };

@@ -846,6 +846,92 @@ await etapa('auditoria registra as ações; a do sistema é só do admin', async
   assert.ok(sistema.includes('empresa.criada') && sistema.includes('usuario.criado') && sistema.includes('sistema.configurado'))
 })
 
+// Mesma cifragem do navegador (web/src/paginas/ponto/terminal/semInternet.ts).
+async function selar(chavePublica, conteudo) {
+  const subtle = globalThis.crypto.subtle
+  const publica = await subtle.importKey('spki', Buffer.from(chavePublica, 'base64'), { name: 'RSA-OAEP', hash: 'SHA-256' }, false, ['encrypt'])
+  const aes = await subtle.generateKey({ name: 'AES-GCM', length: 256 }, true, ['encrypt'])
+  const iv = globalThis.crypto.getRandomValues(new Uint8Array(12))
+  const dados = await subtle.encrypt({ name: 'AES-GCM', iv }, aes, new TextEncoder().encode(JSON.stringify(conteudo)))
+  const chave = await subtle.encrypt({ name: 'RSA-OAEP' }, publica, await subtle.exportKey('raw', aes))
+  const b64 = (b) => Buffer.from(b instanceof Uint8Array ? b : new Uint8Array(b)).toString('base64')
+  return { versao: 1, chave: b64(chave), iv: b64(iv), dados: b64(dados) }
+}
+
+await etapa('batida sem internet: guardada cifrada, conferida quando chega e marcada na cadeia de hashes', async () => {
+  const { semInternet } = await aparelho.chamar('sincronizarDispositivo')
+  const relogioNaAncora = Date.now()
+  assert.ok(semInternet.chavePublica && semInternet.ancora.assinatura)
+  // O aparelho guarda a batida com o tempo decorrido desde a âncora (e o relógio dele, que pode ter sido mudado).
+  const guardar = async ({ matricula = '12', pin = PIN_MARIA, decorrido = 2_000, desvio = 0, idRequisicao = id(), ...outros } = {}) => ({
+    idRequisicao,
+    pacote: await selar(semInternet.chavePublica, {
+      dispositivoId: outros.dispositivoId ?? uidAparelho,
+      idRequisicao,
+      matricula,
+      pin,
+      foto: jpeg(1100),
+      miniatura: jpeg(300),
+      horario: { ancora: outros.ancora ?? semInternet.ancora, relogioNaAncora, relogioAgora: relogioNaAncora + decorrido + desvio, decorrido },
+    }),
+  })
+  const enviar = (pacote) => aparelho.chamar('registrarPontoGuardado', { pacote })
+
+  // Batida normal: entra na cadeia com o NSR seguinte, marcada "sem internet", no horário certo.
+  const ok = await guardar()
+  const resultado = await enviar(ok.pacote)
+  assert.equal(resultado.resultado, 'registrada')
+  assert.equal(resultado.conferir, false)
+  assert.equal(resultado.comprovante.nsr, 5)
+  assert.ok(Math.abs(resultado.comprovante.dataHora - (semInternet.ancora.em + 2_000)) < 1_000)
+  // Reenvio (a resposta se perdeu): mesmo registro, sem duplicar.
+  assert.equal((await enviar(ok.pacote)).comprovante.registroId, ok.idRequisicao)
+  const r = (await getDoc(doc(gestora.db, 'empresas', empresaA, 'registros', ok.idRequisicao))).data()
+  assert.equal(r.semInternet.conferir, false)
+  // A marca "sem internet" entra no hash: não dá para escondê-la direto no banco.
+  const base = [r.hashAnterior, r.nsr, empresaA, r.funcionarioId, r.funcionarioCpf, r.dataHora.toDate().toISOString(), r.dataLocal, r.horaLocal, r.fotoSha256, r.dispositivoId]
+  assert.equal(r.hash, sha256([...base, 'sem-internet', r.semInternet.recebidoEm.toDate().toISOString(), 'ok'].join('|')))
+
+  // Relógio do aparelho atrasado 10 min para fingir chegada mais cedo: vale o tempo decorrido, e o gestor confere.
+  const atrasado = await guardar({ matricula: '7', pin: PIN_JOAO, decorrido: 3_000, desvio: -10 * 60_000 })
+  const conferir = await enviar(atrasado.pacote)
+  assert.equal(conferir.resultado, 'registrada')
+  assert.equal(conferir.conferir, true)
+  assert.ok(Math.abs(conferir.comprovante.dataHora - (semInternet.ancora.em + 3_000)) < 1_000)
+  const alertaHorario = await getDocs(query(collection(gestora.db, 'empresas', empresaA, 'auditoria'), where('acao', '==', 'ponto.horarioConferir')))
+  assert.equal(alertaHorario.size, 1)
+  assert.match(alertaHorario.docs[0].get('descricao'), /João Lima.*Confira o horário/)
+
+  // Recusas definitivas voltam como resultado (o aparelho tira da fila) e vão para os alertas, com a foto.
+  const recusa = async (dados, motivo) => {
+    const r = await enviar((await guardar(dados)).pacote)
+    assert.equal(r.resultado, 'recusada')
+    assert.match(r.motivo, motivo)
+  }
+  await recusa({ pin: '9999' }, /PIN inválidos/)
+  await recusa({ ancora: { ...semInternet.ancora, em: semInternet.ancora.em - 3_600_000 } }, /confirmação do servidor/)
+  await recusa({ dispositivoId: 'disp_outro' }, /outro aparelho/)
+  const recusadas = await getDocs(query(collection(gestora.db, 'empresas', empresaA, 'auditoria'), where('acao', '==', 'ponto.semInternetRecusado')))
+  assert.equal(recusadas.size, 3)
+  assert.ok(recusadas.docs.some((d) => String(d.get('detalhes').foto).startsWith('data:image/jpeg;base64,')))
+  assert.equal((await enviar({ versao: 1, chave: 'AAAA', iv: 'AAAA', dados: 'AAAA' })).resultado, 'recusada')
+
+  // Batida repetida (a menos do intervalo mínimo de outra) não vira outra marcação.
+  const empresa = { id: empresaA, nome: 'Loja Centro', cnpj: '11222333000181', fusoHorario: 'America/Sao_Paulo', toleranciaMinutos: 10, ativo: true }
+  await admin.chamar('salvarEmpresa', { ...empresa, intervaloMinimoMinutos: 2 })
+  const repetida = await enviar((await guardar({ decorrido: 30_000 })).pacote)
+  assert.equal(repetida.resultado, 'duplicada')
+  await admin.chamar('salvarEmpresa', { ...empresa, intervaloMinimoMinutos: 0 })
+
+  // A cadeia continua íntegra com as batidas que chegaram depois (NSR maior, horário anterior).
+  const integridade = await admin.chamar('verificarIntegridade', { empresaId: empresaA })
+  assert.equal(integridade.totalProblemas, 0)
+  assert.equal(integridade.ultimoNsr, 6)
+  // O aparelho nunca lê a chave privada do servidor.
+  await falha(getDoc(doc(aparelho.db, 'sistema', 'semInternet')), 'permission-denied')
+  await falha(getDoc(doc(admin.db, 'sistema', 'semInternet')), 'permission-denied')
+})
+
 await etapa('aparelho desativado para de registrar na hora', async () => {
   await gestora.chamar('desativarDispositivo', { empresaId: empresaA, dispositivoId: uidAparelho })
   await falha(

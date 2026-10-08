@@ -10,7 +10,8 @@ import { paraAuditoria, type Empresa } from '../tipos'
 // Avisos de segurança da empresa no painel. Os eventos vêm da auditoria (que
 // só o servidor grava) e do resultado da verificação de integridade.
 
-const ACOES_DE_ALERTA = ['pin.bloqueado', 'aparelho.bloqueado', 'integridade.alerta']
+// Bloqueios de PIN, adulteração e batidas feitas sem internet recusadas ou com horário a conferir.
+const ACOES_DE_ALERTA = ['pin.bloqueado', 'aparelho.bloqueado', 'integridade.alerta', 'ponto.semInternetRecusado', 'ponto.horarioConferir']
 const DIAS = 7
 
 /** Faixa no topo de todas as páginas quando a verificação de integridade achou problema. */
@@ -28,7 +29,7 @@ export function FaixaIntegridade({ empresa }: { empresa: Empresa }) {
   )
 }
 
-/** Bloqueios por PIN errado e alertas de integridade dos últimos dias (página Hoje). */
+/** Bloqueios por PIN errado, alertas de integridade e batidas sem internet com problema, dos últimos dias (página Hoje). */
 export default function AlertasSeguranca({ empresa }: { empresa: Empresa }) {
   const [desde] = useState(() => Timestamp.fromMillis(Date.now() - DIAS * 86_400_000))
   const alertas = useColecao(

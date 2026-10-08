@@ -19,23 +19,32 @@ export interface CamposEncadeados {
   horaLocal: string;
   fotoSha256: string;
   dispositivoId: string;
+  /** Batida feita sem internet e enviada depois: entra no hash, então não dá para esconder isso. */
+  semInternet?: { recebidoEm: Date; conferir: boolean } | null;
 }
 
 export function hashDoRegistro(c: CamposEncadeados): string {
-  return sha256(
-    [
-      c.hashAnterior,
-      c.nsr,
-      c.empresaId,
-      c.funcionarioId,
-      c.funcionarioCpf,
-      c.dataHora.toISOString(),
-      c.dataLocal,
-      c.horaLocal,
-      c.fotoSha256,
-      c.dispositivoId,
-    ].join("|"),
-  );
+  const partes = [
+    c.hashAnterior,
+    c.nsr,
+    c.empresaId,
+    c.funcionarioId,
+    c.funcionarioCpf,
+    c.dataHora.toISOString(),
+    c.dataLocal,
+    c.horaLocal,
+    c.fotoSha256,
+    c.dispositivoId,
+  ];
+  if (c.semInternet) partes.push("sem-internet", c.semInternet.recebidoEm.toISOString(), c.semInternet.conferir ? "conferir" : "ok");
+  return sha256(partes.join("|"));
+}
+
+/** Lê do registro gravado os dados da batida sem internet que entram no hash. */
+function semInternetDoRegistro(valor: unknown): CamposEncadeados["semInternet"] {
+  const s = valor as { recebidoEm?: Timestamp; conferir?: unknown } | null | undefined;
+  const recebidoEm = s?.recebidoEm?.toDate?.();
+  return recebidoEm ? { recebidoEm, conferir: s?.conferir === true } : null;
 }
 
 export interface Problema {
@@ -90,6 +99,7 @@ export function verificarCadeia(
           horaLocal: String(r.horaLocal),
           fotoSha256: String(r.fotoSha256),
           dispositivoId: String(r.dispositivoId),
+          semInternet: semInternetDoRegistro(r.semInternet),
         })
       : null;
     if (calculado !== r.hash) {

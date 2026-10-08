@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, type Sincronizacao } from '../../../api'
 import { gravarLocal, lerLocal } from '../../../lib/util'
+import { guardarReferencia } from './semInternet'
 
 export type InfoAparelho = Extract<Sincronizacao, { ativo: true }>
 
@@ -19,15 +20,19 @@ export function useSincronizacao() {
 
   const sincronizar = useCallback(async () => {
     const inicio = Date.now()
+    const inicioContinuo = performance.now()
     try {
       const resposta = await api.sincronizarDispositivo({})
       const fim = Date.now()
+      const fimContinuo = performance.now()
       setConectado(true)
       setDeslocamento(resposta.agora - (inicio + fim) / 2)
       if (!resposta.ativo) {
         setDesativado(true)
         return
       }
+      // Âncora de horário para as batidas sem internet, no meio da ida e volta.
+      if (resposta.semInternet) guardarReferencia(resposta.semInternet, (inicio + fim) / 2, (inicioContinuo + fimContinuo) / 2)
       setInfo(resposta)
       gravarLocal(CHAVE_INFO, JSON.stringify(resposta))
     } catch {

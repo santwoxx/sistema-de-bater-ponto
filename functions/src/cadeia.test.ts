@@ -81,4 +81,27 @@ describe("cadeia de hashes das marcações", () => {
     const { problemas } = verificarCadeia(EMPRESA, registros, controle);
     expect(problemas.some((p) => p.nsr === 3 && /não encadeia/.test(p.descricao))).toBe(true);
   });
+
+  it("batida sem internet: a marca entra no hash e não pode ser escondida", () => {
+    const { registros, controle } = cadeia(2);
+    // A 2ª marcação foi feita sem internet, antes da 1ª, e chegou depois (NSR maior, horário menor).
+    const r2 = registros[1].dados;
+    const dataHora = new Date(Date.UTC(2026, 9, 5, 11, 30, 0));
+    const recebidoEm = new Date(Date.UTC(2026, 9, 5, 14, 0, 0));
+    const semInternet = { recebidoEm, conferir: false };
+    r2.dataHora = { toDate: () => dataHora } as unknown as Timestamp;
+    r2.horaLocal = "08:30:00";
+    r2.semInternet = { recebidoEm: { toDate: () => recebidoEm } as unknown as Timestamp, conferir: false };
+    r2.hash = hashDoRegistro({ ...(r2 as unknown as Parameters<typeof hashDoRegistro>[0]), dataHora, semInternet });
+    const integra = { ultimoNsr: 2, ultimoHash: String(r2.hash) };
+    expect(verificarCadeia(EMPRESA, registros, integra).problemas).toEqual([]);
+    expect(r2.hash).not.toBe(hashDoRegistro({ ...(r2 as unknown as Parameters<typeof hashDoRegistro>[0]), dataHora, semInternet: null }));
+
+    // Apagar a marca "sem internet" (ou o "conferir horário") direto no banco quebra a cadeia.
+    delete r2.semInternet;
+    expect(verificarCadeia(EMPRESA, registros, integra).problemas[0]?.descricao).toMatch(/alterados/);
+    r2.semInternet = { recebidoEm: { toDate: () => recebidoEm } as unknown as Timestamp, conferir: true };
+    expect(verificarCadeia(EMPRESA, registros, integra).problemas[0]?.descricao).toMatch(/alterados/);
+    expect(verificarCadeia(EMPRESA, registros, controle).problemas.length).toBeGreaterThan(0);
+  });
 });

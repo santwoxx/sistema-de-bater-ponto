@@ -43,6 +43,7 @@ const CAMPOS_REGISTRO = [
   "horaLocal",
   "origem",
   "dispositivoNome",
+  "semInternet",
   "nsr",
   "hash",
   "justificativa",
@@ -58,6 +59,7 @@ interface Registro extends MarcacaoBruta {
   funcionarioMatricula: string;
   funcionarioCpf: string;
   dispositivoNome?: string;
+  semInternet?: { conferir?: boolean };
   nsr?: number;
   hash?: string;
   justificativa?: string;
@@ -150,7 +152,7 @@ function linhasDeMarcacoes(registros: Registro[], incluirDesconsideradas: boolea
       r.funcionarioMatricula,
       cpfFormatado(r.funcionarioCpf),
       tipos.has(r.id) ? rotuloTipo(tipos.get(r.id)!) : "",
-      r.origem === "manual" ? "Manual" : "Aparelho",
+      r.origem === "manual" ? "Manual" : r.semInternet ? `Aparelho (sem internet${r.semInternet.conferir ? ", conferir horário" : ""})` : "Aparelho",
       r.dispositivoNome ?? "",
       r.nsr ?? "",
       r.desconsiderado ? "Desconsiderada" : "Válida",

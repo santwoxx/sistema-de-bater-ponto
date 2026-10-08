@@ -80,6 +80,16 @@ export interface Registro {
   justificativa?: string
   incluidoPor?: Autor
   desconsiderado: Desconsideracao | null
+  /** Batida feita sem internet no aparelho e enviada depois. */
+  semInternet?: {
+    recebidoEm: Timestamp
+    /** O horário merece conferência (relógio do aparelho mudou, aparelho reiniciado...). */
+    conferir: boolean
+    motivo: string | null
+    horarioRelogio: Timestamp
+    horarioDecorrido: Timestamp | null
+    ultimaConexaoEm: Timestamp
+  }
 }
 
 export interface Dispositivo {

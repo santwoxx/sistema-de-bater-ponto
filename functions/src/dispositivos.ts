@@ -1,8 +1,10 @@
 import { FieldValue } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/https";
+import * as logger from "firebase-functions/logger";
 import { auth, db } from "./admin";
 import { autor, carregarEmpresa, exigirAcessoEmpresa, exigirDispositivo } from "./acesso";
 import { auditarNa } from "./auditoria";
+import { dadosParaSemInternet } from "./semInternet";
 import { idAleatorio, senhaAleatoria } from "./seguranca";
 import { idDocumento, objeto, texto } from "./validacao";
 
@@ -105,10 +107,18 @@ export const sincronizarDispositivo = onCall(async (request) => {
   const agenteUsuario = String(request.rawRequest.headers["user-agent"] ?? "").slice(0, 200);
   await ref.update({ ultimoSinalEm: FieldValue.serverTimestamp(), agenteUsuario });
 
+  const agora = Date.now();
+  // Para guardar batidas se a internet cair: a chave pública do servidor e a
+  // âncora de horário assinada (ver semInternet.ts). Sem elas, o resto continua.
+  const semInternet = await dadosParaSemInternet(dispositivoId, agora).catch((erro: unknown) => {
+    logger.error("Falha ao preparar a batida sem internet", { erro });
+    return null;
+  });
   return {
     ativo: true,
     dispositivo: { id: dispositivoId, nome: dispositivo.nome },
     empresa: { id: empresa.id, nome: empresa.nome, fusoHorario: empresa.fusoHorario, ativo: empresa.ativo },
-    agora: Date.now(),
+    agora,
+    semInternet,
   };
 });
