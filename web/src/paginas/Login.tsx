@@ -1,22 +1,32 @@
+import type { FirebaseError } from 'firebase/app'
 import {
   browserSessionPersistence,
+  GoogleAuthProvider,
   indexedDBLocalPersistence,
+  linkWithCredential,
   sendPasswordResetEmail,
   setPersistence,
   signInWithEmailAndPassword,
   signOut,
+  type OAuthCredential,
 } from 'firebase/auth'
 import { doc, getDoc } from 'firebase/firestore'
 import { Fingerprint } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link, Navigate, useLocation } from 'react-router'
-import { Aviso, Campo, Carregando } from '../componentes/Basicos'
+import { Aviso, BotaoGoogle, Campo, Carregando } from '../componentes/Basicos'
 import { useSessao } from '../contexto/Sessao'
-import { auth, db, NOME_SISTEMA } from '../firebase'
-import { mensagemErro } from '../lib/erros'
+import { auth, db, entrarComGoogle, NOME_SISTEMA } from '../firebase'
+import { cancelouJanela, codigoErro, mensagemErro } from '../lib/erros'
 import { gravarLocal, lerLocal } from '../lib/util'
 
 const CHAVE_LEMBRAR = 'ponto.lembrarLogin'
+
+/** Conta Google que espera um login com senha para ser ligada ao mesmo e-mail. */
+interface GooglePendente {
+  credencial: OAuthCredential
+  email: string
+}
 
 export default function Login() {
   const sessao = useSessao()
@@ -28,6 +38,7 @@ export default function Login() {
   const [erro, setErro] = useState('')
   const [info, setInfo] = useState('')
   const [sistemaConfigurado, setSistemaConfigurado] = useState<boolean | null>(null)
+  const [googlePendente, setGooglePendente] = useState<GooglePendente | null>(null)
 
   useEffect(() => {
     getDoc(doc(db, 'sistema', 'estado'))
@@ -42,18 +53,51 @@ export default function Login() {
   }
   if (sessao.tipo === 'dispositivo') return <Navigate to="/ponto" replace />
 
+  async function prepararSessao() {
+    // Sem "manter conectado", a sessão acaba quando o navegador é fechado (computador compartilhado).
+    await setPersistence(auth, lembrar ? indexedDBLocalPersistence : browserSessionPersistence)
+    gravarLocal(CHAVE_LEMBRAR, lembrar ? 'sim' : null)
+  }
+
   async function entrar(e: FormEvent) {
     e.preventDefault()
     setErro('')
     setInfo('')
     setEnviando(true)
     try {
-      // Sem "manter conectado", a sessão acaba quando o navegador é fechado (computador compartilhado).
-      await setPersistence(auth, lembrar ? indexedDBLocalPersistence : browserSessionPersistence)
-      gravarLocal(CHAVE_LEMBRAR, lembrar ? 'sim' : null)
-      await signInWithEmailAndPassword(auth, email.trim(), senha)
+      await prepararSessao()
+      const { user } = await signInWithEmailAndPassword(auth, email.trim(), senha)
+      // Veio do botão do Google com este mesmo e-mail: a conta Google fica ligada a este usuário.
+      if (googlePendente && googlePendente.email === user.email?.toLowerCase()) {
+        await linkWithCredential(user, googlePendente.credencial)
+      }
     } catch (err) {
       setErro(mensagemErro(err))
+    } finally {
+      setEnviando(false)
+    }
+  }
+
+  async function entrarGoogle() {
+    setErro('')
+    setInfo('')
+    setEnviando(true)
+    try {
+      await prepararSessao()
+      await entrarComGoogle()
+    } catch (err) {
+      // O Google não responde por este e-mail (conta Google com e-mail de outro provedor):
+      // o Firebase só liga as contas depois de um login com a senha deste e-mail.
+      const pendente =
+        codigoErro(err) === 'auth/account-exists-with-different-credential' ? GoogleAuthProvider.credentialFromError(err as FirebaseError) : null
+      const emailGoogle = (err as FirebaseError | null)?.customData?.email
+      if (pendente && typeof emailGoogle === 'string') {
+        setGooglePendente({ credencial: pendente, email: emailGoogle.toLowerCase() })
+        setEmail(emailGoogle)
+        setInfo('Este e-mail já tem senha no sistema. Entre com a senha uma vez para ligar a sua conta Google; depois, basta o botão do Google.')
+      } else if (!cancelouJanela(err)) {
+        setErro(mensagemErro(err))
+      }
     } finally {
       setEnviando(false)
     }
@@ -63,7 +107,7 @@ export default function Login() {
     setErro('')
     setInfo('')
     if (!email.trim()) {
-      setErro('Digite seu e-mail acima para receber o link de redefinição de senha.')
+      setErro('Digite seu e-mail acima para receber o link de criação de senha.')
       return
     }
     try {
@@ -114,9 +158,12 @@ export default function Login() {
         <button type="submit" className="botao primario grande" disabled={enviando}>
           {enviando ? 'Entrando...' : 'Entrar'}
         </button>
+        <div className="separador-ou">ou</div>
+        <BotaoGoogle aoClicar={() => void entrarGoogle()} desativado={enviando} />
+        <p className="campo-ajuda">Use a conta Google do e-mail cadastrado. Depois de entrar com o Google, use sempre o Google.</p>
         <div className="links-acesso">
           <button type="button" className="link" onClick={recuperarSenha}>
-            Esqueci minha senha
+            Criar ou redefinir senha
           </button>
           <Link to="/ponto">Abrir o ponto neste aparelho</Link>
         </div>

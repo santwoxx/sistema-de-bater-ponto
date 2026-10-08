@@ -4,7 +4,14 @@
 import assert from 'node:assert/strict'
 import { createHash, randomBytes } from 'node:crypto'
 import { initializeApp } from 'firebase/app'
-import { connectAuthEmulator, getAuth, signInWithEmailAndPassword } from 'firebase/auth'
+import {
+  connectAuthEmulator,
+  getAuth,
+  GoogleAuthProvider,
+  linkWithCredential,
+  signInWithCredential,
+  signInWithEmailAndPassword,
+} from 'firebase/auth'
 import {
   collection,
   connectFirestoreEmulator,
@@ -202,6 +209,56 @@ await etapa('senhas comuns ou com o próprio e-mail são recusadas', async () =>
   await falha(admin.chamar('salvarUsuario', { ...usuario, senha: '12345678' }), 'functions/invalid-argument', /comum/)
   await falha(admin.chamar('salvarUsuario', { ...usuario, senha: 'Senha123' }), 'functions/invalid-argument', /comum/)
   await falha(admin.chamar('salvarUsuario', { ...usuario, senha: 'fabio-2026!' }), 'functions/invalid-argument', /e-mail/)
+})
+
+await etapa('login com Google entra na conta cadastrada com o mesmo e-mail; conta Google sem cadastro não acessa nada', async () => {
+  // O emulador aceita um id_token "falso" (JSON) no lugar do token assinado pelo Google.
+  const google = (sub, email, verificado = true) => GoogleAuthProvider.credential(JSON.stringify({ sub, email, email_verified: verificado }))
+  const pelaSenha = (email, senha) =>
+    cliente(`senha-${id()}`)
+      .entrar(email, senha)
+      .then(
+        () => null,
+        (e) => e.code,
+      )
+
+  // Cadastrado sem senha: entra pelo Google, com o papel e as empresas do cadastro.
+  const gil = { nome: 'Gil Google', email: 'gil@gmail.com', papel: 'gestor', empresas: [empresaA], ativo: true }
+  const { uid: uidGil } = await admin.chamar('salvarUsuario', gil)
+  const sessaoGil = cliente('gil')
+  assert.equal((await signInWithCredential(sessaoGil.auth, google('google-gil', gil.email))).user.uid, uidGil)
+  assert.equal((await getDoc(doc(sessaoGil.db, 'empresas', empresaA))).get('nome'), 'Loja Centro')
+  await falha(getDoc(doc(sessaoGil.db, 'empresas', empresaB)), 'permission-denied')
+  await falha(sessaoGil.chamar('salvarEmpresa', { nome: 'Nova', fusoHorario: 'America/Sao_Paulo' }), 'functions/permission-denied', /administradores/)
+
+  // Cadastrado com senha: o primeiro login pelo Google fica com a mesma conta e a senha deixa de
+  // valer (o e-mail não era confirmado). O admin pode dar uma senha de novo; o Google continua.
+  const lia = { nome: 'Lia Lima', email: 'lia@gmail.com', senha: 'lia-entra-2026', papel: 'gestor', empresas: [empresaA], ativo: true }
+  const { uid: uidLia } = await admin.chamar('salvarUsuario', lia)
+  assert.equal((await signInWithCredential(cliente('lia').auth, google('google-lia', lia.email))).user.uid, uidLia)
+  assert.ok(['auth/wrong-password', 'auth/invalid-credential'].includes(await pelaSenha(lia.email, lia.senha)))
+  await admin.chamar('salvarUsuario', { uid: uidLia, ...lia, senha: 'lia-volta-2026' })
+  assert.equal(await pelaSenha(lia.email, 'lia-volta-2026'), null)
+  assert.equal((await signInWithCredential(cliente('lia-de-novo').auth, google('google-lia', lia.email))).user.uid, uidLia)
+
+  // Conta Google com e-mail que o Google não confirma: só liga depois de um login com a senha
+  // (o fluxo da tela de login); a senha continua valendo.
+  const rui = { nome: 'Rui Reis', email: 'rui@empresa.com.br', senha: 'rui-entra-2026', papel: 'gestor', empresas: [empresaA], ativo: true }
+  const { uid: uidRui } = await admin.chamar('salvarUsuario', rui)
+  const sessaoRui = cliente('rui')
+  const recusa = await falha(signInWithCredential(sessaoRui.auth, google('google-rui', rui.email, false)), 'auth/account-exists-with-different-credential')
+  assert.equal(recusa.customData?.email, rui.email)
+  const { user } = await sessaoRui.entrar(rui.email, rui.senha)
+  await linkWithCredential(user, GoogleAuthProvider.credentialFromError(recusa))
+  assert.equal((await signInWithCredential(cliente('rui-google').auth, google('google-rui', rui.email, false))).user.uid, uidRui)
+  assert.equal(await pelaSenha(rui.email, rui.senha), null)
+
+  // Conta Google sem cadastro: no emulador a criação de contas está liberada (o painel apaga a
+  // conta na hora), mas mesmo assim ela não lê nada nem usa as funções.
+  const estranho = cliente('estranho')
+  await signInWithCredential(estranho.auth, google('google-estranho', 'estranho@gmail.com'))
+  await falha(getDoc(doc(estranho.db, 'empresas', empresaA)), 'permission-denied')
+  await falha(estranho.chamar('salvarEmpresa', { nome: 'Nova', fusoHorario: 'America/Sao_Paulo' }), 'functions/permission-denied', /não tem acesso/)
 })
 
 await etapa('gestora ativa um aparelho; ele não lê nada do banco, só fala com as funções', async () => {

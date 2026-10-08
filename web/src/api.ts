@@ -70,7 +70,7 @@ export type Sincronizacao =
     }
 
 export const api = {
-  configurarPrimeiroAdmin: funcao<{ nome: string; email: string; senha: string; codigo: string }, { ok: true }>('configurarPrimeiroAdmin'),
+  configurarPrimeiroAdmin: funcao<{ nome: string; email: string; senha?: string; codigo: string }, { ok: true }>('configurarPrimeiroAdmin'),
   salvarEmpresa: funcao<DadosEmpresa, { id: string }>('salvarEmpresa'),
   salvarUsuario: funcao<DadosUsuario, { uid: string }>('salvarUsuario'),
   salvarFuncionario: funcao<DadosFuncionario, { id: string }>('salvarFuncionario'),

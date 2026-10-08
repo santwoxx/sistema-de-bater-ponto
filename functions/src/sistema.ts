@@ -17,7 +17,8 @@ export const configurarPrimeiroAdmin = onCall(async (request) => {
   const dados = objeto(request.data);
   const nome = texto(dados.nome, "Nome", { min: 3, max: 120 });
   const emailAdmin = email(dados.email);
-  const senhaAdmin = senha(dados.senha, emailAdmin);
+  // Sem senha, o administrador entra com a conta Google deste e-mail.
+  const senhaAdmin = dados.senha ? senha(dados.senha, emailAdmin) : null;
 
   const estadoRef = db.doc("sistema/estado");
   if ((await estadoRef.get()).exists) {
@@ -33,7 +34,7 @@ export const configurarPrimeiroAdmin = onCall(async (request) => {
 
   let uid: string;
   try {
-    uid = (await auth.createUser({ email: emailAdmin, password: senhaAdmin, displayName: nome })).uid;
+    uid = (await auth.createUser({ email: emailAdmin, displayName: nome, ...(senhaAdmin ? { password: senhaAdmin } : {}) })).uid;
   } catch (erro) {
     throw erroAuth(erro);
   }

@@ -126,8 +126,7 @@ function FormUsuario({ usuario, eu, empresas, aoFechar }: { usuario: Perfil | nu
     setErro('')
     if (nome.trim().length < 3) return setErro('Informe o nome.')
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return setErro('E-mail inválido.')
-    if (!usuario && senha.length < 8) return setErro('Defina uma senha inicial com pelo menos 8 caracteres.')
-    if (usuario && senha && senha.length < 8) return setErro('A nova senha precisa ter pelo menos 8 caracteres.')
+    if (senha && senha.length < 8) return setErro('A senha precisa ter pelo menos 8 caracteres.')
     setSalvando(true)
     try {
       await api.salvarUsuario({
@@ -139,7 +138,13 @@ function FormUsuario({ usuario, eu, empresas, aoFechar }: { usuario: Perfil | nu
         empresas: papel === 'admin' ? [] : selecionadas,
         ativo,
       })
-      notificar(usuario ? 'Usuário atualizado.' : 'Usuário criado. Envie o e-mail e a senha inicial para a pessoa.')
+      notificar(
+        usuario
+          ? 'Usuário atualizado.'
+          : senha
+            ? 'Usuário criado. Envie o e-mail e a senha inicial para a pessoa.'
+            : 'Usuário criado. A pessoa entra com a conta Google deste e-mail ou cria a senha em "Criar ou redefinir senha".',
+      )
       aoFechar()
     } catch (e) {
       setErro(mensagemErro(e))
@@ -176,7 +181,14 @@ function FormUsuario({ usuario, eu, empresas, aoFechar }: { usuario: Perfil | nu
           <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" />
         </Campo>
       </div>
-      <Campo rotulo={usuario ? 'Nova senha (deixe em branco para manter)' : 'Senha inicial'} ajuda="Mínimo de 8 caracteres. Senhas comuns (12345678, senha123) e com o próprio e-mail são recusadas.">
+      <Campo
+        rotulo={usuario ? 'Nova senha (deixe em branco para manter)' : 'Senha inicial (opcional)'}
+        ajuda={
+          usuario
+            ? 'Mínimo de 8 caracteres. Senhas comuns (12345678, senha123) e com o próprio e-mail são recusadas.'
+            : 'Em branco, a pessoa entra com a conta Google deste e-mail ou cria a própria senha no login ("Criar ou redefinir senha"), sem você saber dela. Com senha: mínimo de 8 caracteres, sem senhas comuns.'
+        }
+      >
         <input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} autoComplete="new-password" />
       </Campo>
 

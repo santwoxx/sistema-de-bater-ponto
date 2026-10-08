@@ -154,7 +154,7 @@ No [Console do Firebase](https://console.firebase.google.com):
 
 1. **Adicionar projeto**, com o nome que quiser (ex.: `ponto-minhaloja`).
 2. **Upgrade para o plano Blaze** (canto inferior esquerdo) e configure o alerta de orçamento.
-3. **Authentication**: "Vamos começar" → método **E-mail/senha** → ativar. Depois, em **Configurações → Ações do usuário**, desmarque **"Ativar criação (inscrição)"** e **"Ativar exclusão"**: as contas são criadas só pelo administrador, então ninguém precisa se cadastrar sozinho.
+3. **Authentication**: "Vamos começar" → método **E-mail/senha** → ativar. Para entrar também com a conta Google: **Adicionar novo provedor → Google** → ativar → escolha o e-mail de suporte → salvar. Depois, em **Configurações → Ações do usuário**, desmarque **"Ativar criação (inscrição)"** e **"Ativar exclusão"**: as contas são criadas só pelo administrador, então ninguém precisa se cadastrar sozinho (vale também para o Google: conta Google sem cadastro não entra).
 4. **Storage**: "Vamos começar" → modo **produção** → local **southamerica-east1 (São Paulo)**. O console destaca as regiões dos EUA como "sem custo"; em São Paulo as fotos custam centavos por mês e ficam na mesma região do servidor.
 5. **Configurações do projeto** (engrenagem) → **Seus apps** → ícone **Web `</>`** → registre o app (não precisa marcar Hosting aqui). Copie os valores de `firebaseConfig`.
 
@@ -200,9 +200,11 @@ A publicação não faz perguntas: cria o site do Hosting se faltar e aceita a l
 ### 5. Primeiro acesso
 
 1. Ao fim do `npm run publicar`, a tela **Configuração inicial** abre sozinha (ou abra `https://SEU-PROJETO.web.app/configuracao-inicial`).
-2. Informe o **código de instalação** mostrado no terminal e crie a sua conta de administrador (só funciona uma vez). Faça isso logo depois da publicação.
+2. Informe o **código de instalação** mostrado no terminal e crie a sua conta de administrador (só funciona uma vez). Faça isso logo depois da publicação. **Deixe a senha em branco para entrar com a conta Google** (use o e-mail dela): é o mais seguro, com a verificação em duas etapas do Google e nenhuma senha guardada no sistema.
 3. Em **Empresas**, cadastre a primeira empresa.
-4. Em **Usuários**, crie a conta da gestora e marque as empresas que ela pode acessar.
+4. Em **Usuários**, crie a conta da gestora e marque as empresas que ela pode acessar. Sem senha inicial, ela entra com a conta Google do e-mail cadastrado ou cria a própria senha no login ("Criar ou redefinir senha"), sem que você a conheça.
+
+**Login com Google.** O botão "Entrar com Google" aparece no login do painel e na ativação/desativação do aparelho. Ele entra na conta já cadastrada com o mesmo e-mail (mesmo papel e mesmas empresas); conta Google sem cadastro é recusada. Se a pessoa tinha senha, o Firebase a desliga no primeiro acesso pelo Google (o Google passa a ser o único jeito de entrar); o administrador pode definir uma senha de novo em Usuários. Em conta Google com e-mail de outro provedor (ex.: Hotmail), o Google não confirma o e-mail: a tela pede a senha uma vez e liga as duas formas de entrar. Em computador compartilhado, lembre que sair do painel não sai da conta Google.
 5. Em **Funcionários**, cadastre a equipe com matrícula e um **PIN provisório**. Entregue o PIN a cada pessoa: no primeiro uso do aparelho ela cria o PIN pessoal.
 
 ### 6. Coloque o aparelho na loja
@@ -295,7 +297,7 @@ Abra <http://localhost:5173>. Os dados somem quando os emuladores são fechados.
 | Comando | O que faz |
 |---|---|
 | `npm run verificar` | Build das funções e do site, lint (sem nenhum aviso permitido) e testes unitários: CPF, CNPJ, PIN, senhas, limpeza de textos, fusos, hash do PIN, limites de uso, cadeia de hashes, cálculo do espelho e textos do aparelho. O `npm run publicar` roda isto antes de publicar |
-| `npm run testar:e2e` | 26 etapas de ponta a ponta com os emuladores: permissões de cada papel, código de instalação, PIN provisório e pessoal, registro com foto, NSR e cadeia de hashes, bloqueios (inclusive com tentativas em paralelo), fotos só pelo servidor, ajustes, abonos, solicitações, fechamento e assinatura, exportação, adulteração detectada, limites de uso, auditoria e desativação de aparelho |
+| `npm run testar:e2e` | 27 etapas de ponta a ponta com os emuladores: permissões de cada papel, código de instalação, login com Google (mesma conta do e-mail, ligação com senha, conta sem cadastro), PIN provisório e pessoal, registro com foto, NSR e cadeia de hashes, bloqueios (inclusive com tentativas em paralelo), fotos só pelo servidor, ajustes, abonos, solicitações, fechamento e assinatura, exportação, adulteração detectada, limites de uso, auditoria e desativação de aparelho |
 | `npm run dados:exemplo` | Com os emuladores ligados, cria administrador, gestora, empresas, funcionários e o histórico do mês anterior, pronto para fechar e assinar (senha `ponto-teste-2026`; os PINs são provisórios) |
 | `npm run logs` | Últimos registros das funções em produção |
 
@@ -330,13 +332,15 @@ No GitHub, cada envio roda o `npm run verificar`, a auditoria das dependências 
 
 **Painel e logins**
 
+- **Login com Google** (recomendado para o administrador): verificação em duas etapas do Google e nenhuma senha guardada no sistema. Só entra quem tem cadastro: uma conta Google desconhecida é recusada e, se o Firebase chegar a criá-la, o site a apaga na hora.
+- **Senha opcional no cadastro:** sem senha inicial, a pessoa entra pelo Google ou cria a própria senha pelo e-mail; o administrador não precisa conhecer nem enviar senhas.
 - **Senhas de administradores e gestores:** mínimo de 8 caracteres, sem senhas comuns (12345678, senha123...) e sem o próprio e-mail.
 - **"Manter conectado neste computador"** fica desmarcado por padrão: a sessão do painel termina quando o navegador fecha, o que protege computadores compartilhados. O aparelho de ponto continua sempre conectado.
 - **Alertas de segurança** na página Hoje: bloqueios por PIN errado dos últimos 7 dias, com a foto de quem tentou.
 
 **Site, publicação e código**
 
-- **Política de segurança de conteúdo (CSP) estrita:** o site só carrega código dele mesmo e só se conecta ao Firebase; não pode ser embutido em outro site; a câmera só funciona nele.
+- **Política de segurança de conteúdo (CSP) estrita:** o site só carrega código dele mesmo e só se conecta ao Firebase; não pode ser embutido em outro site; a câmera só funciona nele. A única exceção é o login com Google: o script do Google (`apis.google.com`) e o iframe do Firebase (`*.firebaseapp.com`) são permitidos, mas só são carregados no clique em "Entrar com Google" (a tela do ponto nunca os carrega). Pelo mesmo motivo, o `Cross-Origin-Opener-Policy` é `same-origin-allow-popups`, que deixa a janela do Google responder ao site.
 - **Código de instalação** para criar o primeiro administrador.
 - **Publicação conferida:** o `npm run publicar` só publica se build, lint e testes passarem, e o próprio deploy se recusa a publicar um site configurado para outro projeto ou para os emuladores.
 - **Ferramentas fixadas:** o Firebase CLI tem versão fixa no `package.json` da raiz e as dependências vêm dos `package-lock.json` (`npm ci`).
@@ -371,4 +375,4 @@ No GitHub, cada envio roda o `npm run verificar`, a auditoria das dependências 
 - **A foto não prova que a pessoa estava lá.** Não há detecção de vivacidade: uma foto de foto passaria. A foto serve de evidência para o gestor conferir.
 - **Quem tem acesso físico a um computador usado como ponto** pode copiar a sessão do aparelho. Ainda assim, só consegue bater ponto com matrícula e PIN corretos (com os bloqueios acima). Prefira tablet em modo quiosque e desative aparelhos perdidos pelo painel.
 - **O dono do projeto Firebase** tem acesso total ao banco pelo Console. A cadeia de hashes torna qualquer alteração visível na verificação de integridade, mas não a impede.
-- **Próximos passos sugeridos:** arquivos AFD/AEJ (Portaria 671), banco de horas acumulado, envio do comprovante por e-mail, Firebase App Check, verificação em duas etapas (MFA) para gestores e alertas de solicitações pendentes por e-mail ou WhatsApp.
+- **Próximos passos sugeridos:** arquivos AFD/AEJ (Portaria 671), banco de horas acumulado, envio do comprovante por e-mail, Firebase App Check, verificação em duas etapas (MFA) para quem entra com senha e alertas de solicitações pendentes por e-mail ou WhatsApp.

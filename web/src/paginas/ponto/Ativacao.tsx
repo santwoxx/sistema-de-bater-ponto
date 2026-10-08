@@ -1,12 +1,12 @@
-import { indexedDBLocalPersistence, setPersistence, signInWithEmailAndPassword } from 'firebase/auth'
+import { indexedDBLocalPersistence, setPersistence, signInWithEmailAndPassword, type Auth, type UserCredential } from 'firebase/auth'
 import { collection, doc, getDoc, getDocs } from 'firebase/firestore'
 import { Fingerprint, Tablet } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { api } from '../../api'
-import { Aviso, Campo } from '../../componentes/Basicos'
+import { Aviso, BotaoGoogle, Campo } from '../../componentes/Basicos'
 import { CHAVE_APARELHO, useSessao } from '../../contexto/Sessao'
-import { auth, criarSessaoTemporaria, NOME_SISTEMA, type SessaoTemporaria } from '../../firebase'
-import { mensagemErro } from '../../lib/erros'
+import { auth, criarSessaoTemporaria, entrarComGoogle, NOME_SISTEMA, type SessaoTemporaria } from '../../firebase'
+import { cancelouJanela, mensagemErro } from '../../lib/erros'
 import { formatarCnpj } from '../../lib/formatos'
 import { gravarLocal } from '../../lib/util'
 import { ordenarPorNome, paraEmpresa, type Empresa } from '../../tipos'
@@ -34,15 +34,15 @@ export default function Ativacao() {
     [],
   )
 
-  async function entrar(e: FormEvent) {
-    e.preventDefault()
+  // O gestor se identifica com e-mail e senha ou com a conta Google.
+  async function identificar(fazerLogin: (alvo: Auth) => Promise<UserCredential>) {
     setErro('')
     setOcupado(true)
     try {
       await temporaria.current?.encerrar()
       const sessaoGestor = criarSessaoTemporaria()
       temporaria.current = sessaoGestor
-      const { user } = await signInWithEmailAndPassword(sessaoGestor.auth, email.trim(), senha)
+      const { user } = await fazerLogin(sessaoGestor.auth)
       const perfil = (await getDoc(doc(sessaoGestor.db, 'usuarios', user.uid))).data()
       if (!perfil || perfil.ativo !== true) throw new ErroAcesso('Este usuário não tem acesso ao painel.')
 
@@ -62,10 +62,15 @@ export default function Ativacao() {
       setSenha('')
       setEtapa('empresa')
     } catch (err) {
-      setErro(err instanceof ErroAcesso ? err.message : mensagemErro(err))
+      if (!cancelouJanela(err)) setErro(err instanceof ErroAcesso ? err.message : mensagemErro(err))
     } finally {
       setOcupado(false)
     }
+  }
+
+  function entrar(e: FormEvent) {
+    e.preventDefault()
+    void identificar((alvo) => signInWithEmailAndPassword(alvo, email.trim(), senha))
   }
 
   async function ativar(e: FormEvent) {
@@ -123,6 +128,8 @@ export default function Ativacao() {
             <button type="submit" className="botao primario grande" disabled={ocupado}>
               {ocupado ? 'Verificando...' : 'Continuar'}
             </button>
+            <div className="separador-ou">ou</div>
+            <BotaoGoogle aoClicar={() => void identificar(entrarComGoogle)} desativado={ocupado} />
           </form>
         ) : (
           <form onSubmit={ativar} className="formulario">

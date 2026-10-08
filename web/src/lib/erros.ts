@@ -10,6 +10,12 @@ const MENSAGENS: Record<string, string> = {
   'auth/too-many-requests': 'Muitas tentativas. Aguarde alguns minutos e tente novamente.',
   'auth/network-request-failed': 'Sem conexão com a internet.',
   'auth/invalid-api-key': 'Configuração do Firebase inválida (verifique o arquivo .env).',
+  'auth/admin-restricted-operation': 'Esta conta Google não está cadastrada no sistema. Peça ao administrador para cadastrar o seu e-mail.',
+  'auth/popup-blocked': 'O navegador bloqueou a janela do Google. Clique de novo em "Entrar com Google" ou permita janelas deste site.',
+  'auth/account-exists-with-different-credential': 'Este e-mail já tem senha no sistema: entre com a senha uma vez para ligar a conta Google.',
+  'auth/credential-already-in-use': 'Esta conta Google já está ligada a outro usuário do sistema.',
+  'auth/operation-not-allowed': 'Este tipo de login não está ativado no Firebase (Authentication > Método de login).',
+  'auth/unauthorized-domain': 'Este endereço não está autorizado no Firebase (Authentication > Configurações > Domínios autorizados).',
   'functions/unavailable': 'Servidor indisponível ou sem internet. Tente novamente.',
   'functions/deadline-exceeded': 'O servidor demorou para responder. Tente novamente.',
   'functions/internal': 'Erro interno no servidor. Tente novamente em instantes.',
@@ -35,6 +41,11 @@ export function mensagemErro(erro: unknown): string {
     return 'O banco ainda está criando um índice para esta consulta. Aguarde alguns minutos.'
   }
   return MENSAGENS[codigo] ?? (mensagem || 'Ocorreu um erro inesperado.')
+}
+
+/** A pessoa fechou ou cancelou a janela do Google: não há erro para mostrar. */
+export function cancelouJanela(erro: unknown): boolean {
+  return ['auth/popup-closed-by-user', 'auth/cancelled-popup-request', 'auth/user-cancelled'].includes(codigoErro(erro))
 }
 
 export function erroDeRede(erro: unknown): boolean {

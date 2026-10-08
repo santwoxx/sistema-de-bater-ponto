@@ -1,11 +1,18 @@
-import { deleteApp, initializeApp, type FirebaseOptions } from 'firebase/app'
+import { deleteApp, FirebaseError, initializeApp, type FirebaseOptions } from 'firebase/app'
 import {
   browserLocalPersistence,
+  browserPopupRedirectResolver,
   connectAuthEmulator,
+  deleteUser,
+  getAdditionalUserInfo,
+  GoogleAuthProvider,
   indexedDBLocalPersistence,
   inMemoryPersistence,
   initializeAuth,
+  signInWithPopup,
+  signOut,
   type Auth,
+  type UserCredential,
 } from 'firebase/auth'
 import { connectFirestoreEmulator, getFirestore, type Firestore } from 'firebase/firestore'
 import { connectFunctionsEmulator, getFunctions, type Functions } from 'firebase/functions'
@@ -38,13 +45,31 @@ function conectarEmuladores(servicos: { auth: Auth; db?: Firestore; functions: F
 }
 
 export const app = initializeApp(configuracao)
-// Sem o módulo de popup/redirecionamento (só usamos e-mail e senha): ele carregaria
-// um iframe e scripts do Google que a política de segurança do site bloqueia.
+// Sem o módulo de popup no início: o script e o iframe do Google só são carregados
+// no clique em "Entrar com Google" (ver entrarComGoogle). A tela do ponto e o
+// resto do painel não carregam nada de fora.
 export const auth = initializeAuth(app, { persistence: [indexedDBLocalPersistence, browserLocalPersistence] })
 export const db = getFirestore(app)
 export const functions = getFunctions(app, REGIAO_FUNCOES)
 
 conectarEmuladores({ auth, db, functions })
+
+/**
+ * Login com a conta Google numa janela (popup), na sessão informada: a do painel
+ * ou a temporária do gestor no aparelho. Entra na conta cadastrada com o mesmo
+ * e-mail. Conta Google sem cadastro não fica no sistema: se o Firebase acabou de
+ * criá-la (criação de contas liberada no Console), ela é apagada na hora.
+ */
+export async function entrarComGoogle(alvo: Auth = auth): Promise<UserCredential> {
+  const google = new GoogleAuthProvider()
+  google.setCustomParameters({ prompt: 'select_account' })
+  const resultado = await signInWithPopup(alvo, google, browserPopupRedirectResolver)
+  if (getAdditionalUserInfo(resultado)?.isNewUser) {
+    await deleteUser(resultado.user).catch(() => signOut(alvo))
+    throw new FirebaseError('auth/admin-restricted-operation', 'Conta Google sem cadastro no sistema.')
+  }
+  return resultado
+}
 
 export interface SessaoTemporaria {
   auth: Auth

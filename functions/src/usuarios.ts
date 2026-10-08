@@ -15,9 +15,10 @@ export const salvarUsuario = onCall(async (request) => {
   const papel = opcao(dados.papel, "Papel", ["admin", "gestor"] as const);
   const empresas = papel === "admin" ? [] : listaIds(dados.empresas ?? [], "Empresas", 300);
   const ativo = dados.ativo === undefined ? true : booleano(dados.ativo, "Ativo");
+  // Sem senha inicial, a pessoa entra com a conta Google deste e-mail ou cria a
+  // própria senha pelo "Esqueci minha senha" (assim o administrador não a conhece).
   const novaSenha = dados.senha ? senha(dados.senha, emailUsuario) : null;
 
-  if (!uidExistente && !novaSenha) throw new HttpsError("invalid-argument", "Senha: defina uma senha inicial.");
   if (uidExistente === admin.uid && (papel !== "admin" || !ativo)) {
     throw new HttpsError("failed-precondition", "Você não pode remover o seu próprio acesso de administrador.");
   }
@@ -66,7 +67,9 @@ export const salvarUsuario = onCall(async (request) => {
 
   let uid: string;
   try {
-    uid = (await auth.createUser({ email: emailUsuario, password: novaSenha!, displayName: nome, disabled: !ativo })).uid;
+    uid = (
+      await auth.createUser({ email: emailUsuario, displayName: nome, disabled: !ativo, ...(novaSenha ? { password: novaSenha } : {}) })
+    ).uid;
   } catch (erro) {
     throw erroAuth(erro);
   }
