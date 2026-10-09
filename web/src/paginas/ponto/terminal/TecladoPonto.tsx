@@ -1,31 +1,18 @@
-import { Check, ClockAlert, Delete, FileSignature, KeyRound } from 'lucide-react'
-import type { Modo } from './tipos'
+import { Check, Delete } from 'lucide-react'
 
 const TECLAS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'apagar', '0', 'ok'] as const
 
 /** O que o visor mostra: a matrícula digitada ou os pontos do PIN. */
 export type Visor = { tipo: 'matricula'; valor: string } | { tipo: 'pin'; legenda: string; digitos: number }
 
-/** Atalhos da tela inicial ou o botão de cancelar (fora do modo ponto). */
-export type Rodape = 'atalhos' | 'cancelar' | null
-
-// O nome curto aparece no celular, onde os três atalhos ficam lado a lado.
-const ATALHOS: Array<{ modo: Exclude<Modo, 'ponto'>; rotulo: string; curto: string; Icone: typeof ClockAlert }> = [
-  { modo: 'solicitacao', rotulo: 'Esqueci de bater o ponto', curto: 'Esqueci o ponto', Icone: ClockAlert },
-  { modo: 'assinatura', rotulo: 'Assinar meu espelho', curto: 'Assinar espelho', Icone: FileSignature },
-  { modo: 'trocarPin', rotulo: 'Trocar meu PIN', curto: 'Trocar PIN', Icone: KeyRound },
-]
-
-/** Título, visor, teclado numérico, atalhos e instrução do aparelho. */
+/** Título, visor, teclado numérico e instrução do aparelho. */
 export default function TecladoPonto({
   titulo,
   visor,
   podeConfirmar,
   bloqueado,
   aoTeclar,
-  rodape,
   aoCancelar,
-  aoEscolherModo,
   instrucao,
   instrucaoComErro,
 }: {
@@ -35,9 +22,8 @@ export default function TecladoPonto({
   /** Durante a foto e o envio, nada pode ser digitado. */
   bloqueado: boolean
   aoTeclar: (tecla: string) => void
-  rodape: Rodape
-  aoCancelar: () => void
-  aoEscolherModo: (modo: Exclude<Modo, 'ponto'>) => void
+  /** Criando o PIN pessoal: botão para desistir e voltar ao início. */
+  aoCancelar: (() => void) | null
   instrucao: string
   instrucaoComErro: boolean
 }) {
@@ -72,20 +58,10 @@ export default function TecladoPonto({
           </button>
         ))}
       </div>
-      {rodape === 'cancelar' && (
+      {aoCancelar && (
         <button type="button" className="terminal-link" onClick={aoCancelar} disabled={bloqueado}>
-          Cancelar e voltar ao ponto
+          Cancelar e voltar ao início
         </button>
-      )}
-      {rodape === 'atalhos' && (
-        <div className="terminal-atalhos">
-          {ATALHOS.map(({ modo, rotulo, curto, Icone }) => (
-            <button key={modo} type="button" className="terminal-esqueci" onClick={() => aoEscolherModo(modo)} aria-label={rotulo}>
-              <Icone size={20} aria-hidden /> <span className="rotulo-longo">{rotulo}</span>
-              <span className="rotulo-curto">{curto}</span>
-            </button>
-          ))}
-        </div>
       )}
       <p className={`terminal-instrucao ${instrucaoComErro ? 'terminal-erro' : ''}`}>{instrucao}</p>
     </>

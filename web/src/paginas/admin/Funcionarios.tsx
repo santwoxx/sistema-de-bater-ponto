@@ -274,7 +274,7 @@ function FormFuncionario({
         <legend>PIN do ponto</legend>
         <p className="texto-suave">
           O PIN definido aqui é <strong>provisório</strong>: no primeiro uso, o aparelho pede que o funcionário crie o PIN
-          pessoal dele. Assim ninguém da empresa conhece o PIN que bate o ponto e assina o espelho.
+          pessoal dele. Assim ninguém da empresa conhece o PIN que bate o ponto.
           {!novo &&
             funcionario?.pinDefinido &&
             (funcionario.pinProvisorio ? ' Este funcionário ainda não criou o PIN pessoal.' : ' Este funcionário já usa o PIN pessoal.')}

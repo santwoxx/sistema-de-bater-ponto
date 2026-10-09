@@ -27,7 +27,7 @@ const HISTORICO_POR_PAGINA = 150
 function Origem({ s, empresa }: { s: Solicitacao; empresa: Empresa }) {
   return (
     <>
-      {s.origem === 'funcionario' ? `Pelo funcionário, no aparelho "${s.dispositivoNome ?? ''}"` : `Registrada por ${s.solicitadoPor.nome}`}
+      Registrada por {s.solicitadoPor.nome}
       {s.criadoEm && <small className="bloco">{formatarDataHora(s.criadoEm.toDate(), empresa.fusoHorario)}</small>}
     </>
   )
@@ -88,7 +88,7 @@ export default function Solicitacoes() {
     <>
       <CabecalhoPagina
         titulo="Solicitações de ponto"
-        descricao="Pedidos de inclusão de marcação esquecida. A marcação só passa a valer depois de aprovada."
+        descricao="Inclusão de marcação que faltou, registrada pelo gestor (o funcionário só bate o ponto no aparelho). A marcação só passa a valer depois de aprovada."
         acoes={
           <button type="button" className="botao primario" onClick={() => setNova(true)}>
             <Plus size={16} aria-hidden /> Nova solicitação
@@ -114,15 +114,13 @@ export default function Solicitacoes() {
             <Carregando />
           ) : lista.length === 0 ? (
             <Vazio icone={Inbox} titulo="Nenhuma solicitação pendente">
-              Quando um funcionário esquecer de bater o ponto, ele pode pedir a inclusão no próprio aparelho, em "Esqueci de bater o
-              ponto".
+              Para incluir uma marcação que faltou, use "Nova solicitação" (ou o + no dia, no Espelho de ponto).
             </Vazio>
           ) : (
             <div className="tabela-rolagem">
               <table className="tabela">
                 <thead>
                   <tr>
-                    <th>Foto</th>
                     <th>Funcionário</th>
                     <th>Pede marcação em</th>
                     <th>Motivo</th>
@@ -134,15 +132,6 @@ export default function Solicitacoes() {
                 <tbody>
                   {lista.map((s) => (
                     <tr key={s.id}>
-                      <td>
-                        {s.miniatura ? (
-                          <span className="miniatura" style={{ width: 40, height: 40 }}>
-                            <img src={s.miniatura} width={40} height={40} alt={`Foto de ${s.funcionarioNome} ao pedir`} />
-                          </span>
-                        ) : (
-                          <span className="miniatura miniatura-inicial">{s.funcionarioNome.charAt(0)}</span>
-                        )}
-                      </td>
                       <td>
                         <strong>{s.funcionarioNome}</strong>
                         <small className="bloco">Matrícula {s.funcionarioMatricula}</small>

@@ -1,19 +1,18 @@
-import { FieldValue, Timestamp } from "firebase-admin/firestore";
+import { FieldValue } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/https";
 import { db } from "./admin";
-import { autor, exigirAcessoEmpresa, exigirDispositivo } from "./acesso";
-import { auditarNa, registrarAuditoria } from "./auditoria";
+import { autor, exigirAcessoEmpresa } from "./acesso";
+import { registrarAuditoria } from "./auditoria";
 import { calcularEspelho, documentoDoEspelho, type AbonoBruto, type MarcacaoBruta } from "./espelho";
-import { decodificarJpeg, identificarNoAparelho, lerMatriculaPin, MAX_MINIATURA_BYTES } from "./identificacao";
 import { consumirLimite } from "./limites";
 import { sha256 } from "./seguranca";
 import { dataLocal } from "./tempo";
-import { booleano, idDocumento, listaIds, objeto, texto } from "./validacao";
+import { idDocumento, listaIds, objeto, texto } from "./validacao";
 
 // Fechamento mensal: o servidor calcula o espelho de cada funcionário e guarda
-// uma versão congelada (com hash). O funcionário confere no aparelho de ponto
-// e assina (concorda) ou contesta, com matrícula + PIN e foto. Um espelho
-// assinado só é refeito com motivo, e a versão anterior fica guardada.
+// uma versão congelada (com hash), que o gestor imprime para o funcionário
+// assinar em papel. Depois de fechado, o espelho só é refeito com motivo
+// (reabertura), e a versão anterior fica guardada.
 
 const JORNADA_PADRAO = [0, 480, 480, 480, 480, 480, 240];
 const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
@@ -114,21 +113,19 @@ export const fecharEspelhos = onCall({ timeoutSeconds: 120, memory: "512MiB", ma
 
     const resultado = await db.runTransaction<ResultadoFechamento>(async (tx) => {
       const atual = (await tx.get(ref)).data();
-      const reenviarContestado = atual?.status === "contestado" && motivoReabertura !== null;
-      if (atual && atual.hash === hash && !reenviarContestado) return "sem-alteracoes";
-      if (atual?.status === "assinado" && !motivoReabertura) return "exige-motivo";
+      if (atual && atual.hash === hash) return "sem-alteracoes";
+      // Já fechado (e talvez impresso e assinado): mudar exige motivo.
+      if (atual && !motivoReabertura) return "exige-motivo";
       if (atual) tx.set(ref.collection("versoes").doc(String(atual.versao)), atual);
       tx.set(ref, {
         ...conteudo,
         funcionarioId: funcionarioDoc.id,
         hash,
         versao: (atual?.versao ?? 0) + 1,
-        status: "aguardando",
+        status: "fechado",
         fechadoPor: autor(usuario),
         fechadoEm: FieldValue.serverTimestamp(),
-        assinatura: null,
-        contestacao: null,
-        reabertura: atual ? { motivo: motivoReabertura ?? "Atualizado antes da assinatura", statusAnterior: atual.status } : null,
+        reabertura: atual ? { motivo: motivoReabertura, versaoAnterior: atual.versao } : null,
       });
       return atual ? "atualizado" : "fechado";
     });
@@ -142,95 +139,9 @@ export const fecharEspelhos = onCall({ timeoutSeconds: 120, memory: "512MiB", ma
     acao: "espelho.fechado",
     descricao:
       `Fechamento de ${nomeMes(mes)}: ${contar("fechado")} fechado(s), ${contar("atualizado")} atualizado(s), ` +
-      `${contar("sem-alteracoes")} sem alterações, ${contar("exige-motivo")} assinado(s) aguardando motivo para reabrir.`,
+      `${contar("sem-alteracoes")} sem alterações, ${contar("exige-motivo")} com mudanças aguardando motivo para reabrir.`,
     detalhes: { mes, resultados, ...(motivoReabertura ? { motivo: motivoReabertura } : {}) },
   });
 
   return { resultados };
-});
-
-// --- No aparelho de ponto, com matrícula + PIN ------------------------------
-
-export const consultarEspelhosPendentes = onCall(async (request) => {
-  const { dispositivoId, empresaId } = exigirDispositivo(request);
-  const { matricula, pin } = lerMatriculaPin(objeto(request.data));
-  const { empresaRef, funcionarioId, funcionario } = await identificarNoAparelho({ empresaId, dispositivoId, matricula, pin });
-
-  const pendentes = await empresaRef
-    .collection("espelhos")
-    .where("funcionarioId", "==", funcionarioId)
-    .where("status", "==", "aguardando")
-    .get();
-
-  return {
-    funcionarioNome: funcionario.nome as string,
-    espelhos: pendentes.docs
-      .map((doc) => {
-        const e = doc.data();
-        return {
-          id: doc.id,
-          mes: e.mes as string,
-          hash: e.hash as string,
-          empresaNome: e.empresa?.nome as string,
-          funcionario: { nome: e.funcionario?.nome, matricula: e.funcionario?.matricula, cargo: e.funcionario?.cargo },
-          documento: e.documento,
-        };
-      })
-      .sort((a, b) => a.mes.localeCompare(b.mes)),
-  };
-});
-
-export const assinarEspelho = onCall(async (request) => {
-  const { dispositivoId, empresaId } = exigirDispositivo(request);
-  const dados = objeto(request.data);
-  const { matricula, pin } = lerMatriculaPin(dados);
-  const espelhoId = idDocumento(dados.espelhoId, "Espelho");
-  if (typeof dados.hash !== "string" || !/^[0-9a-f]{64}$/.test(dados.hash)) throw new HttpsError("invalid-argument", "Versão do espelho inválida.");
-  const hash = dados.hash;
-  const concordo = booleano(dados.concordo, "Concordância");
-  const motivo = concordo ? null : texto(dados.motivo, "Motivo", { min: 5, max: 500 });
-  const miniatura = dados.miniatura ? decodificarJpeg(dados.miniatura, "Foto", MAX_MINIATURA_BYTES) : null;
-
-  const { empresaRef, dispositivo, funcionarioId, funcionario } = await identificarNoAparelho({
-    empresaId,
-    dispositivoId,
-    matricula,
-    pin,
-    miniatura,
-  });
-  const ref = empresaRef.collection("espelhos").doc(espelhoId);
-  const agora = new Date();
-  // Código que identifica esta assinatura: espelho (hash) + quem + quando + onde.
-  const codigo = sha256([hash, funcionarioId, agora.toISOString(), dispositivoId].join("|")).slice(0, 16).toUpperCase();
-
-  const mes = await db.runTransaction(async (tx) => {
-    const espelho = (await tx.get(ref)).data();
-    if (!espelho || espelho.funcionarioId !== funcionarioId) throw new HttpsError("not-found", "Espelho não encontrado.");
-    if (espelho.status !== "aguardando") throw new HttpsError("failed-precondition", "Este espelho não está aguardando assinatura.");
-    if (espelho.hash !== hash) {
-      throw new HttpsError("failed-precondition", "O espelho foi atualizado pelo gestor. Consulte de novo para ver a versão atual.");
-    }
-    const registro = {
-      em: Timestamp.fromDate(agora),
-      codigo,
-      hash,
-      dispositivoId,
-      dispositivoNome: dispositivo.nome,
-      miniatura: miniatura ? `data:image/jpeg;base64,${miniatura.toString("base64")}` : null,
-    };
-    tx.update(ref, concordo ? { status: "assinado", assinatura: registro } : { status: "contestado", contestacao: { ...registro, motivo } });
-    const mesEspelho = espelho.mes as string;
-    auditarNa(tx, {
-      empresaId,
-      autor: { uid: funcionarioId, nome: String(funcionario.nome) },
-      acao: concordo ? "espelho.assinado" : "espelho.contestado",
-      descricao: concordo
-        ? `${funcionario.nome} assinou o espelho de ${nomeMes(mesEspelho)} no aparelho "${dispositivo.nome}" (código ${codigo}).`
-        : `${funcionario.nome} contestou o espelho de ${nomeMes(mesEspelho)} no aparelho "${dispositivo.nome}": ${motivo}.`,
-      detalhes: { espelhoId, mes: mesEspelho, codigo, hash, ...(motivo ? { motivo } : {}) },
-    });
-    return mesEspelho;
-  });
-
-  return { status: concordo ? "assinado" : "contestado", mes, codigo };
 });

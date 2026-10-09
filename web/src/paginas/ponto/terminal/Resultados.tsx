@@ -1,11 +1,12 @@
-import { CircleAlert, CircleCheck, CloudOff, FileSignature, Info, KeyRound, Send } from 'lucide-react'
+import { CircleAlert, CircleCheck, CloudOff } from 'lucide-react'
 import type { ReactNode } from 'react'
 import type { ComprovantePonto } from '../../../api'
 import { formatarNsr } from '../../../lib/formatos'
-import { dataPorExtenso, formatarData, horaLocal, nomeMes } from '../../../lib/tempo'
+import { dataPorExtenso, horaLocal } from '../../../lib/tempo'
 
-// Telas de resultado do aparelho: cobrem a tela, somem sozinhas depois de
-// alguns segundos (ver Terminal) ou com um toque.
+// Telas de resultado do aparelho (ponto registrado, guardado sem internet ou
+// recusado): cobrem a tela e somem sozinhas depois de alguns segundos (ver
+// Terminal) ou com um toque.
 
 function Resultado({
   estilo,
@@ -13,7 +14,7 @@ function Resultado({
   alerta = false,
   children,
 }: {
-  estilo: 'sucesso' | 'solicitado' | 'erro'
+  estilo: 'sucesso' | 'aviso' | 'erro'
   aoTocar: () => void
   alerta?: boolean
   children: ReactNode
@@ -81,7 +82,7 @@ export function PontoGuardado({
 }) {
   const horario = new Date(guardada.horario)
   return (
-    <Resultado estilo="solicitado" aoTocar={aoFechar}>
+    <Resultado estilo="aviso" aoTocar={aoFechar}>
       <CloudOff size={64} aria-hidden />
       <h2>Batida guardada</h2>
       <img src={guardada.foto} alt="" className="resultado-foto" />
@@ -93,82 +94,11 @@ export function PontoGuardado({
   )
 }
 
-export function PinAlterado({ aoFechar }: { aoFechar: () => void }) {
-  return (
-    <Resultado estilo="sucesso" aoTocar={aoFechar}>
-      <KeyRound size={64} aria-hidden />
-      <h2>PIN alterado!</h2>
-      <p>Use o novo PIN a partir de agora. Ninguém da empresa tem acesso a ele.</p>
-      <small>Toque para voltar</small>
-    </Resultado>
-  )
-}
-
-export function SolicitacaoEnviada({
-  pedido,
-  pinCriado,
-  aoFechar,
-}: {
-  pedido: { funcionarioNome: string; data: string; hora: string }
-  pinCriado: boolean
-  aoFechar: () => void
-}) {
-  return (
-    <Resultado estilo="solicitado" aoTocar={aoFechar}>
-      <Send size={64} aria-hidden />
-      <h2>Solicitação enviada!</h2>
-      <strong className="resultado-nome">{pedido.funcionarioNome}</strong>
-      <p>
-        Marcação de {formatarData(pedido.data)} às {pedido.hora}
-      </p>
-      <small>Ela passa a valer depois que o gestor aprovar.</small>
-      <AvisoPinCriado mostrar={pinCriado} />
-    </Resultado>
-  )
-}
-
-export function EspelhoRespondido({
-  assinatura,
-  temProximo,
-  aoContinuar,
-}: {
-  assinatura: { status: 'assinado' | 'contestado'; mes: string; codigo: string }
-  temProximo: boolean
-  aoContinuar: () => void
-}) {
-  const assinado = assinatura.status === 'assinado'
-  return (
-    <Resultado estilo={assinado ? 'sucesso' : 'solicitado'} aoTocar={aoContinuar}>
-      {assinado ? <FileSignature size={64} aria-hidden /> : <Send size={64} aria-hidden />}
-      <h2>{assinado ? 'Espelho assinado!' : 'Contestação enviada'}</h2>
-      <p>
-        {assinado
-          ? `Espelho de ${nomeMes(assinatura.mes)} assinado eletronicamente.`
-          : `O gestor vai analisar o espelho de ${nomeMes(assinatura.mes)} e enviar uma versão corrigida.`}
-      </p>
-      <small>Código {assinatura.codigo}</small>
-      {temProximo && <small>Toque para conferir o próximo espelho.</small>}
-    </Resultado>
-  )
-}
-
-export function TudoEmDia({ mensagem, pinCriado, aoFechar }: { mensagem: string; pinCriado: boolean; aoFechar: () => void }) {
-  return (
-    <Resultado estilo="solicitado" aoTocar={aoFechar}>
-      <Info size={64} aria-hidden />
-      <h2>Tudo em dia</h2>
-      <p>{mensagem}</p>
-      <AvisoPinCriado mostrar={pinCriado} />
-      <small>Toque para voltar</small>
-    </Resultado>
-  )
-}
-
-export function FalhaNoAparelho({ titulo, mensagem, aoFechar }: { titulo: string; mensagem: string; aoFechar: () => void }) {
+export function FalhaNoAparelho({ mensagem, aoFechar }: { mensagem: string; aoFechar: () => void }) {
   return (
     <Resultado estilo="erro" aoTocar={aoFechar} alerta>
       <CircleAlert size={72} aria-hidden />
-      <h2>{titulo}</h2>
+      <h2>Não foi possível registrar</h2>
       <p>{mensagem}</p>
       <small>Toque para tentar de novo</small>
     </Resultado>

@@ -2,8 +2,8 @@
 
 Sistema de controle de ponto para lojas e pequenas empresas. **Tudo roda no Firebase** (site, regras de negócio, banco, fotos e login) e é publicado com um comando: `npm run publicar`.
 
-- **Aparelho de ponto na loja** (tablet, celular ou computador com câmera): o funcionário digita a **matrícula** e o **PIN**, a foto é tirada automaticamente e o horário oficial vem do **servidor**, não do relógio do aparelho.
-- **Painel do gestor** (navegador): escolha da empresa com busca por nome ou CNPJ, quem está em expediente agora, marcações com foto, espelho de ponto mensal com horas, saldo e faltas, além de funcionários, aparelhos, abonos e auditoria.
+- **Aparelho de ponto na loja** (tablet, celular ou computador com câmera): o funcionário só **bate o ponto**. Digita a **matrícula** e o **PIN**, a foto é tirada automaticamente e a hora registrada é a do momento da foto, vinda do **servidor** (não dá para adiantar ou atrasar mexendo no relógio do aparelho).
+- **Painel do gestor** (navegador): escolha da empresa com busca por nome ou CNPJ, quem está em expediente agora, marcações com foto, espelho de ponto mensal com horas, saldo e faltas, além de funcionários, aparelhos, abonos e auditoria. **Ajustes, solicitações, faltas, atrasos e o fechamento do mês são só do gestor.**
 - **Várias empresas no mesmo sistema**: o administrador vê todas; cada gestor vê só as empresas liberadas para ele.
 
 ## Sumário
@@ -27,10 +27,9 @@ Sistema de controle de ponto para lojas e pequenas empresas. **Tudo roda no Fire
 
 - Teclado numérico grande (aceita também teclado físico), câmera ao vivo com moldura para o rosto e contagem regressiva de 3 segundos antes da foto.
 - Comprovante na tela: nome, **Entrada/Saída**, hora, data, **NSR** (número sequencial do registro) e código de verificação.
-- **"Esqueci de bater o ponto"**: o funcionário se identifica com matrícula e PIN e pede a inclusão do horário que faltou (dia, horário e motivo). Uma foto pequena é tirada como prova, e a marcação só vale depois que o gestor aprovar.
-- **"Assinar meu espelho"**: com matrícula e PIN, o funcionário confere o espelho dos meses fechados (dia a dia e totais) e **assina** ou **contesta** explicando o que está errado. A assinatura registra data, hora, aparelho, foto e um código de verificação.
-- **PIN pessoal**: o PIN que o gestor cadastra é provisório. No primeiro uso, o aparelho pede que o funcionário crie o dele, e ninguém da empresa fica sabendo. **"Trocar meu PIN"** permite trocá-lo quando quiser.
-- **Sem internet, o ponto continua:** a batida (com foto) fica guardada no aparelho, cifrada, e é enviada sozinha quando a conexão volta. O topo da tela mostra quantas estão guardadas; o PIN é conferido quando a batida chega ao servidor, e as recusadas (PIN errado, por exemplo) aparecem nos alertas do painel. Vale para até 72 horas sem internet; "Esqueci de bater o ponto", "Assinar meu espelho" e "Trocar meu PIN" precisam de conexão.
+- **Só bater o ponto:** o funcionário não pede inclusão de horário, não justifica atraso nem mexe no espelho. Mesmo quem chega atrasado registra com a foto, na hora em que chegou. Marcação esquecida, faltas, atrasos, abonos e o fechamento do mês ficam com o gestor, no painel.
+- **PIN pessoal**: o PIN que o gestor cadastra é provisório. Na primeira batida, o aparelho pede que o funcionário crie o dele, e ninguém da empresa fica sabendo. Para trocar depois (esqueceu ou acha que alguém viu), o gestor redefine o PIN no painel.
+- **Sem internet, o ponto continua:** a batida (com foto) fica guardada no aparelho, cifrada, e é enviada sozinha quando a conexão volta. O topo da tela mostra quantas estão guardadas; o PIN é conferido quando a batida chega ao servidor, e as recusadas (PIN errado, por exemplo) aparecem nos alertas do painel. Vale para até 72 horas sem internet.
 - Relógio sincronizado com o servidor, aviso de "Sem internet", tela sempre acesa e tela cheia. Pode ser instalado como aplicativo (PWA).
 - Funciona em tablet, computador e **celular** (em pé ou deitado): a moldura do rosto sempre cabe inteira na câmera e, no celular em pé, na hora da foto a câmera ocupa a tela toda.
 - **Câmera feita para celular de todo tipo:** se a câmera frontal não abre em HD, usa uma resolução menor; se o pedido de permissão não aparece, mostra o botão **"Ligar a câmera"**; religa sozinha quando cai ou quando a tela volta; e, se estiver bloqueada, mostra o passo a passo para liberar no Android ou no iPhone (e liga sozinha quando liberada). O gestor vê o estado da câmera de cada aparelho no painel.
@@ -45,9 +44,9 @@ Sistema de controle de ponto para lojas e pequenas empresas. **Tudo roda no Fire
 |---|---|
 | **Hoje** | Quem está em expediente, quem saiu, quem está de férias ou atestado, marcações do dia em tempo real e aparelhos online |
 | **Marcações** | Filtro por período e funcionário, foto de cada batida, inclusão manual com justificativa, desconsiderar ou restaurar uma batida, exportação CSV |
-| **Solicitações** | Pedidos de marcação esquecida feitos pelo funcionário no aparelho ou registrados pelo gestor. Aprovar inclui a marcação; recusar exige motivo. Contador de pendentes no menu |
-| **Espelho de ponto** | Qualquer mês, por funcionário: marcações, previsto, trabalhado, saldo, faltas e marcações ímpares. Lançamento de abonos. Mostra se o mês foi fechado e assinado e avisa se algo mudou depois. Impressão ou PDF (com os dados da assinatura eletrônica, quando houver) e CSV |
-| **Fechamento mensal** | Congela o espelho de todos os funcionários de um mês e envia para assinatura. Mostra quem assinou, quem contestou e quem falta, com os totais de cada um; CSV do mês para a folha. Reabrir um espelho assinado exige motivo e guarda a versão anterior |
+| **Solicitações** | Inclusão de marcação que faltou, registrada pelo gestor (o funcionário avisa e o gestor lança). Pode ficar pendente para outra pessoa aprovar; recusar exige motivo. Contador de pendentes no menu |
+| **Espelho de ponto** | Qualquer mês, por funcionário: marcações, previsto, trabalhado, saldo, faltas e marcações ímpares. Lançamento de abonos. Mostra se o mês foi fechado e avisa se algo mudou depois. Impressão ou PDF (com linhas para o funcionário e a empresa assinarem) e CSV |
+| **Fechamento mensal** | Congela o espelho de todos os funcionários de um mês (a versão oficial, para imprimir e assinar em papel), com os totais de cada um; CSV do mês para a folha. Mudou algo depois? Reabrir exige motivo e guarda a versão anterior |
 | **Exportar dados** | Baixa os dados de ponto da empresa escolhida, com filtros de período (até 12 meses), funcionários, origem e situação: **marcações** (uma linha por batida), **espelho diário**, **resumo por funcionário** (CSV que abre no Excel) ou **espelhos para imprimir/PDF**, um por folha. Cada exportação fica na auditoria |
 | **Funcionários** | CPF, matrícula, cargo, admissão, jornada de cada dia da semana e PIN provisório (mostra quem ainda não criou o PIN pessoal) |
 | **Aparelhos de ponto** | Aparelhos ativados, último sinal, **câmera** (funcionando ou o problema, com o que fazer), último registro e desativação |
@@ -99,14 +98,14 @@ Sistema bater ponto/
 │   └── src/
 │       ├── ponto.ts         registro do ponto: foto, NSR, cadeia de hashes
 │       ├── identificacao.ts matrícula + PIN no aparelho, com bloqueios por erro
-│       ├── pinPessoal.ts    o funcionário cria ou troca o próprio PIN
+│       ├── pinPessoal.ts    o funcionário cria o PIN pessoal no primeiro uso
 │       ├── cadeia.ts        cálculo e verificação da cadeia de hashes
 │       ├── integridade.ts   verificação de integridade (no painel e toda segunda-feira)
 │       ├── fotos.ts         entrega da foto ao painel, com conferência do hash
 │       ├── limites.ts       limite de uso por usuário nas funções pesadas
-│       ├── solicitacoes.ts  pedidos de marcação esquecida (pedir, aprovar, recusar)
+│       ├── solicitacoes.ts  marcação esquecida, lançada pelo gestor (registrar, aprovar, recusar)
 │       ├── espelho.ts       cálculo do espelho (fonte única: servidor e painel usam o mesmo)
-│       ├── fechamentos.ts   fechamento mensal, assinatura e contestação do espelho
+│       ├── fechamentos.ts   fechamento mensal (espelho congelado) e reabertura com motivo
 │       ├── exportacao.ts    exportação com filtros (CSV e espelhos para impressão)
 │       ├── ajustes.ts       incluir/desconsiderar marcação
 │       ├── abonos.ts        feriados, atestados, férias
@@ -130,8 +129,8 @@ empresas/{empresaId}                    nome, CNPJ, fuso, regras e resultado da 
   ├── credenciais/{funcionarioId}       hash do PIN, se é provisório e bloqueios (inacessível pelo navegador)
   ├── registros/{id}                    marcações (imutáveis)
   ├── abonos/{id}                       feriados, atestados, férias
-  ├── solicitacoes/{id}                 pedidos de marcação esquecida (pendente/aprovada/recusada)
-  ├── espelhos/{funcionarioId_AAAA-MM}  espelho fechado (congelado, com hash) e sua assinatura
+  ├── solicitacoes/{id}                 marcações esquecidas lançadas pelo gestor (pendente/aprovada/recusada)
+  ├── espelhos/{funcionarioId_AAAA-MM}  espelho fechado (congelado, com hash)
   │   └── versoes/{n}                   versões anteriores, quando um espelho é reaberto
   ├── dispositivos/{uid}                aparelhos de ponto
   ├── auditoria/{id}                    ações na empresa
@@ -228,25 +227,22 @@ A publicação não faz perguntas: cria o site do Hosting se faltar e aceita a l
 
 ## Uso no dia a dia
 
-**Funcionário:** digita a matrícula → ✓ → digita o PIN → ✓ → olha para a câmera → vê o comprovante. A 1ª batida do dia é Entrada, a 2ª Saída, a 3ª Entrada, e assim por diante. No **celular pessoal**, a matrícula já vem preenchida: só o PIN → ✓ → câmera.
-
-**Funcionário que esqueceu de bater:** no aparelho, toca em **"Esqueci de bater o ponto"** → matrícula → PIN → informa o dia (até 31 dias atrás), o horário e o motivo → envia. O pedido vai para a gestora.
-
-**Funcionário assinando o espelho:** no aparelho, toca em **"Assinar meu espelho"** → matrícula → PIN → confere o mês dia a dia → **Concordo e assino** (ou **Não concordo**, explicando o que está errado).
+**Funcionário (só isto):** digita a matrícula → ✓ → digita o PIN → ✓ → olha para a câmera → vê o comprovante. A 1ª batida do dia é Entrada, a 2ª Saída, a 3ª Entrada, e assim por diante. No **celular pessoal**, a matrícula já vem preenchida: só o PIN → ✓ → câmera. Esqueceu de bater, chegou atrasado ou faltou? Avisa o gestor: só ele lança ou justifica no painel.
 
 **Gestora:**
 
 - Escolha a empresa no topo da tela (busca por nome ou CNPJ).
-- **Solicitações** (o número ao lado do menu mostra as pendentes): veja o pedido com a foto de quem pediu e as marcações que já existem no dia, e **Aprove** (a marcação é incluída) ou **Recuse** (com motivo).
 - **Funcionário avisou que esqueceu:** Solicitações → **Nova solicitação** → marque "Aprovar e incluir a marcação agora" (ou deixe pendente para outra pessoa analisar). Também dá para incluir direto pelo Espelho de ponto → botão **+** no dia.
+- **Solicitações pendentes** (o número ao lado do menu): veja as marcações que já existem no dia e **Aprove** (a marcação é incluída) ou **Recuse** (com motivo).
+- **Faltas e atrasos:** o espelho mostra sozinho (dia útil sem marcação é falta; atraso aparece como saldo negativo do dia). Para justificar, use abono; para corrigir, inclua ou desconsidere a marcação com motivo.
 - **Batida duplicada ou errada:** abra a marcação → **Desconsiderar** (com motivo). A original continua guardada.
 - **Feriado, atestado ou férias:** Espelho de ponto → **Lançar abono** (ou o ícone de calendário no dia).
-- **Esqueceu o PIN ou foi bloqueado** (5 erros seguidos bloqueiam por 15 minutos; se repetir, 30 e depois 60): Funcionários → editar → **Redefinir o PIN**. O PIN volta a ser provisório e o funcionário cria um novo no aparelho.
+- **Esqueceu o PIN, quer trocar ou foi bloqueado** (5 erros seguidos bloqueiam por 15 minutos; se repetir, 30 e depois 60): Funcionários → editar → **Redefinir o PIN**. O PIN volta a ser provisório e o funcionário cria um novo na próxima batida.
 - **Alertas de segurança:** a página **Hoje** mostra os bloqueios por PIN errado dos últimos 7 dias, com a foto de quem tentou. Se a verificação de integridade (automática, toda segunda-feira) encontrar marcação alterada ou apagada, uma faixa vermelha aparece no topo de todas as páginas.
-- **Fechamento do mês** (no início do mês seguinte): **Fechamento mensal** → escolha o mês → **Fechar mês e enviar para assinatura**. Acompanhe quem assinou; quem contestou aparece com o motivo, e depois de corrigir você clica em **Reenviar**. O **CSV do mês** traz os totais de todos para a folha.
+- **Fechamento do mês** (no início do mês seguinte): **Fechamento mensal** → escolha o mês → **Fechar mês**. O espelho de cada um fica congelado (a versão oficial). Depois, **Imprimir espelhos** (Exportar dados → Espelhos para imprimir ou PDF) para cada funcionário assinar em papel. O **CSV do mês** traz os totais de todos para a folha.
 - **Consultar meses anteriores:** todas as telas aceitam qualquer período (Marcações, Espelho, Fechamento, Auditoria e Solicitações, com "carregar mais antigos"). Nada é apagado.
-- **Algo mudou depois da assinatura:** o espelho avisa. No Fechamento mensal, use **Reabrir** com motivo: uma nova versão vai para assinatura e a assinada fica guardada.
-- **Papel assinado:** Espelho de ponto → **Imprimir / PDF**. Se o funcionário já assinou no aparelho, a impressão sai com os dados da assinatura eletrônica. Para imprimir os espelhos de todos de uma vez: **Exportar dados → Espelhos para imprimir ou PDF**.
+- **Algo mudou depois do fechamento:** o espelho avisa. No Fechamento mensal (ou no Espelho de ponto), use **Reabrir** com motivo: uma nova versão é gerada, a anterior fica guardada, e você imprime de novo para assinatura.
+- **Imprimir um espelho:** Espelho de ponto → **Imprimir / PDF** (sai com as linhas para o funcionário e a empresa assinarem). Para imprimir os de todos de uma vez: **Exportar dados → Espelhos para imprimir ou PDF**.
 - **Arquivo para a contabilidade:** **Exportar dados** → Resumo por funcionário (totais) ou Espelho diário (dia a dia), no período e com os funcionários que quiser.
 - **Aparelho perdido ou trocado:** Aparelhos de ponto → **Desativar**. Ele para de registrar na hora.
 - **Celular pessoal ou aparelho da loja:** Aparelhos de ponto → coluna **Uso** → **Mudar**. Não precisa ativar de novo: o servidor passa a valer na hora e a tela do aparelho muda em até 5 minutos (ou na hora, recarregando a tela). Se o dono for desativado, ninguém bate ponto naquele celular até você mudar o uso.
@@ -268,7 +264,7 @@ A publicação não faz perguntas: cria o site do Hosting se faltar e aceita a l
 
 **Baixar os dados de uma empresa:** página **Exportar dados** (escolha a empresa no topo, o tipo de arquivo, o período, os funcionários e os filtros). Também há exportações rápidas nas telas de Marcações (o que está filtrado na tela), Espelho de ponto (um funcionário) e Fechamento mensal (totais do mês).
 
-- **Nada expira:** marcações, fotos, espelhos assinados (e suas versões anteriores), solicitações, abonos e auditoria ficam guardados sem prazo. Qualquer mês antigo pode ser consultado, fechado, assinado e impresso.
+- **Nada expira:** marcações, fotos, espelhos fechados (e suas versões anteriores), solicitações, abonos e auditoria ficam guardados sem prazo. Qualquer mês antigo pode ser consultado, fechado e impresso.
 - **O que já protege os dados:** toda escrita passa pelo servidor com transações (sem registro pela metade ou duplicado), marcações nunca são apagadas, e a cadeia de hashes e a auditoria mostram qualquer alteração.
 - **Backups do Firestore:** o `npm run publicar` já liga os três itens abaixo (dá para conferir no Console do Google Cloud → Firestore → **Disaster recovery**):
   1. **Proteção contra exclusão**: impede que o banco seja apagado por engano.
@@ -304,8 +300,8 @@ Abra <http://localhost:5173>. Os dados somem quando os emuladores são fechados.
 | Comando | O que faz |
 |---|---|
 | `npm run verificar` | Build das funções e do site, lint (sem nenhum aviso permitido) e testes unitários: CPF, CNPJ, PIN, senhas, limpeza de textos, fusos, hash do PIN, limites de uso, cadeia de hashes, cálculo do espelho e textos do aparelho. O `npm run publicar` roda isto antes de publicar |
-| `npm run testar:e2e` | 28 etapas de ponta a ponta com os emuladores: permissões de cada papel, código de instalação, login com Google (mesma conta do e-mail, ligação com senha, conta sem cadastro), batida sem internet (cifrada, horário conferido, recusas e cadeia íntegra), PIN provisório e pessoal, registro com foto, NSR e cadeia de hashes, bloqueios (inclusive com tentativas em paralelo), fotos só pelo servidor, ajustes, abonos, solicitações, fechamento e assinatura, exportação, adulteração detectada, limites de uso, auditoria e desativação de aparelho |
-| `npm run dados:exemplo` | Com os emuladores ligados, cria administrador, gestora, empresas, funcionários e o histórico do mês anterior, pronto para fechar e assinar (senha `ponto-teste-2026`; os PINs são provisórios) |
+| `npm run testar:e2e` | 29 etapas de ponta a ponta com os emuladores: permissões de cada papel, código de instalação, login com Google (mesma conta do e-mail, ligação com senha, conta sem cadastro), batida sem internet (cifrada, horário conferido, recusas e cadeia íntegra), PIN provisório e pessoal (sem troca pelo aparelho), registro com foto, NSR e cadeia de hashes, bloqueios (inclusive com tentativas em paralelo), fotos só pelo servidor, ajustes, abonos, solicitações só pelo gestor, fechamento e reabertura com motivo, exportação, adulteração detectada, limites de uso, auditoria, celular pessoal e desativação de aparelho |
+| `npm run dados:exemplo` | Com os emuladores ligados, cria administrador, gestora, empresas, funcionários e o histórico do mês anterior, pronto para fechar (senha `ponto-teste-2026`; os PINs são provisórios) |
 | `npm run logs` | Últimos registros das funções em produção |
 
 No GitHub, cada envio roda o `npm run verificar`, a auditoria das dependências do backend e o teste de ponta a ponta (aba **Actions**). Essa verificação não tem acesso ao Firebase de produção.
@@ -325,7 +321,8 @@ No GitHub, cada envio roda o `npm run verificar`, a auditoria das dependências 
 
 **PIN e identificação no aparelho**
 
-- **PIN pessoal:** o gestor só define um PIN provisório; o funcionário cria o dele no primeiro uso. Assim a empresa não conhece o PIN que bate o ponto e assina o espelho.
+- **PIN pessoal:** o gestor só define um PIN provisório; o funcionário cria o dele na primeira batida. Assim a empresa não conhece o PIN que bate o ponto. Depois disso, o PIN só muda se o gestor redefinir (o aparelho não troca PIN).
+- **O aparelho só bate o ponto:** as funções de pedir marcação, consultar ou assinar espelho pelo aparelho não existem no servidor. Uma conta de aparelho (ou alguém com o PIN de um colega) não consegue incluir horário nem mexer no espelho.
 - **Guardado só como hash** (scrypt com sal), numa coleção que nenhum navegador lê. PINs óbvios (1234, 1111) são recusados.
 - **Bloqueios:** 5 erros seguidos bloqueiam a matrícula por 15 minutos, depois 30, depois 1 hora; 25 erros em 15 minutos bloqueiam o aparelho. Cada tentativa é reservada numa transação **antes** de o PIN ser conferido, então disparar tentativas em paralelo não burla o limite. Todo bloqueio vai para a auditoria com a foto de quem tentou.
 - **Sem pistas para quem tenta adivinhar:** matrícula inexistente e PIN errado dão a mesma resposta, no mesmo tempo. No celular pessoal, a matrícula de outra pessoa recebe a mesma resposta e conta nos erros do aparelho, não nos da matrícula (ninguém bloqueia o PIN de um colega pelo próprio celular).
@@ -374,15 +371,15 @@ No GitHub, cada envio roda o `npm run verificar`, a auditoria das dependências 
 
 - Pela CLT (art. 74, §2º), estabelecimentos com **mais de 20 empregados** são obrigados a registrar entrada e saída.
 - O registro **eletrônico** de ponto é regulado pela **Portaria MTP nº 671/2021**. Para sistemas via programa (**REP-P**), ela exige, entre outros pontos, registro do programa no **INPI**, comprovante para o trabalhador, geração dos arquivos **AFD** e **AEJ** e assinatura eletrônica.
-- O sistema já tem a base que essas regras pedem: horário do servidor, NSR sequencial, marcações imutáveis, ajustes justificados, trilha de auditoria, comprovante na tela e espelho mensal congelado e assinado pelo funcionário. **Ainda faltam** os arquivos AFD/AEJ, a assinatura digital com certificado (ICP-Brasil) dos arquivos, o comprovante enviado ao trabalhador e o registro no INPI.
-- **Assinatura do espelho:** é uma assinatura eletrônica *simples* (matrícula + PIN pessoal + foto + data, hora e aparelho, ligada ao conteúdo exato do espelho por um hash). Ela documenta a concordância do funcionário, mas não substitui um certificado digital. Peça ao contador ou advogado para validar o uso como comprovante.
+- O sistema já tem a base que essas regras pedem: horário do servidor, NSR sequencial, marcações imutáveis, ajustes justificados, trilha de auditoria, comprovante na tela e espelho mensal congelado. **Ainda faltam** os arquivos AFD/AEJ, a assinatura digital com certificado (ICP-Brasil) dos arquivos, o comprovante enviado ao trabalhador e o registro no INPI.
+- **Assinatura do espelho:** é feita em papel, no espelho impresso pelo painel (versão congelada no fechamento). Guarde as folhas assinadas.
 - **LGPD:** a foto é dado pessoal. O sistema a usa só como prova visual da batida e não faz reconhecimento facial (que seria dado biométrico sensível). Informe os funcionários por escrito sobre a coleta, a finalidade e o prazo de guarda. Mantenha os registros por pelo menos 5 anos (prazo de prescrição trabalhista).
 
 ---
 
 ## Limitações conhecidas e próximos passos
 
-- **Sem internet, só a batida.** A batida é guardada e enviada depois (até 72 horas); pedir marcação esquecida, assinar o espelho e trocar o PIN precisam de conexão. O primeiro acesso de um funcionário (criar o PIN pessoal) também precisa: a batida feita com o PIN provisório sem internet é recusada quando chega, e o gestor vê o alerta.
+- **Sem internet, a batida é guardada** e enviada depois (até 72 horas). O primeiro acesso de um funcionário (criar o PIN pessoal) precisa de conexão: a batida feita com o PIN provisório sem internet é recusada quando chega, e o gestor vê o alerta.
 - **Turnos que atravessam a meia-noite** contam no dia de cada marcação. Para turnos noturnos, o espelho precisaria do conceito de "dia de trabalho".
 - **Escalas (12x36 etc.)** não são calculadas automaticamente: a jornada é por dia da semana. Use folgas e abonos para ajustar.
 - **Horas extras e adicional noturno** aparecem como saldo, sem percentuais (50%, 100%).
@@ -390,4 +387,4 @@ No GitHub, cada envio roda o `npm run verificar`, a auditoria das dependências 
 - **A foto não prova que a pessoa estava lá.** Não há detecção de vivacidade: uma foto de foto passaria. A foto serve de evidência para o gestor conferir.
 - **Quem tem acesso físico a um computador usado como ponto** pode copiar a sessão do aparelho. Ainda assim, só consegue bater ponto com matrícula e PIN corretos (com os bloqueios acima). Prefira tablet em modo quiosque e desative aparelhos perdidos pelo painel.
 - **O dono do projeto Firebase** tem acesso total ao banco pelo Console. A cadeia de hashes torna qualquer alteração visível na verificação de integridade, mas não a impede.
-- **Próximos passos sugeridos:** arquivos AFD/AEJ (Portaria 671), banco de horas acumulado, envio do comprovante por e-mail, Firebase App Check, verificação em duas etapas (MFA) para quem entra com senha e alertas de solicitações pendentes por e-mail ou WhatsApp.
+- **Próximos passos sugeridos:** arquivos AFD/AEJ (Portaria 671), banco de horas acumulado, envio do comprovante por e-mail, Firebase App Check, verificação em duas etapas (MFA) para quem entra com senha e alerta de solicitações pendentes por e-mail ou WhatsApp.

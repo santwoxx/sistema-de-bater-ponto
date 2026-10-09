@@ -83,6 +83,16 @@ async function falha(promessa, codigo, trecho) {
   assert.fail(`esperava falha ${codigo}, mas a operação funcionou`)
 }
 
+// Chamada a uma função que não existe mais no servidor.
+async function naoExiste(promessa) {
+  const e = await promessa.then(
+    () => null,
+    (erro) => erro,
+  )
+  assert.ok(e, 'a função não deveria existir mais')
+  assert.equal(e.code, 'functions/not-found', `esperava functions/not-found, veio ${e.code}: ${e.message}`)
+}
+
 // "JPEG" sintético: o servidor confere a assinatura do arquivo e o tamanho.
 function jpeg(tamanho) {
   return `data:image/jpeg;base64,${Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), randomBytes(tamanho)]).toString('base64')}`
@@ -302,10 +312,6 @@ await etapa('PIN do gestor é provisório: só serve para o funcionário criar o
     assert.equal(e.details?.motivo, 'pin-provisorio')
   }
   await provisorio(aparelho.chamar('registrarPonto', { idRequisicao: id(), matricula: '12', pin: '2580', foto: jpeg(900), miniatura: jpeg(200) }))
-  await provisorio(aparelho.chamar('consultarEspelhosPendentes', { matricula: '12', pin: '2580' }))
-  await provisorio(
-    aparelho.chamar('solicitarMarcacao', { matricula: '12', pin: '2580', data: dataSaoPaulo(-1), hora: '08:00', motivo: 'Esqueci', miniatura: null }),
-  )
   // Nada foi gravado com o PIN provisório.
   assert.equal((await getDocs(collection(gestora.db, 'empresas', empresaA, 'registros'))).size, 0)
 
@@ -319,8 +325,9 @@ await etapa('PIN do gestor é provisório: só serve para o funcionário criar o
   const funcionario = await getDoc(doc(gestora.db, 'empresas', empresaA, 'funcionarios', maria))
   assert.equal(funcionario.get('pinProvisorio'), false)
   // O PIN provisório deixa de valer; o pessoal só a funcionária conhece.
-  await falha(aparelho.chamar('consultarEspelhosPendentes', { matricula: '12', pin: '2580' }), 'functions/permission-denied')
-  assert.equal((await aparelho.chamar('consultarEspelhosPendentes', { matricula: '12', pin: PIN_MARIA })).funcionarioNome, 'Maria Souza')
+  await falha(aparelho.chamar('registrarPonto', { idRequisicao: id(), matricula: '12', pin: '2580', foto: jpeg(900), miniatura: jpeg(200) }), 'functions/permission-denied')
+  // Com o PIN pessoal, a funcionária não troca o PIN sozinha: o gestor redefine (e ele volta a ser provisório).
+  await falha(definir({ pin: PIN_MARIA, novoPin: '4826' }), 'functions/failed-precondition', /peça ao gestor/)
 })
 
 const fotoMaria = jpeg(3000)
@@ -531,15 +538,19 @@ await etapa('abonos: feriado coletivo e férias individuais, sem duplicar; só q
   assert.equal((await getDoc(doc(gestora.db, 'empresas', empresaA, 'abonos', doFeriado.id))).exists(), false)
 })
 
-await etapa('solicitações: funcionário pede no aparelho, gestora aprova ou recusa, admin registra pelo painel', async () => {
+await etapa('solicitações: só o gestor registra (no painel) e aprova ou recusa; o aparelho não pede nada', async () => {
   const ontem = dataSaoPaulo(-1)
-  const pedido = { matricula: '7', pin: PIN_JOAO, data: ontem, hora: '18:00', motivo: 'Esqueci de registrar', miniatura: jpeg(400) }
-  await falha(aparelho.chamar('solicitarMarcacao', { ...pedido, pin: '0001' }), 'functions/permission-denied', /inválidos/)
-  await falha(aparelho.chamar('solicitarMarcacao', { ...pedido, data: dataSaoPaulo(1) }), 'functions/invalid-argument', /futuro/)
-  await falha(aparelho.chamar('solicitarMarcacao', { ...pedido, data: dataSaoPaulo(-40) }), 'functions/invalid-argument', /últimos/)
-  const criada = await aparelho.chamar('solicitarMarcacao', pedido)
-  assert.equal(criada.funcionarioNome, 'João Lima')
-  await falha(aparelho.chamar('solicitarMarcacao', pedido), 'functions/already-exists', /pendente/)
+  // O funcionário só bate o ponto: o aparelho não faz solicitação (a função não existe mais).
+  await naoExiste(aparelho.chamar('solicitarMarcacao', { matricula: '7', pin: PIN_JOAO, data: ontem, hora: '18:00', motivo: 'Esqueci' }))
+
+  const pedido = { empresaId: empresaA, funcionarioId: joao, data: ontem, hora: '18:00', motivo: 'Esqueceu de registrar a saída', aprovarAgora: false }
+  await falha(aparelho.chamar('criarSolicitacao', pedido), 'functions/permission-denied')
+  await falha(outraGestora.chamar('criarSolicitacao', pedido), 'functions/permission-denied')
+  await falha(gestora.chamar('criarSolicitacao', { ...pedido, data: dataSaoPaulo(1) }), 'functions/invalid-argument', /futuro/)
+  await falha(gestora.chamar('criarSolicitacao', { ...pedido, data: dataSaoPaulo(-40) }), 'functions/invalid-argument', /últimos/)
+  const criada = await gestora.chamar('criarSolicitacao', pedido)
+  assert.equal(criada.registroId, null)
+  await falha(gestora.chamar('criarSolicitacao', pedido), 'functions/already-exists', /pendente/)
 
   // Enquanto pendente, não vira marcação.
   const doDia = () =>
@@ -547,8 +558,7 @@ await etapa('solicitações: funcionário pede no aparelho, gestora aprova ou re
   assert.equal((await doDia()).size, 0)
   const pendente = await getDoc(doc(gestora.db, 'empresas', empresaA, 'solicitacoes', criada.id))
   assert.equal(pendente.get('status'), 'pendente')
-  assert.equal(pendente.get('origem'), 'funcionario')
-  assert.ok(pendente.get('miniatura').startsWith('data:image/jpeg;base64,'))
+  assert.equal(pendente.get('solicitadoPor').nome, 'Gisele Gestora')
 
   // Só quem tem acesso à empresa vê e decide.
   await falha(getDocs(collection(outraGestora.db, 'empresas', empresaA, 'solicitacoes')), 'permission-denied')
@@ -562,15 +572,15 @@ await etapa('solicitações: funcionário pede no aparelho, gestora aprova ou re
   assert.equal(registro.get('origem'), 'manual')
   assert.equal(registro.get('horaLocal'), '18:00:00')
   assert.equal(registro.get('solicitacaoId'), criada.id)
-  assert.match(registro.get('justificativa'), /Esqueci de registrar/)
+  assert.equal(registro.get('justificativa'), 'Solicitação registrada por Gisele Gestora: Esqueceu de registrar a saída')
   const fechada = await getDoc(doc(gestora.db, 'empresas', empresaA, 'solicitacoes', criada.id))
   assert.equal(fechada.get('status'), 'aprovada')
   assert.equal(fechada.get('decididoPor').nome, 'Gisele Gestora')
   await falha(gestora.chamar('decidirSolicitacao', decisao), 'functions/failed-precondition')
-  await falha(aparelho.chamar('solicitarMarcacao', pedido), 'functions/already-exists', /marcação/)
+  await falha(gestora.chamar('criarSolicitacao', pedido), 'functions/already-exists', /marcação/)
 
   // Recusa exige motivo e não cria marcação.
-  const outra = await aparelho.chamar('solicitarMarcacao', { ...pedido, hora: '12:00' })
+  const outra = await gestora.chamar('criarSolicitacao', { ...pedido, hora: '12:00' })
   await falha(
     gestora.chamar('decidirSolicitacao', { empresaId: empresaA, solicitacaoId: outra.id, aprovar: false }),
     'functions/invalid-argument',
@@ -579,25 +589,11 @@ await etapa('solicitações: funcionário pede no aparelho, gestora aprova ou re
   assert.equal((await getDoc(doc(gestora.db, 'empresas', empresaA, 'solicitacoes', outra.id))).get('status'), 'recusada')
   assert.equal((await doDia()).size, 1)
 
-  // Pelo painel: o admin registra em nome do funcionário, já aprovada; ou deixa pendente.
-  const peloAdmin = await admin.chamar('criarSolicitacao', {
-    empresaId: empresaA,
-    funcionarioId: joao,
-    data: ontem,
-    hora: '08:00',
-    motivo: 'Avisou por telefone',
-    aprovarAgora: true,
-  })
+  // O admin registra já aprovada; ou a gestora deixa pendente para outra pessoa analisar.
+  const peloAdmin = await admin.chamar('criarSolicitacao', { ...pedido, hora: '08:00', motivo: 'Avisou por telefone', aprovarAgora: true })
   assert.ok(peloAdmin.registroId)
   assert.equal((await getDoc(doc(admin.db, 'empresas', empresaA, 'solicitacoes', peloAdmin.id))).get('status'), 'aprovada')
-  const paraAnalise = await gestora.chamar('criarSolicitacao', {
-    empresaId: empresaA,
-    funcionarioId: joao,
-    data: ontem,
-    hora: '13:00',
-    motivo: 'Confirmar com o gerente',
-    aprovarAgora: false,
-  })
+  const paraAnalise = await gestora.chamar('criarSolicitacao', { ...pedido, hora: '13:00', motivo: 'Confirmar com o gerente' })
   assert.equal(paraAnalise.registroId, null)
   assert.equal((await doDia()).size, 2)
 })
@@ -612,7 +608,7 @@ await etapa('consulta do espelho (funcionário + período) traz as marcações d
   assert.equal((await getDocs(q)).size, 3)
 })
 
-await etapa('fechamento do mês: espelho congelado, assinado ou contestado no aparelho, reabertura com motivo', async () => {
+await etapa('fechamento do mês: espelho congelado para imprimir e assinar em papel; mudança depois só com motivo', async () => {
   const mesAtual = dataSaoPaulo().slice(0, 7)
   const [ano, numero] = mesAtual.split('-').map(Number)
   const mesAnterior = new Date(Date.UTC(ano, numero - 2, 1)).toISOString().slice(0, 7)
@@ -634,80 +630,38 @@ await etapa('fechamento do mês: espelho congelado, assinado ou contestado no ap
   assert.equal(resultado(primeiro, joao), 'fechado')
   const refMaria = doc(gestora.db, 'empresas', empresaA, 'espelhos', `${maria}_${mesAnterior}`)
   const fechado = await getDoc(refMaria)
-  assert.equal(fechado.get('status'), 'aguardando')
+  assert.equal(fechado.get('status'), 'fechado')
   assert.equal(fechado.get('versao'), 1)
+  assert.equal(fechado.get('reabertura'), null)
   assert.equal(fechado.get('documento').totais.trabalhadoMin, 540 + 240)
   assert.match(fechado.get('hash'), /^[0-9a-f]{64}$/)
   assert.equal(resultado(await gestora.chamar('fecharEspelhos', { empresaId: empresaA, mes: mesAnterior }), maria), 'sem-alteracoes')
 
-  // Só quem tem acesso à empresa vê os espelhos; o aparelho só pelo fluxo com PIN.
+  // Só quem tem acesso à empresa vê os espelhos. O aparelho não consulta nem assina nada.
   await falha(getDocs(collection(outraGestora.db, 'empresas', empresaA, 'espelhos')), 'permission-denied')
   await falha(getDocs(collection(aparelho.db, 'empresas', empresaA, 'espelhos')), 'permission-denied')
+  await naoExiste(aparelho.chamar('consultarEspelhosPendentes', { matricula: '12', pin: PIN_MARIA }))
+  await naoExiste(aparelho.chamar('assinarEspelho', { matricula: '12', pin: PIN_MARIA, espelhoId: refMaria.id, hash: fechado.get('hash'), concordo: true }))
 
-  // Maria confere e assina no aparelho.
-  await falha(aparelho.chamar('consultarEspelhosPendentes', { matricula: '12', pin: '9999' }), 'functions/permission-denied')
-  const pendentes = await aparelho.chamar('consultarEspelhosPendentes', { matricula: '12', pin: PIN_MARIA })
-  assert.equal(pendentes.funcionarioNome, 'Maria Souza')
-  assert.equal(pendentes.espelhos.length, 1)
-  const espelho = pendentes.espelhos[0]
-  assert.equal(espelho.hash, fechado.get('hash'))
-  assert.equal(espelho.documento.dias.length > 27, true)
-  const assinar = (dados) => aparelho.chamar('assinarEspelho', { matricula: '12', pin: PIN_MARIA, espelhoId: espelho.id, miniatura: jpeg(300), ...dados })
-  await falha(assinar({ hash: '0'.repeat(64), concordo: true }), 'functions/failed-precondition', /atualizado/)
-  const assinado = await assinar({ hash: espelho.hash, concordo: true })
-  assert.equal(assinado.status, 'assinado')
-  assert.match(assinado.codigo, /^[0-9A-F]{16}$/)
-  const depois = await getDoc(refMaria)
-  assert.equal(depois.get('status'), 'assinado')
-  assert.equal(depois.get('assinatura').codigo, assinado.codigo)
-  assert.ok(depois.get('assinatura').miniatura.startsWith('data:image/jpeg;base64,'))
-  await falha(assinar({ hash: espelho.hash, concordo: true }), 'functions/failed-precondition', /não está aguardando/)
-
-  // Mudança depois da assinatura: só reabre com motivo, e a versão assinada fica guardada.
-  await gestora.chamar('incluirMarcacao', { empresaId: empresaA, funcionarioId: maria, data: `${mesAnterior}-16`, hora: '13:00', justificativa: 'Correção após assinatura' })
+  // Mudança depois do fechamento (o espelho pode já ter sido impresso e assinado):
+  // só com motivo, e a versão anterior fica guardada.
+  await gestora.chamar('incluirMarcacao', { empresaId: empresaA, funcionarioId: maria, data: `${mesAnterior}-16`, hora: '13:00', justificativa: 'Correção após o fechamento' })
   assert.equal(resultado(await gestora.chamar('fecharEspelhos', { empresaId: empresaA, mes: mesAnterior }), maria), 'exige-motivo')
-  assert.equal((await getDoc(refMaria)).get('status'), 'assinado')
-  const reaberto = await gestora.chamar('fecharEspelhos', {
-    empresaId: empresaA,
-    mes: mesAnterior,
-    funcionarioIds: [maria],
-    motivoReabertura: 'Inclusão da volta do almoço do dia 16',
-  })
+  assert.equal((await getDoc(refMaria)).get('hash'), fechado.get('hash'))
+  const reabrir = (motivoReabertura) => gestora.chamar('fecharEspelhos', { empresaId: empresaA, mes: mesAnterior, funcionarioIds: [maria], motivoReabertura })
+  await falha(reabrir('ok'), 'functions/invalid-argument', /Motivo/)
+  const reaberto = await reabrir('Inclusão da volta do almoço do dia 16')
   assert.equal(resultado(reaberto, maria), 'atualizado')
   const versao2 = await getDoc(refMaria)
-  assert.equal(versao2.get('status'), 'aguardando')
+  assert.equal(versao2.get('status'), 'fechado')
   assert.equal(versao2.get('versao'), 2)
-  assert.equal(versao2.get('reabertura').statusAnterior, 'assinado')
+  assert.deepEqual(versao2.get('reabertura'), { motivo: 'Inclusão da volta do almoço do dia 16', versaoAnterior: 1 })
   const versao1 = await getDoc(doc(gestora.db, 'empresas', empresaA, 'espelhos', `${maria}_${mesAnterior}`, 'versoes', '1'))
-  assert.equal(versao1.get('status'), 'assinado')
-  assert.equal(versao1.get('assinatura').codigo, assinado.codigo)
-
-  // João contesta; a gestora reenvia com motivo.
-  const doJoao = (await aparelho.chamar('consultarEspelhosPendentes', { matricula: '7', pin: PIN_JOAO })).espelhos[0]
-  await falha(
-    aparelho.chamar('assinarEspelho', { matricula: '7', pin: PIN_JOAO, espelhoId: doJoao.id, hash: doJoao.hash, concordo: false, motivo: 'ok' }),
-    'functions/invalid-argument',
-  )
-  const contestado = await aparelho.chamar('assinarEspelho', {
-    matricula: '7',
-    pin: PIN_JOAO,
-    espelhoId: doJoao.id,
-    hash: doJoao.hash,
-    concordo: false,
-    motivo: 'Trabalhei no dia 10 e não aparece',
-    miniatura: null,
-  })
-  assert.equal(contestado.status, 'contestado')
-  const refJoao = doc(gestora.db, 'empresas', empresaA, 'espelhos', doJoao.id)
-  assert.equal((await getDoc(refJoao)).get('contestacao').motivo, 'Trabalhei no dia 10 e não aparece')
-  const reenviado = await gestora.chamar('fecharEspelhos', {
-    empresaId: empresaA,
-    mes: mesAnterior,
-    funcionarioIds: [joao],
-    motivoReabertura: 'Conferido: não houve trabalho no dia 10',
-  })
-  assert.equal(resultado(reenviado, joao), 'atualizado')
-  assert.equal((await getDoc(refJoao)).get('status'), 'aguardando')
+  assert.equal(versao1.get('versao'), 1)
+  assert.equal(versao1.get('hash'), fechado.get('hash'))
+  // Reabrir sem mudança não gera versão nova.
+  assert.equal(resultado(await reabrir('Conferência de rotina'), maria), 'sem-alteracoes')
+  assert.equal((await getDoc(refMaria)).get('versao'), 2)
 })
 
 await etapa('exportação por empresa com filtros: marcações, espelho diário, resumo e espelhos para impressão', async () => {
@@ -761,6 +715,7 @@ await etapa('exportação por empresa com filtros: marcações, espelho diário,
   const paraImprimir = await exportar({ tipo: 'espelhos', de: `${mesAnterior}-10`, ate: `${mesAnterior}-20`, funcionarioIds: [maria] })
   assert.equal(paraImprimir.espelhos.length, 1)
   assert.equal(paraImprimir.espelhos[0].mes, mesAnterior)
+  assert.deepEqual(Object.keys(paraImprimir.espelhos[0].fechamento).sort(), ['fechadoEm', 'fechadoPor', 'versao'])
   assert.equal(paraImprimir.espelhos[0].fechamento.versao, 2)
   assert.ok(paraImprimir.espelhos[0].documento.dias.length >= 28)
 
@@ -840,8 +795,6 @@ await etapa('auditoria registra as ações; a do sistema é só do admin', async
     'solicitacao.aprovada',
     'solicitacao.recusada',
     'espelho.fechado',
-    'espelho.assinado',
-    'espelho.contestado',
     'dados.exportados',
   ]) {
     assert.ok(acoes.includes(acao), `faltou ${acao} na auditoria`)
@@ -964,9 +917,14 @@ await etapa('celular pessoal: só o dono bate ponto nele (digitando só o PIN), 
   // Outro funcionário, mesmo com o PIN certo, recebe a resposta de matrícula ou PIN inválidos.
   const recusa = await falha(bater('7', PIN_JOAO), 'functions/permission-denied', /inválidos/)
   assert.equal(recusa.details?.motivo, 'credenciais-invalidas')
-  await falha(pessoal.chamar('consultarEspelhosPendentes', { matricula: '7', pin: PIN_JOAO }), 'functions/permission-denied', /inválidos/)
-  // A recusa não conta como erro de PIN do João (ninguém bloqueia a matrícula dele pelo celular de outra pessoa).
-  assert.equal((await aparelho.chamar('consultarEspelhosPendentes', { matricula: '7', pin: PIN_JOAO })).funcionarioNome, 'João Lima')
+  await falha(pessoal.chamar('definirPin', { matricula: '7', pin: PIN_JOAO, novoPin: '4826', miniatura: null }), 'functions/permission-denied', /inválidos/)
+  // A recusa não conta como erro de PIN do João (ninguém bloqueia a matrícula dele pelo celular de
+  // outra pessoa): no aparelho da loja, o PIN dele continua certo (só não troca o PIN sozinho).
+  await falha(
+    aparelho.chamar('definirPin', { matricula: '7', pin: PIN_JOAO, novoPin: '4826', miniatura: null }),
+    'functions/failed-precondition',
+    /peça ao gestor/,
+  )
   assert.equal((await bater('12', PIN_MARIA)).funcionarioNome, 'Maria Souza')
 
   // Só quem gerencia a empresa muda o uso; vale na hora no servidor e na próxima sincronização da tela.

@@ -1,42 +1,30 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
-import { api, type ComprovantePonto, type EspelhoParaAssinar } from '../../api'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { api, type ComprovantePonto } from '../../api'
 import { useCamera, useTelaSempreAcesa } from '../../hooks/useCamera'
 import { useAgora } from '../../hooks/useColecao'
 import { credenciaisInvalidas, erroDeRede, mensagemErro, pinProvisorio } from '../../lib/erros'
 import { problemaNoPin } from '../../lib/pin'
 import { somErro, somFoto, somSucesso } from '../../lib/sons'
-import { dataLocal } from '../../lib/tempo'
 import { gerarId } from '../../lib/util'
-import ConferenciaEspelho from './ConferenciaEspelho'
 import CameraPonto from './terminal/CameraPonto'
 import { AparelhoDesativado, ConfiguracoesAparelho } from './terminal/CicloDoAparelho'
-import FormularioSolicitacao from './terminal/FormularioSolicitacao'
-import {
-  EspelhoRespondido,
-  FalhaNoAparelho,
-  PinAlterado,
-  PontoGuardado,
-  PontoRegistrado,
-  SolicitacaoEnviada,
-  TudoEmDia,
-  type DadosGuardada,
-} from './terminal/Resultados'
+import { FalhaNoAparelho, PontoGuardado, PontoRegistrado, type DadosGuardada } from './terminal/Resultados'
 import { podeGuardar } from './terminal/semInternet'
-import TecladoPonto, { type Rodape, type Visor } from './terminal/TecladoPonto'
+import TecladoPonto, { type Visor } from './terminal/TecladoPonto'
 import { instrucaoDaTela, mensagemCredenciais, textoDeEspera, tituloDaTela } from './terminal/textos'
-import { ETAPAS_DE_RESULTADO, OUTRO_MOTIVO, PEDIDO_VAZIO, type Etapa, type Modo, type Pedido } from './terminal/tipos'
+import { ETAPAS_DE_RESULTADO, type Etapa } from './terminal/tipos'
 import TopoTerminal from './terminal/TopoTerminal'
 import { useBatidasGuardadas } from './terminal/useBatidasGuardadas'
 import { useAtualizacaoAutomatica } from './terminal/useAtualizacaoAutomatica'
 import { useSincronizacao } from './terminal/useSincronizacao'
 
-// Tela do aparelho de ponto: a máquina de estados (etapa + modo) e as chamadas
-// ao servidor. A apresentação fica nos componentes da pasta ./terminal.
+// Tela do aparelho de ponto: o funcionário só bate o ponto (matrícula, PIN e
+// foto, com a hora do momento da foto). Solicitações, ajustes e o fechamento
+// do mês ficam com o gestor, no painel. Aqui ficam a máquina de estados e as
+// chamadas ao servidor; a apresentação fica nos componentes de ./terminal.
 
 /** Volta ao início depois de tanto tempo parado em cada situação. */
 const INATIVIDADE_MS = 20_000
-const FORMULARIO_MS = 90_000
-const CONFERENCIA_MS = 3 * 60_000
 const RESULTADO_MS = 6_000
 
 function esperar(ms: number) {
@@ -69,7 +57,6 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
   })
 
   const [etapa, setEtapa] = useState<Etapa>(() => (dono ? 'pin' : 'matricula'))
-  const [modo, setModo] = useState<Modo>('ponto')
   const [matricula, setMatricula] = useState(() => dono?.matricula ?? '')
   const [pin, setPin] = useState('')
   const [contagem, setContagem] = useState(3)
@@ -77,40 +64,27 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
   const [guardada, setGuardada] = useState<DadosGuardada | null>(null)
   const [mensagem, setMensagem] = useState('')
   const [configuracoes, setConfiguracoes] = useState(false)
-  // Tela parada no início (matrícula; no celular pessoal, o PIN), sem nada digitado.
-  const telaInicial = pessoal ? etapa === 'pin' : etapa === 'matricula'
-  const ocioso = telaInicial && modo === 'ponto' && pin === '' && (pessoal || matricula === '') && !configuracoes
-  // Versão nova do site publicada: recarrega com a tela parada.
-  useAtualizacaoAutomatica(ocioso && !guardadas.enviando)
-  const [pedido, setPedido] = useState<Pedido>(PEDIDO_VAZIO)
-  const [pedidoEnviado, setPedidoEnviado] = useState<{ funcionarioNome: string; data: string; hora: string } | null>(null)
-  const [erroPedido, setErroPedido] = useState('')
-  const [espelhos, setEspelhos] = useState<EspelhoParaAssinar[]>([])
-  const [indiceEspelho, setIndiceEspelho] = useState(0)
-  const [assinando, setAssinando] = useState(false)
-  const [erroAssinatura, setErroAssinatura] = useState('')
-  const [assinatura, setAssinatura] = useState<{ status: 'assinado' | 'contestado'; mes: string; codigo: string } | null>(null)
-  // PIN pessoal: o primeiro uso (PIN provisório do gestor) e a troca voluntária passam por aqui.
+  // PIN pessoal: no primeiro uso (PIN provisório do gestor), o funcionário cria o dele e o ponto segue.
   const [novoPin, setNovoPin] = useState('')
   const [primeiroNovoPin, setPrimeiroNovoPin] = useState('')
   const [erroPin, setErroPin] = useState('')
   const [pinPessoalCriado, setPinPessoalCriado] = useState(false)
   const [salvandoPin, setSalvandoPin] = useState(false)
 
+  // Tela parada no início (matrícula; no celular pessoal, o PIN), sem nada digitado.
+  const telaInicial = pessoal ? etapa === 'pin' : etapa === 'matricula'
+  const ocioso = telaInicial && pin === '' && (pessoal || matricula === '') && !configuracoes
+  // Versão nova do site publicada: recarrega com a tela parada.
+  useAtualizacaoAutomatica(ocioso && !guardadas.enviando)
+
   const reiniciar = useCallback(() => {
     const donoAtual = donoRef.current
     setEtapa(donoAtual ? 'pin' : 'matricula')
-    setModo('ponto')
     setMatricula(donoAtual?.matricula ?? '')
     setPin('')
     setMensagem('')
     setComprovante(null)
     setGuardada(null)
-    setPedidoEnviado(null)
-    setEspelhos([])
-    setIndiceEspelho(0)
-    setErroAssinatura('')
-    setAssinatura(null)
     setNovoPin('')
     setPrimeiroNovoPin('')
     setErroPin('')
@@ -125,20 +99,12 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
     somErro()
   }, [])
 
-  // O servidor recusou o PIN provisório do gestor: o funcionário cria o dele e a ação continua.
+  // O servidor recusou o PIN provisório do gestor: o funcionário cria o dele e o ponto continua.
   const pedirPinPessoal = useCallback(() => {
     setNovoPin('')
     setPrimeiroNovoPin('')
     setErroPin('')
     setEtapa('novoPin')
-  }, [])
-
-  const escolherModo = useCallback((novo: Exclude<Modo, 'ponto'>) => {
-    const donoAtual = donoRef.current
-    setMatricula(donoAtual?.matricula ?? '')
-    setPin('')
-    setModo(novo)
-    if (donoAtual) setEtapa('pin')
   }, [])
 
   // O uso do aparelho mudou na sincronização (virou celular pessoal ou da loja):
@@ -163,6 +129,11 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
     },
     [conferir],
   )
+
+  const iniciarFoto = useCallback(() => {
+    setContagem(3)
+    setEtapa('foto')
+  }, [])
 
   // --- Ações no servidor ----------------------------------------------------
 
@@ -219,89 +190,8 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
     }
   }, [capturar, matricula, pin, falhar, setConectado, pedirPinPessoal, conectado, info, guardarNoAparelho, mensagemDaFalha])
 
-  const motivoDoPedido = pedido.motivo === OUTRO_MOTIVO ? pedido.outroMotivo.trim() : pedido.motivo
-
-  async function enviarPedido(e: FormEvent) {
-    e.preventDefault()
-    if (!pedido.data || !/^\d{2}:\d{2}$/.test(pedido.hora)) return setErroPedido('Informe o dia e o horário que ficaram sem marcação.')
-    if (motivoDoPedido.length < 3) return setErroPedido('Escreva o motivo da solicitação.')
-    await enviarSolicitacao(pin)
-  }
-
-  async function enviarSolicitacao(pinUsado: string) {
-    // Foto pequena de quem pediu, como prova (se a câmera estiver disponível).
-    const miniatura = estadoCamera === 'pronta' ? (capturar()?.miniatura ?? null) : null
-    setEtapa('enviando')
-    try {
-      const resultado = await api.solicitarMarcacao({
-        matricula,
-        pin: pinUsado,
-        data: pedido.data,
-        hora: pedido.hora,
-        motivo: motivoDoPedido,
-        miniatura,
-      })
-      setConectado(true)
-      setPedidoEnviado(resultado)
-      setEtapa('solicitado')
-      setPin('')
-      somSucesso()
-    } catch (erro) {
-      if (pinProvisorio(erro)) return pedirPinPessoal()
-      if (erroDeRede(erro)) setConectado(false)
-      falhar(mensagemDaFalha(erro, matricula))
-    }
-  }
-
-  const buscarEspelhos = useCallback(
-    async (pinUsado: string) => {
-      setEtapa('enviando')
-      try {
-        const resposta = await api.consultarEspelhosPendentes({ matricula, pin: pinUsado })
-        setConectado(true)
-        if (resposta.espelhos.length === 0) {
-          setPin('')
-          setMensagem(`${resposta.funcionarioNome}, não há espelho de ponto aguardando a sua assinatura.`)
-          setEtapa('informacao')
-          return
-        }
-        setEspelhos(resposta.espelhos)
-        setIndiceEspelho(0)
-        setErroAssinatura('')
-        setEtapa('espelho')
-      } catch (e) {
-        if (pinProvisorio(e)) return pedirPinPessoal()
-        if (erroDeRede(e)) setConectado(false)
-        falhar(mensagemDaFalha(e, matricula))
-      }
-    },
-    [matricula, falhar, setConectado, pedirPinPessoal, mensagemDaFalha],
-  )
-
-  async function assinar(concordo: boolean, motivo?: string) {
-    const espelho = espelhos[indiceEspelho]
-    if (!espelho) return
-    setErroAssinatura('')
-    setAssinando(true)
-    // Foto pequena de quem assinou, como prova (se a câmera estiver disponível).
-    const miniatura = estadoCamera === 'pronta' ? (capturar()?.miniatura ?? null) : null
-    try {
-      const resultado = await api.assinarEspelho({ matricula, pin, espelhoId: espelho.id, hash: espelho.hash, concordo, motivo, miniatura })
-      setConectado(true)
-      setAssinatura(resultado)
-      setEtapa('assinado')
-      somSucesso()
-    } catch (e) {
-      if (erroDeRede(e)) setConectado(false)
-      setErroAssinatura(mensagemErro(e))
-      somErro()
-    } finally {
-      setAssinando(false)
-    }
-  }
-
   async function salvarPinPessoal(pinNovo: string) {
-    // Foto pequena de quem criou ou trocou o PIN, como prova (se a câmera estiver disponível).
+    // Foto pequena de quem criou o PIN, como prova (se a câmera estiver disponível).
     const miniatura = estadoCamera === 'pronta' ? (capturar()?.miniatura ?? null) : null
     setSalvandoPin(true)
     setEtapa('enviando')
@@ -311,22 +201,11 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
       setNovoPin('')
       setPrimeiroNovoPin('')
       setSalvandoPin(false)
-      if (modo === 'trocarPin') {
-        setPin('')
-        setEtapa('pinDefinido')
-        somSucesso()
-        return
-      }
-      // Primeiro uso: segue com o que a pessoa ia fazer, já com o PIN novo.
+      // Segue para o ponto, já com o PIN novo.
       setPin(pinNovo)
       setPinPessoalCriado(true)
-      if (modo === 'solicitacao') await enviarSolicitacao(pinNovo)
-      else if (modo === 'assinatura') await buscarEspelhos(pinNovo)
-      else if (estadoCamera !== 'pronta') falhar(erroCamera || 'Seu PIN foi criado, mas a câmera não está pronta. Tente bater o ponto de novo.')
-      else {
-        setContagem(3)
-        setEtapa('foto')
-      }
+      if (estadoCamera !== 'pronta') falhar(erroCamera || 'Seu PIN foi criado, mas a câmera não está pronta. Tente bater o ponto de novo.')
+      else iniciarFoto()
     } catch (e) {
       setSalvandoPin(false)
       if (erroDeRede(e)) setConectado(false)
@@ -337,17 +216,6 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
   useEffect(() => {
     salvarPinRef.current = salvarPinPessoal
   })
-
-  // Depois de assinar: segue para o próximo espelho pendente ou volta ao início.
-  const continuarAposAssinatura = useCallback(() => {
-    if (indiceEspelho + 1 < espelhos.length) {
-      setIndiceEspelho(indiceEspelho + 1)
-      setAssinatura(null)
-      setEtapa('espelho')
-    } else {
-      reiniciar()
-    }
-  }, [indiceEspelho, espelhos.length, reiniciar])
 
   // --- Tempo ------------------------------------------------------------------
 
@@ -374,24 +242,14 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
   // Volta ao início após inatividade ou depois de mostrar o resultado.
   useEffect(() => {
     // No celular pessoal, a matrícula já vem preenchida: só o PIN conta como digitação.
-    const digitando = pin !== '' || modo !== 'ponto' || (!pessoal && matricula !== '')
+    const digitando = pin !== '' || (!pessoal && matricula !== '')
     const emDigitacao = (etapa === 'matricula' || etapa === 'pin') && digitando
     const criandoPin = etapa === 'novoPin' || etapa === 'confirmarPin'
-    const espera = ETAPAS_DE_RESULTADO.includes(etapa)
-      ? RESULTADO_MS
-      : etapa === 'formulario'
-        ? FORMULARIO_MS
-        : etapa === 'espelho'
-          ? CONFERENCIA_MS
-          : criandoPin
-            ? INATIVIDADE_MS * 2
-            : emDigitacao
-              ? INATIVIDADE_MS
-              : 0
+    const espera = ETAPAS_DE_RESULTADO.includes(etapa) ? RESULTADO_MS : criandoPin ? INATIVIDADE_MS * 2 : emDigitacao ? INATIVIDADE_MS : 0
     if (!espera) return
-    const id = setTimeout(etapa === 'assinado' ? continuarAposAssinatura : reiniciar, espera)
+    const id = setTimeout(reiniciar, espera)
     return () => clearTimeout(id)
-  }, [etapa, matricula, pin, novoPin, modo, pedido, indiceEspelho, pessoal, reiniciar, continuarAposAssinatura])
+  }, [etapa, matricula, pin, novoPin, pessoal, reiniciar])
 
   // --- Teclado ----------------------------------------------------------------
 
@@ -413,22 +271,8 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
           else if (!donoRef.current) setEtapa('matricula')
         } else if (tecla === 'ok') {
           if (pin.length < 4) return
-          if (modo === 'solicitacao') {
-            // O PIN é conferido no servidor junto com o pedido.
-            setPedido({ ...PEDIDO_VAZIO, data: dataLocal(new Date(Date.now() + deslocamento), fuso) })
-            setErroPedido('')
-            setEtapa('formulario')
-          } else if (modo === 'assinatura') {
-            void buscarEspelhos(pin)
-          } else if (modo === 'trocarPin') {
-            // O PIN atual é conferido no servidor junto com o novo.
-            pedirPinPessoal()
-          } else if (estadoCamera !== 'pronta') {
-            falhar(erroCamera || 'A câmera ainda não está pronta. Aguarde e tente de novo.')
-          } else {
-            setContagem(3)
-            setEtapa('foto')
-          }
+          if (estadoCamera !== 'pronta') falhar(erroCamera || 'A câmera ainda não está pronta. Aguarde e tente de novo.')
+          else iniciarFoto()
         } else if (pin.length < 6) setPin((p) => p + tecla)
       } else if (etapa === 'novoPin' || etapa === 'confirmarPin') {
         if (tecla === 'apagar') {
@@ -456,29 +300,13 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
         } else if (novoPin.length < 6) setNovoPin((p) => p + tecla)
       }
     },
-    [
-      configuracoes,
-      etapa,
-      matricula,
-      pin,
-      novoPin,
-      primeiroNovoPin,
-      modo,
-      deslocamento,
-      fuso,
-      estadoCamera,
-      erroCamera,
-      reiniciar,
-      falhar,
-      buscarEspelhos,
-      pedirPinPessoal,
-    ],
+    [configuracoes, etapa, matricula, pin, novoPin, primeiroNovoPin, estadoCamera, erroCamera, reiniciar, falhar, iniciarFoto],
   )
 
   // Também aceita teclado físico (computador com webcam).
   useEffect(() => {
     const aoTeclar = (e: KeyboardEvent) => {
-      if (configuracoes || etapa === 'formulario' || etapa === 'espelho') return
+      if (configuracoes) return
       if (e.target instanceof HTMLElement && e.target.closest('input, select, textarea')) return
       if (/^\d$/.test(e.key)) teclar(e.key)
       else if (e.key === 'Backspace') teclar('apagar')
@@ -489,29 +317,28 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
     }
     window.addEventListener('keydown', aoTeclar)
     return () => window.removeEventListener('keydown', aoTeclar)
-  }, [teclar, reiniciar, configuracoes, etapa])
+  }, [teclar, reiniciar, configuracoes])
 
   // --- Tela ---------------------------------------------------------------------
 
   if (desativado) return <AparelhoDesativado />
 
   const criandoPin = etapa === 'novoPin' || etapa === 'confirmarPin'
+  // Na hora da foto (e enquanto envia), nada pode ser digitado; com o aparelho
+  // em pé, a câmera ocupa a tela toda (ver estilos.css).
   const bloqueado = etapa === 'foto' || etapa === 'enviando'
-  // Na hora da foto, com o aparelho em pé, a câmera ocupa a tela toda (ver estilos.css).
-  const capturando = modo === 'ponto' && bloqueado
   const podeConfirmar =
     etapa === 'matricula' ? matricula.length > 0 : etapa === 'pin' ? pin.length >= 4 : criandoPin ? novoPin.length >= 4 : false
-  const estadoTexto = { etapa, modo, salvandoPin, erroPin, nomeDono: dono?.nome ?? null }
+  const estadoTexto = { etapa, salvandoPin, erroPin, nomeDono: dono?.nome ?? null }
   const quem = dono ? dono.nome : `Matrícula ${matricula}`
   const visor: Visor = criandoPin
     ? { tipo: 'pin', legenda: `${quem} · novo PIN`, digitos: novoPin.length }
     : etapa === 'pin' || (bloqueado && pin)
       ? { tipo: 'pin', legenda: quem, digitos: pin.length }
       : { tipo: 'matricula', valor: matricula }
-  const rodape: Rodape = modo !== 'ponto' || criandoPin ? 'cancelar' : telaInicial ? 'atalhos' : null
 
   return (
-    <div className={capturando ? 'terminal terminal-capturando' : 'terminal'}>
+    <div className={bloqueado ? 'terminal terminal-capturando' : 'terminal'}>
       <TopoTerminal
         info={info}
         agora={agora}
@@ -536,34 +363,19 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
           interno={navegadorInterno}
           aoTocar={tocarCamera}
           contagem={etapa === 'foto' ? contagem : null}
-          aguardando={etapa === 'enviando' ? textoDeEspera(estadoTexto) : null}
+          aguardando={etapa === 'enviando' ? textoDeEspera(salvandoPin) : null}
         />
         <section className="terminal-painel">
-          {etapa === 'formulario' || (etapa === 'enviando' && modo === 'solicitacao') ? (
-            <FormularioSolicitacao
-              matricula={matricula}
-              pedido={pedido}
-              aoMudar={setPedido}
-              hoje={dataLocal(agora, fuso)}
-              erro={erroPedido}
-              enviando={etapa === 'enviando'}
-              aoEnviar={(e) => void enviarPedido(e)}
-              aoCancelar={reiniciar}
-            />
-          ) : (
-            <TecladoPonto
-              titulo={tituloDaTela(estadoTexto)}
-              visor={visor}
-              podeConfirmar={podeConfirmar}
-              bloqueado={bloqueado}
-              aoTeclar={teclar}
-              rodape={rodape}
-              aoCancelar={reiniciar}
-              aoEscolherModo={escolherModo}
-              instrucao={instrucaoDaTela(estadoTexto)}
-              instrucaoComErro={criandoPin && erroPin !== ''}
-            />
-          )}
+          <TecladoPonto
+            titulo={tituloDaTela(estadoTexto)}
+            visor={visor}
+            podeConfirmar={podeConfirmar}
+            bloqueado={bloqueado}
+            aoTeclar={teclar}
+            aoCancelar={criandoPin ? reiniciar : null}
+            instrucao={instrucaoDaTela(estadoTexto)}
+            instrucaoComErro={criandoPin && erroPin !== ''}
+          />
         </section>
       </div>
 
@@ -571,31 +383,7 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
         <PontoRegistrado comprovante={comprovante.dados} foto={comprovante.foto} fuso={fuso} pinCriado={pinPessoalCriado} aoFechar={reiniciar} />
       )}
       {etapa === 'guardado' && guardada && <PontoGuardado guardada={guardada} fuso={fuso} aoFechar={reiniciar} />}
-      {etapa === 'pinDefinido' && <PinAlterado aoFechar={reiniciar} />}
-      {etapa === 'solicitado' && pedidoEnviado && <SolicitacaoEnviada pedido={pedidoEnviado} pinCriado={pinPessoalCriado} aoFechar={reiniciar} />}
-      {etapa === 'espelho' && espelhos[indiceEspelho] && (
-        <ConferenciaEspelho
-          key={espelhos[indiceEspelho].id}
-          espelho={espelhos[indiceEspelho]}
-          restantes={espelhos.length - indiceEspelho - 1}
-          ocupado={assinando}
-          erro={erroAssinatura}
-          aoAssinar={() => void assinar(true)}
-          aoContestar={(motivo) => void assinar(false, motivo)}
-          aoSair={reiniciar}
-        />
-      )}
-      {etapa === 'assinado' && assinatura && (
-        <EspelhoRespondido assinatura={assinatura} temProximo={indiceEspelho + 1 < espelhos.length} aoContinuar={continuarAposAssinatura} />
-      )}
-      {etapa === 'informacao' && <TudoEmDia mensagem={mensagem} pinCriado={pinPessoalCriado} aoFechar={reiniciar} />}
-      {etapa === 'erro' && (
-        <FalhaNoAparelho
-          titulo={modo === 'ponto' ? 'Não foi possível registrar' : 'Não foi possível concluir'}
-          mensagem={mensagem}
-          aoFechar={reiniciar}
-        />
-      )}
+      {etapa === 'erro' && <FalhaNoAparelho mensagem={mensagem} aoFechar={reiniciar} />}
 
       {configuracoes && (
         <ConfiguracoesAparelho empresaId={empresaId} info={info} guardadas={guardadas.pendentes} aoFechar={() => setConfiguracoes(false)} />

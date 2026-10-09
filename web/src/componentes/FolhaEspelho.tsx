@@ -2,8 +2,9 @@ import type { EspelhoParaImpressao } from '../api'
 import { formatarCnpj, formatarCpf } from '../lib/formatos'
 import { formatarData, formatarDataHora, minutosParaHHMM, nomeDiaCurto, nomeMes } from '../lib/tempo'
 
-// Um espelho por folha, para impressão em lote ou PDF (Exportar dados).
-// Mês fechado sai com a versão oficial e, se assinado, com a assinatura eletrônica.
+// Um espelho por folha, para impressão em lote ou PDF (Exportar dados), com as
+// linhas para o funcionário e a empresa assinarem. Mês fechado sai com a
+// versão oficial (congelada no fechamento).
 export default function FolhaEspelho({
   espelho,
   empresa,
@@ -15,7 +16,7 @@ export default function FolhaEspelho({
 }) {
   const { documento, funcionario: f, fechamento } = espelho
   const totais = documento.totais
-  const quando = (ms: number | null) => (ms ? formatarDataHora(new Date(ms), fuso) : '—')
+  const fechadoEm = fechamento?.fechadoEm ? formatarDataHora(new Date(fechamento.fechadoEm), fuso) : '—'
 
   return (
     <section className="folha-espelho">
@@ -33,7 +34,7 @@ export default function FolhaEspelho({
           {empresa.cnpj && <p>CNPJ {formatarCnpj(empresa.cnpj)}</p>}
           <p>
             {fechamento
-              ? `Mês fechado em ${quando(fechamento.fechadoEm)}${fechamento.versao > 1 ? ` (versão ${fechamento.versao})` : ''}`
+              ? `Mês fechado em ${fechadoEm}${fechamento.versao > 1 ? ` (versão ${fechamento.versao})` : ''}`
               : 'Mês não fechado (prévia)'}
           </p>
         </div>
@@ -82,39 +83,16 @@ export default function FolhaEspelho({
         * marcação incluída manualmente pelo gestor. Tolerância diária de {documento.toleranciaMin} min aplicada ao saldo.
       </p>
 
-      {fechamento?.assinatura ? (
-        <>
-          <p className="assinatura-eletronica">
-            <strong>Assinado eletronicamente</strong> por {f.nome} em {quando(fechamento.assinatura.em)}, no aparelho "
-            {fechamento.assinatura.dispositivoNome}", com matrícula, PIN pessoal e foto. Código de verificação{' '}
-            <strong className="numeros">{fechamento.assinatura.codigo}</strong>.
-          </p>
-          <div className="assinaturas assinatura-unica">
-            <div>
-              <span />
-              {empresa.nome}
-            </div>
-          </div>
-        </>
-      ) : (
-        <>
-          {fechamento?.contestacao && (
-            <p className="assinatura-eletronica">
-              Contestado pelo funcionário em {quando(fechamento.contestacao.em)}: {fechamento.contestacao.motivo}
-            </p>
-          )}
-          <div className="assinaturas">
-            <div>
-              <span />
-              {f.nome}
-            </div>
-            <div>
-              <span />
-              {empresa.nome}
-            </div>
-          </div>
-        </>
-      )}
+      <div className="assinaturas">
+        <div>
+          <span />
+          {f.nome}
+        </div>
+        <div>
+          <span />
+          {empresa.nome}
+        </div>
+      </div>
     </section>
   )
 }

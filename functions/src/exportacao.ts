@@ -336,7 +336,7 @@ export const exportarDados = onCall({ timeoutSeconds: 300, memory: "1GiB", maxIn
         ],
       };
     } else {
-      // Mês fechado sai com a versão oficial (a que foi assinada); mês aberto, com o cálculo atual.
+      // Mês fechado sai com a versão oficial (congelada no fechamento); mês aberto, com o cálculo atual.
       const fechados = new Map((fechadosSnap?.docs ?? []).map((doc) => [doc.id, doc.data()]));
       const millis = (t: Timestamp | null | undefined) => t?.toMillis() ?? null;
       const espelhos = funcionarios.flatMap((f) =>
@@ -347,16 +347,7 @@ export const exportarDados = onCall({ timeoutSeconds: 300, memory: "1GiB", maxIn
             funcionario: { id: f.id, nome: f.nome, cpf: f.cpf, matricula: f.matricula, cargo: f.cargo, admissao: f.admissao },
             documento: fechado?.documento ?? documentoDoEspelho(calcular(f, mes), empresa.toleranciaMinutos),
             fechamento: fechado
-              ? {
-                  status: fechado.status,
-                  versao: fechado.versao,
-                  fechadoEm: millis(fechado.fechadoEm),
-                  fechadoPor: fechado.fechadoPor?.nome ?? "",
-                  assinatura: fechado.assinatura
-                    ? { em: millis(fechado.assinatura.em), codigo: fechado.assinatura.codigo, dispositivoNome: fechado.assinatura.dispositivoNome }
-                    : null,
-                  contestacao: fechado.contestacao ? { em: millis(fechado.contestacao.em), motivo: fechado.contestacao.motivo } : null,
-                }
+              ? { versao: fechado.versao, fechadoEm: millis(fechado.fechadoEm), fechadoPor: fechado.fechadoPor?.nome ?? "" }
               : null,
           };
         }),

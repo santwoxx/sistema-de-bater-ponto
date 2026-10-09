@@ -29,13 +29,8 @@
     { "collectionGroup": "registros", "fieldPath": "miniatura", "indexes": [] },
     { "collectionGroup": "registros", "fieldPath": "hash", "indexes": [] },
     { "collectionGroup": "registros", "fieldPath": "hashAnterior", "indexes": [] },
-    { "collectionGroup": "solicitacoes", "fieldPath": "miniatura", "indexes": [] },
     { "collectionGroup": "espelhos", "fieldPath": "documento", "indexes": [] },
-    { "collectionGroup": "espelhos", "fieldPath": "assinatura", "indexes": [] },
-    { "collectionGroup": "espelhos", "fieldPath": "contestacao", "indexes": [] },
     { "collectionGroup": "versoes", "fieldPath": "documento", "indexes": [] },
-    { "collectionGroup": "versoes", "fieldPath": "assinatura", "indexes": [] },
-    { "collectionGroup": "versoes", "fieldPath": "contestacao", "indexes": [] },
     { "collectionGroup": "auditoria", "fieldPath": "detalhes", "indexes": [] }
   ]
 }

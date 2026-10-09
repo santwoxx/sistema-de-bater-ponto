@@ -36,7 +36,7 @@ const TIPOS: Array<{ valor: TipoExportacao; titulo: string; descricao: string; f
   {
     valor: 'espelhos',
     titulo: 'Espelhos para imprimir ou PDF',
-    descricao: 'Um espelho por funcionário e mês, com campos de assinatura (ou a assinatura eletrônica, se já assinado).',
+    descricao: 'Um espelho por funcionário e mês, com as linhas para o funcionário e a empresa assinarem.',
     formato: 'Impressão / PDF',
   },
 ]

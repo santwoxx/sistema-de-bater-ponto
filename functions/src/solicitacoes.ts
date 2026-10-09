@@ -1,16 +1,16 @@
 import { FieldValue, type DocumentData, type QuerySnapshot, type Transaction } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/https";
 import { db } from "./admin";
-import { autor, exigirAcessoEmpresa, exigirDispositivo, type Autor } from "./acesso";
+import { autor, exigirAcessoEmpresa, type Autor } from "./acesso";
 import { consultaDoDia, existeNoMesmoMinuto, marcacaoManual } from "./ajustes";
 import { auditarNa } from "./auditoria";
-import { decodificarJpeg, identificarNoAparelho, lerMatriculaPin, MAX_MINIATURA_BYTES } from "./identificacao";
 import { dataLocal, localParaUtc } from "./tempo";
 import { booleano, dataISO, horaHHMM, idDocumento, objeto, texto } from "./validacao";
 
-// Solicitação de marcação: quando o funcionário esquece de bater o ponto, ele
-// (no aparelho, com matrícula + PIN) ou o gestor (no painel) pede a inclusão
-// do horário. A marcação só passa a valer depois que um gestor aprova.
+// Solicitação de marcação: só o gestor, no painel, pede a inclusão de um
+// horário que faltou (o funcionário só bate o ponto no aparelho, na hora). A
+// marcação só passa a valer depois que um gestor aprova (ou na hora, com
+// "aprovar agora").
 
 const MAX_DIAS_ATRAS = 31;
 const MAX_PENDENTES_POR_FUNCIONARIO = 10;
@@ -47,7 +47,7 @@ async function conferirDuplicidade(empresaId: string, funcionarioId: string, dat
     throw new HttpsError("already-exists", "Já existe uma solicitação pendente para este dia e horário.");
   }
   if (pendentes.size >= MAX_PENDENTES_POR_FUNCIONARIO) {
-    throw new HttpsError("resource-exhausted", "Há muitas solicitações pendentes. Aguarde o gestor analisar as anteriores.");
+    throw new HttpsError("resource-exhausted", "Há muitas solicitações pendentes para este funcionário. Analise as anteriores primeiro.");
   }
   if (existeNoMesmoMinuto(doDia, hora)) {
     throw new HttpsError("already-exists", `Já existe uma marcação às ${hora} em ${formatar(data)}.`);
@@ -57,54 +57,6 @@ async function conferirDuplicidade(empresaId: string, funcionarioId: string, dat
 function dadosDoFuncionario(funcionarioId: string, funcionario: DocumentData) {
   return { funcionarioId, funcionarioNome: funcionario.nome, funcionarioMatricula: funcionario.matricula };
 }
-
-// --- Funcionário, no aparelho de ponto -----------------------------------
-
-export const solicitarMarcacao = onCall(async (request) => {
-  const { dispositivoId, empresaId } = exigirDispositivo(request);
-  const dados = objeto(request.data);
-  const { matricula, pin } = lerMatriculaPin(dados);
-  const data = dataISO(dados.data, "Dia");
-  const hora = horaHHMM(dados.hora, "Horário");
-  const motivo = texto(dados.motivo, "Motivo", { min: 3, max: 300 });
-  const miniatura = dados.miniatura ? decodificarJpeg(dados.miniatura, "Foto", MAX_MINIATURA_BYTES) : null;
-
-  const { empresa, empresaRef, dispositivo, funcionarioId, funcionario } = await identificarNoAparelho({
-    empresaId,
-    dispositivoId,
-    matricula,
-    pin,
-    miniatura,
-  });
-  validarMomento(data, hora, empresa.fusoHorario);
-  await conferirDuplicidade(empresaId, funcionarioId, data, hora);
-
-  const ref = empresaRef.collection("solicitacoes").doc();
-  const lote = db.batch();
-  lote.create(ref, {
-    ...dadosDoFuncionario(funcionarioId, funcionario),
-    data,
-    hora,
-    motivo,
-    origem: "funcionario",
-    solicitadoPor: { uid: funcionarioId, nome: funcionario.nome },
-    dispositivoId,
-    dispositivoNome: dispositivo.nome,
-    miniatura: miniatura ? `data:image/jpeg;base64,${miniatura.toString("base64")}` : null,
-    status: "pendente",
-    criadoEm: FieldValue.serverTimestamp(),
-  });
-  auditarNa(lote, {
-    empresaId,
-    autor: { uid: funcionarioId, nome: funcionario.nome },
-    acao: "solicitacao.criada",
-    descricao: `${funcionario.nome} solicitou a inclusão de marcação em ${formatar(data)} às ${hora} (pelo aparelho "${dispositivo.nome}"): ${motivo}.`,
-    detalhes: { solicitacaoId: ref.id, funcionarioId, data, hora, motivo, origem: "funcionario" },
-  });
-  await lote.commit();
-
-  return { id: ref.id, funcionarioNome: funcionario.nome, data, hora };
-});
 
 // --- Gestor, no painel -----------------------------------------------------
 
@@ -127,7 +79,6 @@ function gravarMarcacaoAprovada(params: {
     throw new HttpsError("already-exists", `Já existe uma marcação às ${solicitacao.hora} em ${formatar(solicitacao.data)}.`);
   }
   const registroRef = db.collection(`empresas/${empresaId}/registros`).doc();
-  const quem = solicitacao.origem === "funcionario" ? "do funcionário" : `registrada por ${solicitacao.solicitadoPor?.nome}`;
   tx.set(
     registroRef,
     marcacaoManual({
@@ -135,7 +86,7 @@ function gravarMarcacaoAprovada(params: {
       funcionario,
       instante: localParaUtc(solicitacao.data, solicitacao.hora, fuso),
       fuso,
-      justificativa: `Solicitação ${quem}: ${solicitacao.motivo}`,
+      justificativa: `Solicitação registrada por ${solicitacao.solicitadoPor?.nome}: ${solicitacao.motivo}`,
       incluidoPor: decididoPor,
       solicitacaoId,
     }),
@@ -170,7 +121,6 @@ export const criarSolicitacao = onCall(async (request) => {
     motivo,
     origem: "gestor",
     solicitadoPor: autor(usuario),
-    miniatura: null,
     status: "pendente",
     criadoEm: FieldValue.serverTimestamp(),
   };

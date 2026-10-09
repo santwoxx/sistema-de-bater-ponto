@@ -39,7 +39,7 @@ const SENHA = 'ponto-teste-2026'
 await chamar('configurarPrimeiroAdmin', { nome: 'Administrador', email: 'admin@teste.com', senha: SENHA, codigo: 'TESTE-LOCAL' })
 await signInWithEmailAndPassword(auth, 'admin@teste.com', SENHA)
 
-// O histórico de exemplo começa no mês anterior, para dar o que fechar e assinar.
+// O histórico de exemplo começa no mês anterior, para dar o que fechar e imprimir.
 const hoje = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date())
 const [anoAtual, mesAtualNumero] = hoje.split('-').map(Number)
 const mesAnterior = new Date(Date.UTC(anoAtual, mesAtualNumero - 2, 1)).toISOString().slice(0, 7)
@@ -118,7 +118,7 @@ for (const empresaId of [centro, shopping]) {
 }
 
 console.log(`
-Dados de exemplo criados (${incluidas} marcações de histórico em ${mesAnterior}, pronto para fechar e assinar).
+Dados de exemplo criados (${incluidas} marcações de histórico em ${mesAnterior}, pronto para fechar).
 
   Logins (senha ${SENHA}):
     admin@teste.com    administrador, vê todas as empresas

@@ -5,7 +5,7 @@ import { Link, useSearchParams } from 'react-router'
 import { api } from '../../api'
 import { DetalheAbono, ModalAbono } from '../../componentes/Abonos'
 import { Aviso, CabecalhoPagina, Campo, Carregando, Vazio } from '../../componentes/Basicos'
-import { BlocoAssinatura, ModalReabrir } from '../../componentes/EspelhoFechado'
+import { BlocoFechamento, ModalReabrir } from '../../componentes/EspelhoFechado'
 import { DetalhesRegistro, ModalIncluirMarcacao } from '../../componentes/Marcacoes'
 import { useNotificar } from '../../componentes/Notificacoes'
 import { useEmpresaAtual } from '../../contexto/Empresa'
@@ -130,7 +130,7 @@ export default function Espelho() {
     try {
       const { resultados } = await api.fecharEspelhos({ empresaId: empresa.id, mes, funcionarioIds: [funcionario.id] })
       if (resultados[0]?.resultado === 'exige-motivo') setReabrindo(true)
-      else notificar('Espelho fechado e enviado para o funcionário assinar no aparelho de ponto.')
+      else notificar('Espelho fechado. Imprima para o funcionário assinar.')
     } catch (e) {
       setErroFechamento(mensagemErro(e))
     } finally {
@@ -198,35 +198,31 @@ export default function Espelho() {
 
       {funcionario && resumo && !fechados.carregando && (
         <section className="cartao nao-imprimir">
-          <h2>Fechamento e assinatura</h2>
+          <h2>Fechamento do mês</h2>
           {fechado ? (
-            <BlocoAssinatura espelho={fechado} empresa={empresa} />
+            <BlocoFechamento espelho={fechado} empresa={empresa} />
           ) : (
             <p className="texto-suave">
               {mesEncerrado
-                ? 'Este mês ainda não foi fechado. Ao fechar, o espelho é congelado e enviado para o funcionário conferir e assinar no aparelho de ponto.'
-                : 'O mês está em andamento. Ele poderá ser fechado e enviado para assinatura depois que terminar.'}
+                ? 'Este mês ainda não foi fechado. Ao fechar, o espelho é congelado (a versão oficial) para você imprimir e o funcionário assinar.'
+                : 'O mês está em andamento. Ele poderá ser fechado depois que terminar.'}
             </p>
           )}
           {mudouDepoisDoFechamento && fechado && (
             <Aviso tipo="alerta">
-              As marcações deste mês mudaram depois do fechamento.{' '}
-              {fechado.status === 'aguardando'
-                ? 'Atualize a versão enviada para assinatura.'
-                : 'Reabra com motivo para gerar uma nova versão e pedir nova assinatura.'}
+              As marcações deste mês mudaram depois do fechamento. Reabra com motivo para gerar uma nova versão e imprimir de novo.
             </Aviso>
           )}
           {erroFechamento && <Aviso tipo="erro">{erroFechamento}</Aviso>}
           <div className="acoes-detalhe">
-            {mesEncerrado && (!fechado || (fechado.status === 'aguardando' && mudouDepoisDoFechamento)) && (
+            {mesEncerrado && !fechado && (
               <button type="button" className="botao primario" onClick={fecharEsteMes} disabled={fechando}>
-                <Lock size={16} aria-hidden />{' '}
-                {fechando ? 'Fechando...' : fechado ? 'Atualizar versão para assinatura' : 'Fechar mês e enviar para assinatura'}
+                <Lock size={16} aria-hidden /> {fechando ? 'Fechando...' : 'Fechar mês'}
               </button>
             )}
-            {fechado && fechado.status !== 'aguardando' && (
+            {fechado && (
               <button type="button" className="botao" onClick={() => setReabrindo(true)}>
-                <RotateCcw size={16} aria-hidden /> {fechado.status === 'contestado' ? 'Reenviar para assinatura' : 'Reabrir com motivo'}
+                <RotateCcw size={16} aria-hidden /> Reabrir com motivo
               </button>
             )}
           </div>
@@ -398,29 +394,22 @@ export default function Espelho() {
             considera só dias já encerrados.
           </p>
 
-          {fechado && fechado.status === 'assinado' && !mudouDepoisDoFechamento ? (
-            // Assinado no aparelho: a impressão leva os dados da assinatura eletrônica.
-            <div className="so-impressao impressao-assinatura">
-              <BlocoAssinatura espelho={fechado} empresa={empresa} />
-              <div className="assinaturas assinatura-unica">
-                <div>
-                  <span />
-                  {empresa.nome}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="assinaturas so-impressao">
-              <div>
-                <span />
-                {funcionario.nome}
-              </div>
-              <div>
-                <span />
-                {empresa.nome}
-              </div>
-            </div>
+          {fechado && !mudouDepoisDoFechamento && (
+            <p className="so-impressao texto-suave">
+              Mês fechado em {fechado.fechadoEm ? formatarDataHora(fechado.fechadoEm.toDate(), empresa.fusoHorario) : '—'}
+              {fechado.versao > 1 && ` (versão ${fechado.versao})`}.
+            </p>
           )}
+          <div className="assinaturas so-impressao">
+            <div>
+              <span />
+              {funcionario.nome}
+            </div>
+            <div>
+              <span />
+              {empresa.nome}
+            </div>
+          </div>
           <p className="so-impressao texto-suave">
             Emitido em {formatarDataHora(new Date(agora), empresa.fusoHorario)} por {perfil.nome}.
           </p>
@@ -442,7 +431,7 @@ export default function Espelho() {
       {abonoAberto && <DetalheAbono empresa={empresa} abono={abonoAberto} aoFechar={() => setAbonoAberto(null)} />}
       {detalhe && <DetalhesRegistro registro={detalhe} empresa={empresa} aoFechar={() => setDetalhe(null)} />}
       {reabrindo && fechado && funcionario && (
-        <ModalReabrir empresa={empresa} mes={mes} funcionario={funcionario} espelho={fechado} aoFechar={() => setReabrindo(false)} />
+        <ModalReabrir empresa={empresa} mes={mes} funcionario={funcionario} aoFechar={() => setReabrindo(false)} />
       )}
     </>
   )

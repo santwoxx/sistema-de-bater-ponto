@@ -9,9 +9,9 @@ import { objeto, pin } from "./validacao";
 
 // PIN pessoal: o PIN que o gestor cadastra é PROVISÓRIO e só serve para o
 // funcionário criar o dele no aparelho, no primeiro uso. Assim ninguém da
-// empresa conhece o PIN que bate o ponto e assina o espelho. O funcionário
-// também pode trocar o PIN quando quiser; o gestor só consegue redefinir
-// (e o PIN volta a ser provisório).
+// empresa conhece o PIN que bate o ponto. Para trocar depois (esqueceu ou
+// acha que alguém viu), o gestor redefine: o PIN volta a ser provisório e o
+// funcionário cria um novo no próximo ponto.
 
 export const definirPin = onCall(async (request) => {
   const { dispositivoId, empresaId } = exigirDispositivo(request);
@@ -30,6 +30,10 @@ export const definirPin = onCall(async (request) => {
     aceitarProvisorio: true,
   });
 
+  if (!provisorio) {
+    throw new HttpsError("failed-precondition", "Seu PIN já é pessoal. Para trocar, peça ao gestor para redefinir o PIN.");
+  }
+
   const credenciais = await gerarHashPin(novoPin);
   const agora = FieldValue.serverTimestamp();
   const lote = db.batch();
@@ -38,8 +42,8 @@ export const definirPin = onCall(async (request) => {
   auditarNa(lote, {
     empresaId,
     autor: { uid: funcionarioId, nome: String(funcionario.nome) },
-    acao: provisorio ? "pin.criado" : "pin.trocado",
-    descricao: `${funcionario.nome} ${provisorio ? "criou o PIN pessoal" : "trocou o PIN"} no aparelho "${dispositivo.nome}".`,
+    acao: "pin.criado",
+    descricao: `${funcionario.nome} criou o PIN pessoal no aparelho "${dispositivo.nome}".`,
     detalhes: { funcionarioId, dispositivoId },
   });
   await lote.commit();

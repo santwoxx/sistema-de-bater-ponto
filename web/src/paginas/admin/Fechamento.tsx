@@ -1,5 +1,5 @@
 import { collection, query, where } from 'firebase/firestore'
-import { Download, FileSignature, Lock, RotateCcw } from 'lucide-react'
+import { Download, FileCheck, Lock, Printer, RotateCcw } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router'
 import { api, type ResultadoFechamento } from '../../api'
@@ -13,17 +13,18 @@ import { baixarCsv } from '../../lib/csv'
 import { mensagemErro } from '../../lib/erros'
 import { formatarCpf } from '../../lib/formatos'
 import { dataLocal, formatarDataHora, minutosParaHHMM, nomeMes, somarMeses } from '../../lib/tempo'
-import { ordenarPorNome, paraEspelhoFechado, paraFuncionario, type EspelhoFechado, type Funcionario } from '../../tipos'
+import { ordenarPorNome, paraEspelhoFechado, paraFuncionario, type Funcionario } from '../../tipos'
 
 const DESCRICAO_RESULTADO: Record<ResultadoFechamento, string> = {
   fechado: 'fechado',
   atualizado: 'atualizado',
   'sem-alteracoes': 'sem alterações',
-  'exige-motivo': 'já assinado e com mudanças: reabra com motivo',
+  'exige-motivo': 'já fechado e com mudanças: reabra com motivo',
 }
 
-// Fechamento mensal: congela o espelho de cada funcionário e o envia para
-// assinatura no aparelho de ponto. Também serve para consultar meses antigos.
+// Fechamento mensal: congela o espelho de cada funcionário (a versão oficial),
+// que o gestor imprime para o funcionário assinar em papel. Também serve para
+// consultar meses antigos.
 export default function Fechamento() {
   const empresa = useEmpresaAtual()
   const notificar = useNotificar()
@@ -31,7 +32,7 @@ export default function Fechamento() {
   const [mes, setMes] = useState(() => somarMeses(mesAtual, -1))
   const [fechando, setFechando] = useState(false)
   const [resultados, setResultados] = useState<Map<string, ResultadoFechamento>>(new Map())
-  const [reabrir, setReabrir] = useState<{ funcionario: Funcionario; espelho: EspelhoFechado } | null>(null)
+  const [reabrir, setReabrir] = useState<Funcionario | null>(null)
   const [erro, setErro] = useState('')
 
   const funcionarios = useColecao(() => collection(db, 'empresas', empresa.id, 'funcionarios'), paraFuncionario, `${empresa.id}:todos`)
@@ -44,7 +45,6 @@ export default function Fechamento() {
   // Ativos, mais inativos que tenham espelho fechado neste mês.
   const linhas = ordenarPorNome(funcionarios.dados.filter((f) => f.ativo || porFuncionario.has(f.id)))
   const mesEncerrado = mes < mesAtual
-  const contagem = (status: EspelhoFechado['status']) => espelhos.dados.filter((e) => e.status === status).length
 
   async function fecharTodos() {
     setErro('')
@@ -55,7 +55,7 @@ export default function Fechamento() {
       const novos = lista.filter((r) => r.resultado === 'fechado' || r.resultado === 'atualizado').length
       const presos = lista.filter((r) => r.resultado === 'exige-motivo').length
       notificar(
-        `${novos} espelho(s) enviados para assinatura${presos ? `; ${presos} já assinado(s) mudaram e precisam ser reabertos com motivo` : ''}.`,
+        `${novos} espelho(s) fechado(s)${presos ? `; ${presos} já fechado(s) mudaram e precisam ser reabertos com motivo` : ''}.`,
         presos ? 'info' : 'sucesso',
       )
     } catch (e) {
@@ -68,7 +68,7 @@ export default function Fechamento() {
   function exportar() {
     baixarCsv(`fechamento_${mes}.csv`, [
       [`Fechamento de ponto - ${empresa.nome} - ${nomeMes(mes)}`],
-      ['Funcionário', 'Matrícula', 'CPF', 'Situação', 'Previsto', 'Trabalhado', 'Saldo', 'Faltas', 'Dias trabalhados', 'Assinado em', 'Código'],
+      ['Funcionário', 'Matrícula', 'CPF', 'Situação', 'Previsto', 'Trabalhado', 'Saldo', 'Faltas', 'Dias trabalhados', 'Fechado em', 'Versão'],
       ...linhas.map((f) => {
         const e = porFuncionario.get(f.id)
         const t = e?.documento.totais
@@ -76,14 +76,14 @@ export default function Fechamento() {
           f.nome,
           f.matricula,
           formatarCpf(f.cpf),
-          e ? e.status : 'não fechado',
+          e ? 'fechado' : 'não fechado',
           t ? minutosParaHHMM(t.previstoMin) : '',
           t ? minutosParaHHMM(t.trabalhadoMin) : '',
           t ? minutosParaHHMM(t.saldoMin, true) : '',
           t?.faltas ?? '',
           t?.diasTrabalhados ?? '',
-          e?.assinatura?.em ? formatarDataHora(e.assinatura.em.toDate(), empresa.fusoHorario) : '',
-          e?.assinatura?.codigo ?? '',
+          e?.fechadoEm ? formatarDataHora(e.fechadoEm.toDate(), empresa.fusoHorario) : '',
+          e?.versao ?? '',
         ]
       }),
     ])
@@ -93,14 +93,17 @@ export default function Fechamento() {
     <>
       <CabecalhoPagina
         titulo="Fechamento mensal"
-        descricao="Feche o mês para congelar o espelho de cada funcionário e enviá-lo para assinatura no aparelho de ponto."
+        descricao="Feche o mês para congelar o espelho de cada funcionário (a versão oficial). Depois, imprima os espelhos para os funcionários assinarem."
         acoes={
           <>
             <button type="button" className="botao" onClick={exportar} disabled={espelhos.dados.length === 0}>
               <Download size={16} aria-hidden /> CSV do mês
             </button>
+            <Link className="botao" to="/admin/exportar">
+              <Printer size={16} aria-hidden /> Imprimir espelhos
+            </Link>
             <button type="button" className="botao primario" onClick={fecharTodos} disabled={!mesEncerrado || fechando}>
-              <Lock size={16} aria-hidden /> {fechando ? 'Fechando...' : 'Fechar mês e enviar para assinatura'}
+              <Lock size={16} aria-hidden /> {fechando ? 'Fechando...' : 'Fechar mês'}
             </button>
           </>
         }
@@ -118,24 +121,12 @@ export default function Fechamento() {
 
       <div className="indicadores">
         <div className="indicador">
-          <FileSignature aria-hidden />
+          <FileCheck aria-hidden />
           <div>
             <strong>
-              {contagem('assinado')}/{linhas.length}
+              {espelhos.dados.length}/{linhas.length}
             </strong>
-            <span>assinados</span>
-          </div>
-        </div>
-        <div className="indicador">
-          <div>
-            <strong>{contagem('aguardando')}</strong>
-            <span>aguardando assinatura</span>
-          </div>
-        </div>
-        <div className="indicador">
-          <div>
-            <strong>{contagem('contestado')}</strong>
-            <span>contestados</span>
+            <span>fechados</span>
           </div>
         </div>
         <div className="indicador">
@@ -150,7 +141,7 @@ export default function Fechamento() {
         {funcionarios.carregando || espelhos.carregando ? (
           <Carregando />
         ) : linhas.length === 0 ? (
-          <Vazio icone={FileSignature} titulo="Nenhum funcionário" />
+          <Vazio icone={FileCheck} titulo="Nenhum funcionário" />
         ) : (
           <div className="tabela-rolagem">
             <table className="tabela">
@@ -161,7 +152,7 @@ export default function Fechamento() {
                   <th>Trabalhado</th>
                   <th>Saldo</th>
                   <th>Faltas</th>
-                  <th>Assinatura</th>
+                  <th>Fechado em</th>
                   <th aria-label="Ações" />
                 </tr>
               </thead>
@@ -179,7 +170,7 @@ export default function Fechamento() {
                       <td>
                         <SeloEspelho espelho={e} />
                         {e && e.versao > 1 && <small className="bloco">versão {e.versao}</small>}
-                        {resultado === 'exige-motivo' && <small className="bloco pendente">Mudou depois da assinatura</small>}
+                        {resultado === 'exige-motivo' && <small className="bloco pendente">Mudou depois do fechamento</small>}
                       </td>
                       <td className="numeros">{t ? minutosParaHHMM(t.trabalhadoMin) : '—'}</td>
                       <td className={`numeros ${t && t.saldoMin < 0 ? 'negativo' : t && t.saldoMin > 0 ? 'positivo' : ''}`}>
@@ -187,15 +178,11 @@ export default function Fechamento() {
                       </td>
                       <td className="numeros">{t ? t.faltas : '—'}</td>
                       <td>
-                        {e?.assinatura?.em ? (
+                        {e?.fechadoEm ? (
                           <>
-                            {formatarDataHora(e.assinatura.em.toDate(), empresa.fusoHorario)}
-                            <small className="bloco">
-                              {e.assinatura.dispositivoNome} · código {e.assinatura.codigo}
-                            </small>
+                            {formatarDataHora(e.fechadoEm.toDate(), empresa.fusoHorario)}
+                            <small className="bloco">por {e.fechadoPor.nome}</small>
                           </>
-                        ) : e?.contestacao ? (
-                          <small>Motivo: {e.contestacao.motivo}</small>
                         ) : (
                           '—'
                         )}
@@ -204,9 +191,9 @@ export default function Fechamento() {
                         <Link className="botao pequeno" to={`/admin/espelho?funcionario=${f.id}&mes=${mes}`}>
                           Ver espelho
                         </Link>{' '}
-                        {e && e.status !== 'aguardando' && (
-                          <button type="button" className="botao pequeno" onClick={() => setReabrir({ funcionario: f, espelho: e })}>
-                            <RotateCcw size={14} aria-hidden /> {e.status === 'contestado' ? 'Reenviar' : 'Reabrir'}
+                        {e && (
+                          <button type="button" className="botao pequeno" onClick={() => setReabrir(f)}>
+                            <RotateCcw size={14} aria-hidden /> Reabrir
                           </button>
                         )}
                       </td>
@@ -230,7 +217,7 @@ export default function Fechamento() {
       )}
 
       {reabrir && (
-        <ModalReabrir empresa={empresa} mes={mes} {...reabrir} aoFechar={() => setReabrir(null)} />
+        <ModalReabrir empresa={empresa} mes={mes} funcionario={reabrir} aoFechar={() => setReabrir(null)} />
       )}
     </>
   )

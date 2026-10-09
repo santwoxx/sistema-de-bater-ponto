@@ -93,7 +93,7 @@ export const api = {
   >('registrarPonto', 25_000),
   // Batida feita sem internet, guardada cifrada no aparelho e enviada quando a conexão volta.
   registrarPontoGuardado: funcao<{ pacote: PacoteSelado }, ResultadoEnvio>('registrarPontoGuardado', 60_000),
-  // O funcionário cria (no primeiro uso) ou troca o próprio PIN, no aparelho.
+  // No primeiro uso, o funcionário troca o PIN provisório do gestor pelo dele, no aparelho.
   definirPin: funcao<
     { matricula: string; pin: string; novoPin: string; miniatura: string | null },
     { funcionarioNome: string }
@@ -121,11 +121,6 @@ export const api = {
     { criados: number }
   >('incluirAbono'),
   removerAbono: funcao<{ empresaId: string; abonoId: string }, { ok: true }>('removerAbono'),
-  // Feita no aparelho de ponto, identificando o funcionário pela matrícula + PIN.
-  solicitarMarcacao: funcao<
-    { matricula: string; pin: string; data: string; hora: string; motivo: string; miniatura: string | null },
-    { id: string; funcionarioNome: string; data: string; hora: string }
-  >('solicitarMarcacao', 25_000),
   criarSolicitacao: funcao<
     { empresaId: string; funcionarioId: string; data: string; hora: string; motivo: string; aprovarAgora: boolean },
     { id: string; registroId: string | null }
@@ -138,23 +133,6 @@ export const api = {
     { empresaId: string; mes: string; funcionarioIds?: string[]; motivoReabertura?: string },
     { resultados: Array<{ funcionarioId: string; nome: string; resultado: ResultadoFechamento }> }
   >('fecharEspelhos', 120_000),
-  // Feitas no aparelho de ponto, identificando o funcionário pela matrícula + PIN.
-  consultarEspelhosPendentes: funcao<{ matricula: string; pin: string }, { funcionarioNome: string; espelhos: EspelhoParaAssinar[] }>(
-    'consultarEspelhosPendentes',
-    25_000,
-  ),
-  assinarEspelho: funcao<
-    {
-      matricula: string
-      pin: string
-      espelhoId: string
-      hash: string
-      concordo: boolean
-      motivo?: string
-      miniatura: string | null
-    },
-    { status: 'assinado' | 'contestado'; mes: string; codigo: string }
-  >('assinarEspelho', 25_000),
   exportarDados: funcao<DadosExportacao, ResultadoExportacao>('exportarDados', 300_000),
   verificarIntegridade: funcao<{ empresaId: string }, ResultadoIntegridade>('verificarIntegridade', 300_000),
 }
@@ -186,14 +164,8 @@ export interface EspelhoParaImpressao {
   mes: string
   funcionario: { id: string; nome: string; cpf: string; matricula: string; cargo: string; admissao: string | null }
   documento: DocumentoEspelho
-  fechamento: {
-    status: 'aguardando' | 'assinado' | 'contestado'
-    versao: number
-    fechadoEm: number | null
-    fechadoPor: string
-    assinatura: { em: number | null; codigo: string; dispositivoNome: string } | null
-    contestacao: { em: number | null; motivo: string } | null
-  } | null
+  /** Mês fechado: a versão congelada (a que vai para a assinatura em papel). */
+  fechamento: { versao: number; fechadoEm: number | null; fechadoPor: string } | null
 }
 
 export interface ResultadoExportacao {
@@ -203,13 +175,4 @@ export interface ResultadoExportacao {
   empresa: { nome: string; cnpj: string }
   linhas?: Array<Array<string | number | null>>
   espelhos?: EspelhoParaImpressao[]
-}
-
-export interface EspelhoParaAssinar {
-  id: string
-  mes: string
-  hash: string
-  empresaNome: string
-  funcionario: { nome: string; matricula: string; cargo: string }
-  documento: DocumentoEspelho
 }
