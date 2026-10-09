@@ -259,7 +259,11 @@ export const registrarPontoGuardado = onCall({ memory: "512MiB", maxInstances: 2
     ({ cpf, pin } = lerCpfPin(conteudo));
     miniatura = decodificarJpeg(conteudo.miniatura, "Miniatura da foto", MAX_MINIATURA_BYTES);
     foto = decodificarJpeg(conteudo.foto, "Foto", MAX_FOTO_BYTES);
-  } catch {
+  } catch (erro) {
+    // Guardada pela tela antiga (matrícula e PIN antigo): não vale mais, mas sai da fila e o gestor vê.
+    if ((erro as { details?: { motivo?: string } }).details?.motivo === "versao-antiga") {
+      return recusar("foi feita na versão antiga do aparelho (com matrícula), que não vale mais. Se o horário estiver certo, lance a marcação pelo painel.");
+    }
     return recusar("o CPF, o PIN ou a foto vieram em formato inválido.");
   }
 

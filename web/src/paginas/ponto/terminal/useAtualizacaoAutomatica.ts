@@ -12,9 +12,10 @@ export function scriptPrincipal(html: string): string | null {
 
 /**
  * O aparelho de ponto fica dias com a página aberta, então uma correção
- * publicada só chegaria nele quando alguém recarregasse. A cada 10 minutos (e
- * quando a internet volta) ele confere se há versão nova e, havendo, recarrega
- * sozinho num momento sem ninguém usando. Batidas guardadas sem internet
+ * publicada só chegaria nele quando alguém recarregasse. A cada 10 minutos,
+ * quando a internet volta e quando a tela volta a aparecer (celular
+ * desbloqueado), ele confere se há versão nova e, havendo, recarrega sozinho
+ * num momento sem ninguém usando. Batidas guardadas sem internet
  * continuam no aparelho (ficam no IndexedDB).
  */
 export function useAtualizacaoAutomatica(semNinguemUsando: boolean) {
@@ -34,10 +35,15 @@ export function useAtualizacaoAutomatica(semNinguemUsando: boolean) {
     }
     const id = setInterval(() => void verificar(), VERIFICAR_A_CADA_MS)
     const aoVoltarInternet = () => void verificar()
+    const aoVoltarATela = () => {
+      if (document.visibilityState === 'visible') void verificar()
+    }
     window.addEventListener('online', aoVoltarInternet)
+    document.addEventListener('visibilitychange', aoVoltarATela)
     return () => {
       clearInterval(id)
       window.removeEventListener('online', aoVoltarInternet)
+      document.removeEventListener('visibilitychange', aoVoltarATela)
     }
   }, [])
 

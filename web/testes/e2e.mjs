@@ -337,6 +337,9 @@ await etapa('no aparelho da loja, CPF + PIN de 4 números; o aparelho não cria 
   }
   // Sem CPF, só no celular pessoal (que já tem dono).
   await falha(bater({ pin: PIN_MARIA }), 'functions/permission-denied', /CPF ou PIN incorretos/)
+  // Tela antiga (aberta desde antes da atualização) manda a matrícula: pede para recarregar, sem "erro de matrícula".
+  const antiga = await falha(bater({ matricula: '12', pin: PIN_MARIA }), 'functions/failed-precondition', /versão antiga do ponto.*Recarregue a página/)
+  assert.equal(antiga.details?.motivo, 'versao-antiga')
   await naoExiste(aparelho.chamar('definirPin', { cpf: CPF_MARIA, pin: PIN_MARIA, novoPin: '4826' }))
   assert.equal((await getDocs(collection(gestora.db, 'empresas', empresaA, 'registros'))).size, 0)
 })
@@ -857,6 +860,7 @@ await etapa('batida sem internet: guardada cifrada, conferida quando chega e mar
       dispositivoId: outros.dispositivoId ?? uidAparelho,
       idRequisicao,
       cpf,
+      matricula: outros.matricula,
       pin,
       foto: jpeg(1100),
       miniatura: jpeg(300),
@@ -899,8 +903,10 @@ await etapa('batida sem internet: guardada cifrada, conferida quando chega e mar
   await recusa({ pin: '9999' }, /CPF ou PIN incorretos/)
   await recusa({ ancora: { ...semInternet.ancora, em: semInternet.ancora.em - 3_600_000 } }, /confirmação do servidor/)
   await recusa({ dispositivoId: 'disp_outro' }, /outro aparelho/)
+  // Guardada pela tela antiga (matrícula, sem CPF): sai da fila com um aviso claro para o gestor.
+  await recusa({ cpf: null, matricula: '12' }, /versão antiga do aparelho/)
   const recusadas = await getDocs(query(collection(gestora.db, 'empresas', empresaA, 'auditoria'), where('acao', '==', 'ponto.semInternetRecusado')))
-  assert.equal(recusadas.size, 3)
+  assert.equal(recusadas.size, 4)
   assert.ok(recusadas.docs.some((d) => String(d.get('detalhes').foto).startsWith('data:image/jpeg;base64,')))
   assert.equal((await enviar({ versao: 1, chave: 'AAAA', iv: 'AAAA', dados: 'AAAA' })).resultado, 'recusada')
 

@@ -76,18 +76,8 @@ export function firebaseSaida(args) {
  * seguinte por não ver mudança. Usa a conta já logada no Firebase CLI.
  */
 export async function funcoesForaDoAr(projeto, regiao) {
-  exigirCli()
-  const cli = createRequire(CLI_FIREBASE)
-  const { configstore } = cli('../configstore')
-  const { requireAuth } = cli('../requireAuth')
-  const { Client } = cli('../apiv2')
-  await requireAuth({ user: configstore.get('user'), tokens: configstore.get('tokens') })
-  const listar = (api, recurso) =>
-    new Client({ urlPrefix: `https://${api}.googleapis.com`, apiVersion: 'v2', auth: true })
-      .get(`/projects/${projeto}/locations/${regiao}/${recurso}`, { queryParams: { pageSize: 500 } })
-      .then((r) => r.body[recurso] ?? [])
+  const listar = await listagemGoogle(projeto, regiao)
   const [funcoes, servicos] = await Promise.all([listar('cloudfunctions', 'functions'), listar('run', 'services')])
-  const ultimo = (nome) => nome?.split('/').pop()
   const servicoPorId = new Map(servicos.map((s) => [ultimo(s.name), s]))
   return funcoes
     .filter((f) => f.environment !== 'GEN_1')
@@ -97,6 +87,55 @@ export async function funcoesForaDoAr(projeto, regiao) {
       const motivo = (s?.terminalCondition?.message ?? `estado ${f.state}`).split('\n')[0].slice(0, 200)
       return [{ nome: ultimo(f.name), motivo }]
     })
+}
+
+const ultimo = (nome) => nome?.split('/').pop()
+
+/** Cliente das APIs do Google com a conta já logada no Firebase CLI. */
+async function clienteGoogle(api) {
+  exigirCli()
+  const cli = createRequire(CLI_FIREBASE)
+  const { configstore } = cli('../configstore')
+  const { requireAuth } = cli('../requireAuth')
+  const { Client } = cli('../apiv2')
+  await requireAuth({ user: configstore.get('user'), tokens: configstore.get('tokens') })
+  return new Client({ urlPrefix: `https://${api}.googleapis.com`, apiVersion: 'v2', auth: true })
+}
+
+/** Lista recursos (funções, serviços do Cloud Run) da região do projeto. */
+async function listagemGoogle(projeto, regiao) {
+  const clientes = { cloudfunctions: await clienteGoogle('cloudfunctions'), run: await clienteGoogle('run') }
+  return (api, recurso) =>
+    clientes[api].get(`/projects/${projeto}/locations/${regiao}/${recurso}`, { queryParams: { pageSize: 500 } }).then((r) => r.body[recurso] ?? [])
+}
+
+/**
+ * Funções chamadas pelo site (callable) precisam aceitar chamada de qualquer
+ * navegador no Cloud Run: o login é conferido dentro do código. O Firebase CLI
+ * só dá essa liberação ao CRIAR a função; uma que falhou na criação (ex.: cota
+ * de CPU) e foi publicada de novo fica sem ela, e toda chamada vira "Erro
+ * interno". Confere todas e libera as que faltarem (aplicar=false só lista).
+ */
+export async function liberarFuncoesDoSite(projeto, regiao, { aplicar = true } = {}) {
+  const listar = await listagemGoogle(projeto, regiao)
+  const run = await clienteGoogle('run')
+  const doSite = (await listar('cloudfunctions', 'functions')).filter((f) => f.labels?.['deployment-callable'] === 'true')
+  const bloqueadas = []
+  for (const funcao of doSite) {
+    const servico = `projects/${projeto}/locations/${regiao}/services/${ultimo(funcao.serviceConfig?.service)}`
+    const politica = (await run.get(`/${servico}:getIamPolicy`)).body
+    const bindings = politica.bindings ?? []
+    if (bindings.some((b) => b.role === 'roles/run.invoker' && b.members?.includes('allUsers'))) continue
+    bloqueadas.push(ultimo(funcao.name))
+    if (!aplicar) continue
+    const invocador = bindings.find((b) => b.role === 'roles/run.invoker' && !b.condition)
+    const novas = invocador
+      ? bindings.map((b) => (b === invocador ? { ...b, members: [...b.members, 'allUsers'] } : b))
+      : [...bindings, { role: 'roles/run.invoker', members: ['allUsers'] }]
+    // Com o etag lido: se a política mudou no meio do caminho, o Google recusa em vez de sobrescrever.
+    await run.post(`/${servico}:setIamPolicy`, { policy: { ...politica, bindings: novas } })
+  }
+  return bloqueadas
 }
 
 /** Roda um script do package.json da raiz (ex.: "verificar"). */

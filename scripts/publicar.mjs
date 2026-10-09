@@ -11,7 +11,8 @@
 //  3. confere se o login por e-mail/senha está ativo no Authentication;
 //  4. "npm run verificar" (build, lint e testes): se falhar, nada é publicado;
 //  5. firebase deploy, sem perguntas (cria o site do Hosting se faltar e aceita os padrões),
-//     e confere no Cloud Run se cada função ficou no ar (republica as que não ficaram);
+//     confere no Cloud Run se cada função ficou no ar (republica as que não ficaram) e
+//     se as funções chamadas pelo site aceitam chamada do navegador (libera as que não);
 //  6. liga a proteção contra exclusão, a recuperação pontual e o backup diário do banco;
 //  7. confere o site no ar e, se o sistema ainda não foi configurado, mostra o código
 //     de instalação e abre a tela de configuração inicial.
@@ -20,7 +21,19 @@ import { randomInt } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { appendFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { conferirConfiguracaoDoSite, cor, firebase, firebaseSaida, funcoesForaDoAr, idDoProjeto, lerEnv, npmRun, parar, RAIZ } from './lib.mjs'
+import {
+  conferirConfiguracaoDoSite,
+  cor,
+  firebase,
+  firebaseSaida,
+  funcoesForaDoAr,
+  idDoProjeto,
+  lerEnv,
+  liberarFuncoesDoSite,
+  npmRun,
+  parar,
+  RAIZ,
+} from './lib.mjs'
 
 const args = process.argv.slice(2)
 const indiceProjeto = args.indexOf('--projeto')
@@ -144,6 +157,19 @@ if (foraDoAr.length > 0) {
   }
 }
 console.log(cor.ok('Todas as funções estão no ar com a versão nova.'))
+
+// O CLI só libera as funções do site para o navegador ao criá-las: uma que falhou
+// na criação e foi publicada de novo fica sem a liberação (ver liberarFuncoesDoSite).
+try {
+  const liberadas = await liberarFuncoesDoSite(projeto, REGIAO_FUNCOES)
+  if (liberadas.length > 0) console.log(cor.ok(`Liberadas para o site (respondiam "Erro interno"): ${liberadas.join(', ')}.`))
+  else console.log(cor.ok('Todas as funções do site aceitam chamada do navegador.'))
+} catch (e) {
+  parar(
+    `Não consegui conferir a liberação das funções do site no Cloud Run (${e.message}).\n` +
+      'Sem ela, partes do painel podem responder "Erro interno". Rode "npm run publicar" de novo.',
+  )
+}
 
 // 6. Proteção do banco -----------------------------------------------------------
 etapa(6, 'Proteção e backups do banco')

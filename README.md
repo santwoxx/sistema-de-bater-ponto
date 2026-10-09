@@ -191,7 +191,7 @@ O `firebase login` é feito uma vez por computador (entre com a conta Google don
 2. confere se o `web/.env` é do mesmo projeto (nunca publica um site falando com o projeto errado) e gera o **código de instalação** em `functions/.env.SEU-PROJETO` (fora do Git);
 3. confere se o login por e-mail/senha está ativo no Authentication;
 4. roda `npm run verificar`: build, lint e testes. **Se algo falhar, nada é publicado**;
-5. publica site, funções, regras e índices (`firebase deploy`) e confere no Cloud Run se cada função ficou no ar com a versão nova (as que não ficaram são publicadas de novo, só elas);
+5. publica site, funções, regras e índices (`firebase deploy`) e confere no Cloud Run se cada função ficou no ar com a versão nova (as que não ficaram são publicadas de novo, só elas) e se as funções chamadas pelo site aceitam chamada do navegador (o Firebase CLI só libera isso ao criar a função; uma que falhou na criação ficava respondendo "Erro interno", e a publicação libera);
 6. liga a **proteção contra exclusão**, a **recuperação pontual** e o **backup diário** do banco;
 7. confere o site no ar (inclusive os cabeçalhos de segurança) e, no primeiro uso, mostra o código de instalação e abre a tela de configuração inicial.
 

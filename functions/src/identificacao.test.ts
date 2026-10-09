@@ -20,6 +20,14 @@ describe("CPF e PIN digitados no aparelho", () => {
     }
   });
 
+  it("tela antiga (matrícula, sem CPF): pede para recarregar, em vez de dar erro de matrícula", () => {
+    for (const dados of [{ matricula: "1", pin: "2580" }, { matricula: "12", pin: "369147" }, { matricula: "1", cpf: "", pin: "2580" }]) {
+      expect(() => lerCpfPin(dados)).toThrow(/versão antiga do ponto.*Recarregue a página/);
+    }
+    // Com CPF (tela nova), a matrícula que sobrar é ignorada.
+    expect(lerCpfPin({ matricula: "1", cpf: "52998224725", pin: "2580" })).toEqual({ cpf: "52998224725", pin: "2580" });
+  });
+
   it("bloqueios seguidos do mesmo PIN dobram de tempo, até 1 hora", () => {
     expect([1, 2, 3, 4].map(minutosDeBloqueio)).toEqual([15, 30, 60, 60]);
   });

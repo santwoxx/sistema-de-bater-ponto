@@ -37,12 +37,28 @@ export function credenciaisInvalidas(): HttpsError {
 }
 
 /**
+ * A tela antiga do aparelho (até 09/10/2026) mandava a matrícula, nunca o CPF.
+ * Aberta desde antes da atualização, ela mostraria um erro de matrícula; em vez
+ * disso, a pessoa vê que precisa recarregar (o aparelho também se atualiza
+ * sozinho quando fica parado). Não conta como tentativa errada.
+ */
+export function erroVersaoAntiga(): HttpsError {
+  return new HttpsError(
+    "failed-precondition",
+    "Este aparelho está com a versão antiga do ponto, que pedia a matrícula. Recarregue a página: agora é CPF e PIN.",
+    { motivo: "versao-antiga" },
+  );
+}
+
+/**
  * CPF (só os números, válido) e PIN de 4 números, do teclado do aparelho. No
  * celular pessoal o CPF não vem. Formato errado conta como credencial inválida.
  */
 export function lerCpfPin(dados: Record<string, unknown>): { cpf: string | null; pin: string } {
+  const semCpf = dados.cpf === undefined || dados.cpf === null || dados.cpf === "";
+  if (semCpf && typeof dados.matricula === "string" && dados.matricula !== "") throw erroVersaoAntiga();
   if (typeof dados.pin !== "string" || !/^\d{4}$/.test(dados.pin)) throw credenciaisInvalidas();
-  if (dados.cpf === undefined || dados.cpf === null || dados.cpf === "") return { cpf: null, pin: dados.pin };
+  if (semCpf) return { cpf: null, pin: dados.pin };
   if (typeof dados.cpf !== "string" || !/^\d{11}$/.test(dados.cpf) || !cpfValido(dados.cpf)) throw credenciaisInvalidas();
   return { cpf: dados.cpf, pin: dados.pin };
 }
