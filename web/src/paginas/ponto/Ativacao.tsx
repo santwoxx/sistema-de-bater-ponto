@@ -4,12 +4,14 @@ import { Fingerprint, Tablet } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { api } from '../../api'
 import { Aviso, BotaoGoogle, Campo } from '../../componentes/Basicos'
+import UsoDoAparelho from '../../componentes/UsoDoAparelho'
 import { CHAVE_APARELHO, useSessao } from '../../contexto/Sessao'
 import { auth, criarSessaoTemporaria, entrarComGoogle, NOME_SISTEMA, type SessaoTemporaria } from '../../firebase'
 import { cancelouJanela, mensagemErro } from '../../lib/erros'
 import { formatarCnpj } from '../../lib/formatos'
 import { gravarLocal } from '../../lib/util'
-import { ordenarPorNome, paraEmpresa, type Empresa } from '../../tipos'
+import { ordenarPorNome, paraEmpresa, paraFuncionario, type Empresa, type Funcionario } from '../../tipos'
+import { primeiroNome } from './terminal/textos'
 
 class ErroAcesso extends Error {}
 
@@ -23,6 +25,10 @@ export default function Ativacao() {
   const [empresas, setEmpresas] = useState<Empresa[]>([])
   const [empresaId, setEmpresaId] = useState('')
   const [nome, setNome] = useState('')
+  // Celular pessoal: id do funcionário dono ('' = aparelho da loja).
+  const [donoId, setDonoId] = useState('')
+  const nomeSugerido = useRef('')
+  const [carregados, setCarregados] = useState<{ empresaId: string; funcionarios: Funcionario[]; erro: string } | null>(null)
   const [erro, setErro] = useState('')
   const [ocupado, setOcupado] = useState(false)
   const temporaria = useRef<SessaoTemporaria | null>(null)
@@ -33,6 +39,45 @@ export default function Ativacao() {
     },
     [],
   )
+
+  // Funcionários da empresa escolhida, para o caso de ser o celular pessoal de um deles.
+  const funcionarios = carregados?.empresaId === empresaId ? carregados.funcionarios : []
+  const erroFuncionarios = carregados?.empresaId === empresaId ? carregados.erro : ''
+  const dono = funcionarios.find((f) => f.id === donoId && f.ativo) ?? null
+  useEffect(() => {
+    const sessaoGestor = temporaria.current
+    if (etapa !== 'empresa' || !empresaId || !sessaoGestor) return
+    let cancelado = false
+    getDocs(collection(sessaoGestor.db, 'empresas', empresaId, 'funcionarios'))
+      .then((snap) => {
+        if (!cancelado) setCarregados({ empresaId, funcionarios: snap.docs.map(paraFuncionario), erro: '' })
+      })
+      .catch((err) => {
+        const erro = `Não foi possível carregar os funcionários: ${mensagemErro(err)}`
+        if (!cancelado) setCarregados({ empresaId, funcionarios: [], erro })
+      })
+    return () => {
+      cancelado = true
+    }
+  }, [etapa, empresaId])
+
+  // Ao escolher o dono, sugere o nome do aparelho (sem apagar um nome digitado).
+  function escolherDono(id: string) {
+    setDonoId(id)
+    const escolhido = funcionarios.find((f) => f.id === id)
+    sugerirNome(escolhido ? `Celular de ${primeiroNome(escolhido.nome)}` : '')
+  }
+
+  function sugerirNome(sugestao: string) {
+    if (nome.trim() === '' || nome === nomeSugerido.current) setNome(sugestao)
+    nomeSugerido.current = sugestao
+  }
+
+  function escolherEmpresa(id: string) {
+    setEmpresaId(id)
+    setDonoId('')
+    sugerirNome('')
+  }
 
   // O gestor se identifica com e-mail e senha ou com a conta Google.
   async function identificar(fazerLogin: (alvo: Auth) => Promise<UserCredential>) {
@@ -83,7 +128,10 @@ export default function Ativacao() {
     setErro('')
     setOcupado(true)
     try {
-      const credenciais = await api.ativarDispositivo({ empresaId, nome: nome.trim() }, temporaria.current.functions)
+      const credenciais = await api.ativarDispositivo(
+        { empresaId, nome: nome.trim(), funcionarioId: dono?.id ?? null },
+        temporaria.current.functions,
+      )
       // O aparelho fica sempre conectado (a sessão do painel pode ser só desta janela).
       await setPersistence(auth, indexedDBLocalPersistence)
       const { user } = await signInWithEmailAndPassword(auth, credenciais.email, credenciais.senha)
@@ -134,7 +182,7 @@ export default function Ativacao() {
         ) : (
           <form onSubmit={ativar} className="formulario">
             <Campo rotulo="Empresa deste aparelho">
-              <select value={empresaId} onChange={(e) => setEmpresaId(e.target.value)}>
+              <select value={empresaId} onChange={(e) => escolherEmpresa(e.target.value)}>
                 {empresas.map((empresa) => (
                   <option key={empresa.id} value={empresa.id}>
                     {empresa.nome}
@@ -143,8 +191,10 @@ export default function Ativacao() {
                 ))}
               </select>
             </Campo>
+            <UsoDoAparelho funcionarios={funcionarios} valor={dono?.id ?? ''} aoMudar={escolherDono} />
+            {erroFuncionarios && <Aviso tipo="alerta">{erroFuncionarios}</Aviso>}
             <Campo rotulo="Nome do aparelho" ajuda="Aparece no painel e em cada marcação.">
-              <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Tablet do caixa" maxLength={60} autoFocus />
+              <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Tablet do caixa" maxLength={60} />
             </Campo>
             {erro && <Aviso tipo="erro">{erro}</Aviso>}
             <button type="submit" className="botao primario grande" disabled={ocupado}>

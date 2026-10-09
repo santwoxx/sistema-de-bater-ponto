@@ -1584,6 +1584,18 @@ html.modo-ponto body {
   color: #8fb0ff;
 }
 
+.tela-acesso.escuro .grupo {
+  border-color: #2b3b5a;
+}
+
+.tela-acesso.escuro .caixa-marcar span {
+  color: #c9d3e3;
+}
+
+.tela-acesso.escuro .caixa-marcar strong {
+  color: #fff;
+}
+
 .terminal {
   position: fixed;
   inset: 0;

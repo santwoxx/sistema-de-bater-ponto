@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { api, type ComprovantePonto, type EspelhoParaAssinar } from '../../api'
 import { useCamera, useTelaSempreAcesa } from '../../hooks/useCamera'
 import { useAgora } from '../../hooks/useColecao'
-import { erroDeRede, mensagemErro, pinProvisorio } from '../../lib/erros'
+import { credenciaisInvalidas, erroDeRede, mensagemErro, pinProvisorio } from '../../lib/erros'
 import { problemaNoPin } from '../../lib/pin'
 import { somErro, somFoto, somSucesso } from '../../lib/sons'
 import { dataLocal } from '../../lib/tempo'
@@ -19,10 +19,11 @@ import {
   PontoRegistrado,
   SolicitacaoEnviada,
   TudoEmDia,
+  type DadosGuardada,
 } from './terminal/Resultados'
 import { podeGuardar } from './terminal/semInternet'
 import TecladoPonto, { type Rodape, type Visor } from './terminal/TecladoPonto'
-import { instrucaoDaTela, textoDeEspera, tituloDaTela } from './terminal/textos'
+import { instrucaoDaTela, mensagemCredenciais, textoDeEspera, tituloDaTela } from './terminal/textos'
 import { ETAPAS_DE_RESULTADO, OUTRO_MOTIVO, PEDIDO_VAZIO, type Etapa, type Modo, type Pedido } from './terminal/tipos'
 import TopoTerminal from './terminal/TopoTerminal'
 import { useBatidasGuardadas } from './terminal/useBatidasGuardadas'
@@ -53,24 +54,34 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
     capturar,
     diagnostico: diagnosticoCamera,
   } = useCamera()
-  const { info, deslocamento, conectado, desativado, setConectado } = useSincronizacao(diagnosticoCamera)
+  const { info, deslocamento, conectado, desativado, setConectado, conferir } = useSincronizacao(diagnosticoCamera)
   const guardadas = useBatidasGuardadas(conectado, () => setConectado(true))
   const guardarNoAparelho = guardadas.guardar
   useTelaSempreAcesa()
   const agora = new Date(useAgora(1000) + deslocamento)
   const fuso = info?.empresa.fusoHorario ?? 'America/Sao_Paulo'
+  // Celular pessoal: só o dono bate ponto aqui; a tela já usa a matrícula dele e pede só o PIN.
+  const dono = info?.dispositivo.funcionario ?? null
+  const pessoal = dono !== null
+  const donoRef = useRef(dono)
+  useEffect(() => {
+    donoRef.current = dono
+  })
 
-  const [etapa, setEtapa] = useState<Etapa>('matricula')
+  const [etapa, setEtapa] = useState<Etapa>(() => (dono ? 'pin' : 'matricula'))
   const [modo, setModo] = useState<Modo>('ponto')
-  const [matricula, setMatricula] = useState('')
+  const [matricula, setMatricula] = useState(() => dono?.matricula ?? '')
   const [pin, setPin] = useState('')
   const [contagem, setContagem] = useState(3)
   const [comprovante, setComprovante] = useState<{ dados: ComprovantePonto; foto: string } | null>(null)
-  const [guardada, setGuardada] = useState<{ matricula: string; horario: number; foto: string } | null>(null)
+  const [guardada, setGuardada] = useState<DadosGuardada | null>(null)
   const [mensagem, setMensagem] = useState('')
   const [configuracoes, setConfiguracoes] = useState(false)
-  // Versão nova do site publicada: recarrega com a tela parada na matrícula.
-  useAtualizacaoAutomatica(etapa === 'matricula' && modo === 'ponto' && matricula === '' && !configuracoes && !guardadas.enviando)
+  // Tela parada no início (matrícula; no celular pessoal, o PIN), sem nada digitado.
+  const telaInicial = pessoal ? etapa === 'pin' : etapa === 'matricula'
+  const ocioso = telaInicial && modo === 'ponto' && pin === '' && (pessoal || matricula === '') && !configuracoes
+  // Versão nova do site publicada: recarrega com a tela parada.
+  useAtualizacaoAutomatica(ocioso && !guardadas.enviando)
   const [pedido, setPedido] = useState<Pedido>(PEDIDO_VAZIO)
   const [pedidoEnviado, setPedidoEnviado] = useState<{ funcionarioNome: string; data: string; hora: string } | null>(null)
   const [erroPedido, setErroPedido] = useState('')
@@ -87,9 +98,10 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
   const [salvandoPin, setSalvandoPin] = useState(false)
 
   const reiniciar = useCallback(() => {
-    setEtapa('matricula')
+    const donoAtual = donoRef.current
+    setEtapa(donoAtual ? 'pin' : 'matricula')
     setModo('ponto')
-    setMatricula('')
+    setMatricula(donoAtual?.matricula ?? '')
     setPin('')
     setMensagem('')
     setComprovante(null)
@@ -122,9 +134,35 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
   }, [])
 
   const escolherModo = useCallback((novo: Exclude<Modo, 'ponto'>) => {
-    setMatricula('')
+    const donoAtual = donoRef.current
+    setMatricula(donoAtual?.matricula ?? '')
+    setPin('')
     setModo(novo)
+    if (donoAtual) setEtapa('pin')
   }, [])
+
+  // O uso do aparelho mudou na sincronização (virou celular pessoal ou da loja):
+  // se a tela estava parada, volta ao início certo. Este efeito vem antes do que
+  // atualiza ociosoRef, para olhar como a tela estava antes da mudança.
+  const ociosoRef = useRef(ocioso)
+  const matriculaDono = dono?.matricula ?? null
+  useEffect(() => {
+    if (ociosoRef.current) reiniciar()
+  }, [matriculaDono, reiniciar])
+  useEffect(() => {
+    ociosoRef.current = ocioso
+  })
+
+  /** Mensagem de uma recusa do servidor; matrícula ou PIN errados ganham explicação. */
+  const mensagemDaFalha = useCallback(
+    (e: unknown, matriculaDigitada: string) => {
+      if (!credenciaisInvalidas(e)) return mensagemErro(e)
+      // O gestor pode ter mudado o uso do aparelho (celular pessoal ou da loja): confere já.
+      conferir()
+      return mensagemCredenciais(matriculaDigitada, donoRef.current !== null)
+    },
+    [conferir],
+  )
 
   // --- Ações no servidor ----------------------------------------------------
 
@@ -144,7 +182,7 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
       try {
         const resultado = await guardarNoAparelho({ ...dados, dispositivoId: info?.dispositivo.id ?? '' })
         if ('erro' in resultado) return falhar(resultado.erro)
-        setGuardada({ matricula, horario: resultado.horario, foto: captura.foto })
+        setGuardada({ matricula, nome: donoRef.current?.nome ?? null, horario: resultado.horario, foto: captura.foto })
         setEtapa('guardado')
         setPin('')
         somSucesso()
@@ -177,9 +215,9 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
         setConectado(false)
         if (info && podeGuardar()) return guardarSemInternet()
       }
-      falhar(mensagemErro(e))
+      falhar(mensagemDaFalha(e, matricula))
     }
-  }, [capturar, matricula, pin, falhar, setConectado, pedirPinPessoal, conectado, info, guardarNoAparelho])
+  }, [capturar, matricula, pin, falhar, setConectado, pedirPinPessoal, conectado, info, guardarNoAparelho, mensagemDaFalha])
 
   const motivoDoPedido = pedido.motivo === OUTRO_MOTIVO ? pedido.outroMotivo.trim() : pedido.motivo
 
@@ -211,7 +249,7 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
     } catch (erro) {
       if (pinProvisorio(erro)) return pedirPinPessoal()
       if (erroDeRede(erro)) setConectado(false)
-      falhar(mensagemErro(erro))
+      falhar(mensagemDaFalha(erro, matricula))
     }
   }
 
@@ -234,10 +272,10 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
       } catch (e) {
         if (pinProvisorio(e)) return pedirPinPessoal()
         if (erroDeRede(e)) setConectado(false)
-        falhar(mensagemErro(e))
+        falhar(mensagemDaFalha(e, matricula))
       }
     },
-    [matricula, falhar, setConectado, pedirPinPessoal],
+    [matricula, falhar, setConectado, pedirPinPessoal, mensagemDaFalha],
   )
 
   async function assinar(concordo: boolean, motivo?: string) {
@@ -292,7 +330,7 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
     } catch (e) {
       setSalvandoPin(false)
       if (erroDeRede(e)) setConectado(false)
-      falhar(mensagemErro(e))
+      falhar(mensagemDaFalha(e, matricula))
     }
   }
   const salvarPinRef = useRef(salvarPinPessoal)
@@ -335,7 +373,9 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
 
   // Volta ao início após inatividade ou depois de mostrar o resultado.
   useEffect(() => {
-    const emDigitacao = (etapa === 'matricula' || etapa === 'pin') && (matricula !== '' || pin !== '' || modo !== 'ponto')
+    // No celular pessoal, a matrícula já vem preenchida: só o PIN conta como digitação.
+    const digitando = pin !== '' || modo !== 'ponto' || (!pessoal && matricula !== '')
+    const emDigitacao = (etapa === 'matricula' || etapa === 'pin') && digitando
     const criandoPin = etapa === 'novoPin' || etapa === 'confirmarPin'
     const espera = ETAPAS_DE_RESULTADO.includes(etapa)
       ? RESULTADO_MS
@@ -351,7 +391,7 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
     if (!espera) return
     const id = setTimeout(etapa === 'assinado' ? continuarAposAssinatura : reiniciar, espera)
     return () => clearTimeout(id)
-  }, [etapa, matricula, pin, novoPin, modo, pedido, indiceEspelho, reiniciar, continuarAposAssinatura])
+  }, [etapa, matricula, pin, novoPin, modo, pedido, indiceEspelho, pessoal, reiniciar, continuarAposAssinatura])
 
   // --- Teclado ----------------------------------------------------------------
 
@@ -370,7 +410,7 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
       } else if (etapa === 'pin') {
         if (tecla === 'apagar') {
           if (pin) setPin((p) => p.slice(0, -1))
-          else setEtapa('matricula')
+          else if (!donoRef.current) setEtapa('matricula')
         } else if (tecla === 'ok') {
           if (pin.length < 4) return
           if (modo === 'solicitacao') {
@@ -461,13 +501,14 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
   const capturando = modo === 'ponto' && bloqueado
   const podeConfirmar =
     etapa === 'matricula' ? matricula.length > 0 : etapa === 'pin' ? pin.length >= 4 : criandoPin ? novoPin.length >= 4 : false
-  const estadoTexto = { etapa, modo, salvandoPin, erroPin }
+  const estadoTexto = { etapa, modo, salvandoPin, erroPin, nomeDono: dono?.nome ?? null }
+  const quem = dono ? dono.nome : `Matrícula ${matricula}`
   const visor: Visor = criandoPin
-    ? { tipo: 'pin', legenda: `Matrícula ${matricula} · novo PIN`, digitos: novoPin.length }
+    ? { tipo: 'pin', legenda: `${quem} · novo PIN`, digitos: novoPin.length }
     : etapa === 'pin' || (bloqueado && pin)
-      ? { tipo: 'pin', legenda: `Matrícula ${matricula}`, digitos: pin.length }
+      ? { tipo: 'pin', legenda: quem, digitos: pin.length }
       : { tipo: 'matricula', valor: matricula }
-  const rodape: Rodape = modo !== 'ponto' || criandoPin ? 'cancelar' : etapa === 'matricula' ? 'atalhos' : null
+  const rodape: Rodape = modo !== 'ponto' || criandoPin ? 'cancelar' : telaInicial ? 'atalhos' : null
 
   return (
     <div className={capturando ? 'terminal terminal-capturando' : 'terminal'}>

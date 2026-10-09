@@ -70,6 +70,8 @@ export function ConfiguracoesAparelho({
         <dd>{info?.empresa.nome ?? '—'}</dd>
         <dt>Aparelho</dt>
         <dd>{info?.dispositivo.nome ?? '—'}</dd>
+        <dt>Uso</dt>
+        <dd>{info?.dispositivo.funcionario ? `Celular pessoal de ${info.dispositivo.funcionario.nome}` : 'Aparelho da loja (todos os funcionários)'}</dd>
       </dl>
       <div className="acoes-detalhe">
         <button type="button" className="botao" onClick={() => window.location.reload()}>

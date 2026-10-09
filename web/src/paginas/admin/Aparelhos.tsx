@@ -1,17 +1,18 @@
 import { collection } from 'firebase/firestore'
-import { Ban, Copy, Tablet } from 'lucide-react'
+import { Ban, Copy, Smartphone, Tablet } from 'lucide-react'
 import { useState } from 'react'
 import { api } from '../../api'
 import { Aviso, CabecalhoPagina, Carregando, Selo, Vazio } from '../../componentes/Basicos'
 import Modal from '../../componentes/Modal'
 import { useNotificar } from '../../componentes/Notificacoes'
+import UsoDoAparelho from '../../componentes/UsoDoAparelho'
 import { useEmpresaAtual } from '../../contexto/Empresa'
 import { db } from '../../firebase'
 import { useAgora, useColecao } from '../../hooks/useColecao'
 import { mensagemDaCamera, navegadorInterno, plataformaDe } from '../../lib/camera'
 import { mensagemErro } from '../../lib/erros'
 import { formatarDataHora, tempoRelativo } from '../../lib/tempo'
-import { paraDispositivo, type Dispositivo } from '../../tipos'
+import { paraDispositivo, paraFuncionario, type Dispositivo, type Funcionario } from '../../tipos'
 
 const ONLINE_MS = 20 * 60_000
 
@@ -42,6 +43,21 @@ function SituacaoCamera({ aparelho }: { aparelho: Dispositivo }) {
       <Selo cor={camera.estado === 'erro' ? 'vermelho' : 'amarelo'}>{camera.estado === 'toque' ? 'Esperando toque' : 'Com problema'}</Selo>
       <small className="bloco">{problemaDaCamera(camera.codigo)}</small>
     </span>
+  )
+}
+
+/** Aparelho da loja ou celular pessoal (com o aviso se o dono foi desativado). */
+function UsoAtual({ aparelho, funcionarios }: { aparelho: Dispositivo; funcionarios: Funcionario[] }) {
+  if (!aparelho.funcionarioId) return <Selo>Loja (todos)</Selo>
+  const dono = funcionarios.find((f) => f.id === aparelho.funcionarioId)
+  const nome = dono?.nome ?? aparelho.funcionarioNome ?? 'funcionário removido'
+  const donoInativo = aparelho.ativo && dono !== undefined && !dono.ativo
+  return (
+    <>
+      <Selo cor={donoInativo ? 'amarelo' : 'azul'}>Celular pessoal</Selo>
+      <small className="bloco">{nome}</small>
+      {donoInativo && <small className="bloco">funcionário desativado: ninguém bate ponto neste aparelho</small>}
+    </>
   )
 }
 
@@ -77,7 +93,9 @@ export default function Aparelhos() {
   const notificar = useNotificar()
   const agora = useAgora(30_000)
   const aparelhos = useColecao(() => collection(db, 'empresas', empresa.id, 'dispositivos'), paraDispositivo, `${empresa.id}:aparelhos`)
+  const funcionarios = useColecao(() => collection(db, 'empresas', empresa.id, 'funcionarios'), paraFuncionario, `${empresa.id}:todos`)
   const [desativando, setDesativando] = useState<Dispositivo | null>(null)
+  const [mudandoUso, setMudandoUso] = useState<Dispositivo | null>(null)
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState('')
   const endereco = `${window.location.origin}/ponto`
@@ -118,7 +136,7 @@ export default function Aparelhos() {
         <h2>Como ativar um aparelho</h2>
         <ol>
           <li>
-            No aparelho da loja, abra o endereço:{' '}
+            No aparelho da loja (ou no celular do funcionário), abra o endereço:{' '}
             <span className="endereco">
               <code>{endereco}</code>
               <button type="button" className="botao-icone" onClick={copiar} aria-label="Copiar endereço">
@@ -126,12 +144,18 @@ export default function Aparelhos() {
               </button>
             </span>
           </li>
-          <li>Entre com o seu e-mail e senha de gestor, escolha a empresa "{empresa.nome}" e dê um nome ao aparelho.</li>
+          <li>
+            Entre com o seu e-mail e senha de gestor (ou a conta Google), escolha a empresa "{empresa.nome}", diga se é o aparelho da
+            loja ou o celular pessoal de um funcionário e dê um nome ao aparelho.
+          </li>
           <li>
             Se aparecer o botão "Ligar a câmera", toque nele, e permita o uso da câmera quando o navegador pedir. Pronto: o aparelho
             fica no modo ponto.
           </li>
         </ol>
+        <p className="texto-suave">
+          No celular pessoal, só o dono bate ponto, e a tela já pede só o PIN dele. Dá para mudar o uso depois, na coluna "Uso".
+        </p>
         <p className="texto-suave">
           Dica: no Android, use "Fixar app" (ou um navegador de quiosque); no iPad, use o "Acesso Guiado". Assim ninguém sai da tela do
           ponto.
@@ -169,9 +193,9 @@ export default function Aparelhos() {
                 <tr>
                   <th>Aparelho</th>
                   <th>Situação</th>
+                  <th>Uso</th>
                   <th>Câmera</th>
                   <th>Último registro de ponto</th>
-                  <th>Navegador</th>
                   <th>Ativado</th>
                   <th aria-label="Ações" />
                 </tr>
@@ -183,6 +207,7 @@ export default function Aparelhos() {
                     <tr key={a.id} className={a.ativo ? '' : 'desconsiderada'}>
                       <td>
                         <strong>{a.nome}</strong>
+                        <small className="bloco">{resumirNavegador(a.agenteUsuario)}</small>
                       </td>
                       <td>
                         {!a.ativo ? (
@@ -194,10 +219,17 @@ export default function Aparelhos() {
                         )}
                       </td>
                       <td>
+                        <UsoAtual aparelho={a} funcionarios={funcionarios.dados} />
+                        {a.ativo && (
+                          <button type="button" className="link bloco" onClick={() => setMudandoUso(a)}>
+                            Mudar
+                          </button>
+                        )}
+                      </td>
+                      <td>
                         <SituacaoCamera aparelho={a} />
                       </td>
                       <td>{a.ultimoRegistroEm ? formatarDataHora(a.ultimoRegistroEm.toDate(), empresa.fusoHorario) : '—'}</td>
-                      <td>{resumirNavegador(a.agenteUsuario)}</td>
                       <td>
                         {a.criadoEm ? formatarDataHora(a.criadoEm.toDate(), empresa.fusoHorario) : '—'}
                         {a.criadoPor && <small className="bloco">por {a.criadoPor.nome}</small>}
@@ -217,6 +249,10 @@ export default function Aparelhos() {
           </div>
         )}
       </section>
+
+      {mudandoUso && (
+        <MudarUso aparelho={mudandoUso} funcionarios={funcionarios.dados} empresaId={empresa.id} aoFechar={() => setMudandoUso(null)} />
+      )}
 
       {desativando && (
         <Modal
@@ -242,5 +278,64 @@ export default function Aparelhos() {
         </Modal>
       )}
     </>
+  )
+}
+
+// Muda o uso de um aparelho já ativado; o servidor passa a valer na hora, e a
+// tela do aparelho muda na próxima sincronização (em até 5 minutos).
+function MudarUso({
+  aparelho,
+  funcionarios,
+  empresaId,
+  aoFechar,
+}: {
+  aparelho: Dispositivo
+  funcionarios: Funcionario[]
+  empresaId: string
+  aoFechar: () => void
+}) {
+  const notificar = useNotificar()
+  const donoAtivo = funcionarios.some((f) => f.id === aparelho.funcionarioId && f.ativo)
+  const [donoId, setDonoId] = useState(donoAtivo ? (aparelho.funcionarioId ?? '') : '')
+  const [salvando, setSalvando] = useState(false)
+  const [erro, setErro] = useState('')
+
+  async function salvar() {
+    setErro('')
+    setSalvando(true)
+    try {
+      await api.salvarDispositivo({ empresaId, dispositivoId: aparelho.id, funcionarioId: donoId || null })
+      const dono = funcionarios.find((f) => f.id === donoId)
+      notificar(dono ? `"${aparelho.nome}" agora é o celular pessoal de ${dono.nome}.` : `"${aparelho.nome}" agora é aparelho da loja.`)
+      aoFechar()
+    } catch (e) {
+      setErro(mensagemErro(e))
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  return (
+    <Modal
+      titulo={`Uso do aparelho "${aparelho.nome}"`}
+      largura="pequena"
+      aoFechar={aoFechar}
+      rodape={
+        <>
+          <button type="button" className="botao fantasma" onClick={aoFechar} disabled={salvando}>
+            Cancelar
+          </button>
+          <button type="button" className="botao primario" onClick={salvar} disabled={salvando}>
+            <Smartphone size={16} aria-hidden /> {salvando ? 'Salvando...' : 'Salvar'}
+          </button>
+        </>
+      }
+    >
+      <UsoDoAparelho funcionarios={funcionarios} valor={donoId} aoMudar={setDonoId} />
+      <p className="texto-suave">
+        A tela do aparelho muda em até 5 minutos, sem precisar ativá-lo de novo. Para ser na hora, recarregue a tela do aparelho.
+      </p>
+      {erro && <Aviso tipo="erro">{erro}</Aviso>}
+    </Modal>
   )
 }

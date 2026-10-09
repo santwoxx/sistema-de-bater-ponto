@@ -36,6 +36,8 @@ Sistema de controle de ponto para lojas e pequenas empresas. **Tudo roda no Fire
 - **Câmera feita para celular de todo tipo:** se a câmera frontal não abre em HD, usa uma resolução menor; se o pedido de permissão não aparece, mostra o botão **"Ligar a câmera"**; religa sozinha quando cai ou quando a tela volta; e, se estiver bloqueada, mostra o passo a passo para liberar no Android ou no iPhone (e liga sozinha quando liberada). O gestor vê o estado da câmera de cada aparelho no painel.
 - **Atualização automática:** quando sai uma versão nova do sistema, o aparelho recarrega sozinho num momento sem ninguém usando.
 - Ativado uma única vez por um gestor e desativável pelo painel a qualquer momento.
+- **Celular pessoal:** o aparelho pode ser o celular de um funcionário. Aí só ele bate ponto nele, e a tela já mostra "Olá, Maria! Digite seu PIN", sem pedir a matrícula. Outra pessoa que tente usar esse celular é recusada (como matrícula ou PIN errados, contando nos bloqueios do aparelho). O gestor escolhe o uso na ativação e pode mudar depois, no painel.
+- **Mensagem clara quando a matrícula ou o PIN não conferem:** a tela mostra a matrícula digitada e lembra que ela é o número cadastrado pelo gestor (não o CPF nem o telefone). No celular pessoal, avisa só "PIN incorreto".
 
 ### No painel (`/admin`)
 
@@ -214,7 +216,7 @@ A publicação não faz perguntas: cria o site do Hosting se faltar e aceita a l
 ### 6. Coloque o aparelho na loja
 
 1. No tablet ou celular, abra `https://SEU-PROJETO.web.app/ponto`.
-2. Entre com o e-mail e a senha de um gestor, escolha a empresa e dê um nome ao aparelho (ex.: "Tablet do caixa").
+2. Entre com o e-mail e a senha de um gestor (ou a conta Google), escolha a empresa, diga se é o **aparelho da loja** (todos batem ponto, cada um com a sua matrícula) ou o **celular pessoal** de um funcionário (só ele bate ponto, digitando só o PIN) e dê um nome ao aparelho (ex.: "Tablet do caixa" ou "Celular da Maria").
 3. **Permita a câmera** quando o navegador pedir.
 4. Deixe o aparelho em modo quiosque:
    - **Android**: no Chrome, menu ⋮ → **Instalar app** (ou "Adicionar à tela inicial") → abra pelo ícone. Depois ative a **Fixação de app** (Configurações → Segurança) para ninguém sair da tela.
@@ -226,7 +228,7 @@ A publicação não faz perguntas: cria o site do Hosting se faltar e aceita a l
 
 ## Uso no dia a dia
 
-**Funcionário:** digita a matrícula → ✓ → digita o PIN → ✓ → olha para a câmera → vê o comprovante. A 1ª batida do dia é Entrada, a 2ª Saída, a 3ª Entrada, e assim por diante.
+**Funcionário:** digita a matrícula → ✓ → digita o PIN → ✓ → olha para a câmera → vê o comprovante. A 1ª batida do dia é Entrada, a 2ª Saída, a 3ª Entrada, e assim por diante. No **celular pessoal**, a matrícula já vem preenchida: só o PIN → ✓ → câmera.
 
 **Funcionário que esqueceu de bater:** no aparelho, toca em **"Esqueci de bater o ponto"** → matrícula → PIN → informa o dia (até 31 dias atrás), o horário e o motivo → envia. O pedido vai para a gestora.
 
@@ -247,6 +249,7 @@ A publicação não faz perguntas: cria o site do Hosting se faltar e aceita a l
 - **Papel assinado:** Espelho de ponto → **Imprimir / PDF**. Se o funcionário já assinou no aparelho, a impressão sai com os dados da assinatura eletrônica. Para imprimir os espelhos de todos de uma vez: **Exportar dados → Espelhos para imprimir ou PDF**.
 - **Arquivo para a contabilidade:** **Exportar dados** → Resumo por funcionário (totais) ou Espelho diário (dia a dia), no período e com os funcionários que quiser.
 - **Aparelho perdido ou trocado:** Aparelhos de ponto → **Desativar**. Ele para de registrar na hora.
+- **Celular pessoal ou aparelho da loja:** Aparelhos de ponto → coluna **Uso** → **Mudar**. Não precisa ativar de novo: o servidor passa a valer na hora e a tela do aparelho muda em até 5 minutos (ou na hora, recarregando a tela). Se o dono for desativado, ninguém bate ponto naquele celular até você mudar o uso.
 
 **Ajustes por empresa** (Empresas → editar):
 
@@ -325,7 +328,8 @@ No GitHub, cada envio roda o `npm run verificar`, a auditoria das dependências 
 - **PIN pessoal:** o gestor só define um PIN provisório; o funcionário cria o dele no primeiro uso. Assim a empresa não conhece o PIN que bate o ponto e assina o espelho.
 - **Guardado só como hash** (scrypt com sal), numa coleção que nenhum navegador lê. PINs óbvios (1234, 1111) são recusados.
 - **Bloqueios:** 5 erros seguidos bloqueiam a matrícula por 15 minutos, depois 30, depois 1 hora; 25 erros em 15 minutos bloqueiam o aparelho. Cada tentativa é reservada numa transação **antes** de o PIN ser conferido, então disparar tentativas em paralelo não burla o limite. Todo bloqueio vai para a auditoria com a foto de quem tentou.
-- **Sem pistas para quem tenta adivinhar:** matrícula inexistente e PIN errado dão a mesma resposta, no mesmo tempo.
+- **Sem pistas para quem tenta adivinhar:** matrícula inexistente e PIN errado dão a mesma resposta, no mesmo tempo. No celular pessoal, a matrícula de outra pessoa recebe a mesma resposta e conta nos erros do aparelho, não nos da matrícula (ninguém bloqueia o PIN de um colega pelo próprio celular).
+- **Log sem dado pessoal desnecessário:** o log de tentativa recusada guarda a matrícula digitada para o suporte, mas um número comprido (CPF ou telefone digitado por engano) aparece só com os 2 primeiros dígitos e o tamanho. O PIN nunca vai para o log.
 
 **Marcações**
 

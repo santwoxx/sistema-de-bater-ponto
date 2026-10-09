@@ -11,6 +11,8 @@ export const CHAVE_INFO = 'ponto.info'
 const SINCRONIZAR_A_CADA_MS = 5 * 60_000
 /** Mudança no estado da câmera é informada ao painel logo depois (sem esperar 5 min). */
 const AVISAR_CAMERA_MS = 2_000
+/** Sincronização fora de hora (ver conferir): no máximo uma a cada 30 s. */
+const CONFERIR_MS = 30_000
 
 // Hora oficial: o relógio do aparelho pode estar errado, então a tela usa a
 // hora do servidor (corrigida pela latência). O registro em si é sempre
@@ -25,9 +27,11 @@ export function useSincronizacao(camera: DiagnosticoCamera) {
   useEffect(() => {
     cameraRef.current = camera
   })
+  const ultimaRef = useRef(0)
 
   const sincronizar = useCallback(async () => {
     const inicio = Date.now()
+    ultimaRef.current = inicio
     const inicioContinuo = performance.now()
     try {
       const resposta = await api.sincronizarDispositivo({ camera: cameraRef.current })
@@ -72,5 +76,10 @@ export function useSincronizacao(camera: DiagnosticoCamera) {
     return () => clearTimeout(id)
   }, [situacaoCamera, sincronizar])
 
-  return { info, deslocamento, conectado, desativado, setConectado }
+  /** Confere já com o servidor (ex.: o gestor pode ter mudado o uso do aparelho). */
+  const conferir = useCallback(() => {
+    if (Date.now() - ultimaRef.current > CONFERIR_MS) void sincronizar()
+  }, [sincronizar])
+
+  return { info, deslocamento, conectado, desativado, setConectado, conferir }
 }

@@ -211,6 +211,14 @@ export interface Identificacao {
 }
 
 /**
+ * Matrícula digitada, para o log: ajuda o suporte (ex.: a pessoa digitou o CPF
+ * em vez da matrícula) sem gravar um CPF ou telefone inteiro.
+ */
+export function matriculaParaLog(matricula: string): string {
+  return matricula.length <= 6 ? matricula : `${matricula.slice(0, 2)}… (${matricula.length} dígitos)`;
+}
+
+/**
  * Identificação completa no aparelho: aparelho ativo, funcionário ativo com a
  * matrícula informada e PIN certo. O PIN provisório só é aceito para criar o
  * PIN pessoal (aceitarProvisorio).
@@ -235,7 +243,10 @@ export async function identificarNoAparelho(params: {
   const dispositivo = exigirAparelhoAtivo(dispositivoSnap.data(), empresa);
 
   const funcionarioDoc = encontrados.docs[0];
-  const funcionario = funcionarioDoc?.get("ativo") === true ? funcionarioDoc.data() : null;
+  // Celular pessoal: só o dono bate ponto nele. Outra matrícula é tratada como
+  // inexistente (mesma resposta e mesmo tempo, e conta nos erros do aparelho).
+  const doDono = !dispositivo.funcionarioId || funcionarioDoc?.id === dispositivo.funcionarioId;
+  const funcionario = doDono && funcionarioDoc?.get("ativo") === true ? funcionarioDoc.data() : null;
   const funcionarioId = funcionario ? funcionarioDoc.id : null;
   const credenciaisRef = funcionarioId ? empresaRef.collection("credenciais").doc(funcionarioId) : null;
 
@@ -250,7 +261,8 @@ export async function identificarNoAparelho(params: {
   }
 
   if (!acertou || !funcionario || !funcionarioId || !credenciaisRef || !credenciais) {
-    logger.warn("Matrícula ou PIN inválidos no aparelho", { empresaId, dispositivoId, funcionarioId });
+    // O PIN nunca vai para o log.
+    logger.warn("Matrícula ou PIN inválidos no aparelho", { empresaId, dispositivoId, funcionarioId, matricula: matriculaParaLog(matricula) });
     await auditarBloqueios({
       reserva,
       empresaId,

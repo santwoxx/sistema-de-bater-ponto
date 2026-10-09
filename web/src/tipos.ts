@@ -103,6 +103,9 @@ export interface Dispositivo {
   agenteUsuario?: string
   desativadoEm?: Timestamp | null
   desativadoPor?: Autor
+  /** Celular pessoal: só este funcionário bate ponto no aparelho. null = aparelho da loja. */
+  funcionarioId: string | null
+  funcionarioNome: string | null
   /** Estado da câmera informado pelo aparelho na última sincronização. */
   camera?: {
     estado: 'iniciando' | 'pronta' | 'toque' | 'erro'
@@ -277,6 +280,8 @@ export function paraDispositivo(snap: DocumentSnapshot): Dispositivo {
     agenteUsuario: d.agenteUsuario,
     desativadoEm: d.desativadoEm ?? null,
     desativadoPor: d.desativadoPor,
+    funcionarioId: typeof d.funcionarioId === 'string' ? d.funcionarioId : null,
+    funcionarioNome: typeof d.funcionarioNome === 'string' ? d.funcionarioNome : null,
     camera: d.camera,
   }
 }

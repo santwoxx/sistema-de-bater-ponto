@@ -5,7 +5,7 @@ export { configurarPrimeiroAdmin } from "./sistema";
 export { salvarEmpresa } from "./empresas";
 export { salvarUsuario } from "./usuarios";
 export { salvarFuncionario } from "./funcionarios";
-export { ativarDispositivo, desativarDispositivo, sincronizarDispositivo } from "./dispositivos";
+export { ativarDispositivo, desativarDispositivo, salvarDispositivo, sincronizarDispositivo } from "./dispositivos";
 export { registrarPonto } from "./ponto";
 export { registrarPontoGuardado } from "./semInternet";
 export { definirPin } from "./pinPessoal";

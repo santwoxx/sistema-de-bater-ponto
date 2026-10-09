@@ -9,6 +9,24 @@ export interface EstadoTexto {
   salvandoPin: boolean
   /** Problema com o PIN novo digitado (ex.: sequência). */
   erroPin: string
+  /** Celular pessoal: nome do dono (a tela pede só o PIN dele). */
+  nomeDono?: string | null
+}
+
+/** "ELIANA MOREIRA DOS SANTOS" → "Eliana". */
+export function primeiroNome(nome: string): string {
+  const primeiro = nome.trim().split(/\s+/)[0] ?? ''
+  return primeiro.charAt(0).toUpperCase() + primeiro.slice(1).toLowerCase()
+}
+
+/**
+ * Matrícula ou PIN recusados. O servidor dá a mesma resposta para os dois (para
+ * ninguém descobrir quais matrículas existem); a tela mostra o que foi digitado
+ * e lembra o que é a matrícula. No celular pessoal, a matrícula é a do dono.
+ */
+export function mensagemCredenciais(matricula: string, pessoal: boolean): string {
+  if (pessoal) return 'PIN incorreto. Confira o seu PIN e tente de novo.'
+  return `Matrícula ${matricula} ou PIN inválidos. A matrícula é o número que o gestor cadastrou para você (não é o CPF nem o telefone). Confira também o PIN.`
 }
 
 export function textoDeEspera({ modo, salvandoPin }: Pick<EstadoTexto, 'modo' | 'salvandoPin'>): string {
@@ -19,7 +37,8 @@ export function textoDeEspera({ modo, salvandoPin }: Pick<EstadoTexto, 'modo' | 
 }
 
 export function tituloDaTela(estado: EstadoTexto): string {
-  const { etapa, modo, salvandoPin } = estado
+  const { etapa, modo, salvandoPin, nomeDono } = estado
+  if (nomeDono && etapa === 'pin' && modo === 'ponto') return `Olá, ${primeiroNome(nomeDono)}! Digite seu PIN`
   if (etapa === 'novoPin') return modo === 'trocarPin' ? 'Digite o novo PIN' : 'Crie seu PIN pessoal'
   if (etapa === 'confirmarPin') return 'Digite o novo PIN de novo'
   if (etapa === 'pin') return modo === 'trocarPin' ? 'Digite seu PIN atual' : 'Digite seu PIN'

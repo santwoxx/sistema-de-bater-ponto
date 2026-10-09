@@ -67,7 +67,8 @@ export type Sincronizacao =
   | {
       ativo: true
       agora: number
-      dispositivo: { id: string; nome: string }
+      /** funcionario: dono, se for o celular pessoal de alguém (só ele bate ponto e digita só o PIN). */
+      dispositivo: { id: string; nome: string; funcionario?: { nome: string; matricula: string } | null }
       empresa: { id: string; nome: string; fusoHorario: string; ativo: boolean }
       /** Para guardar batidas se a internet cair (ver paginas/ponto/terminal/semInternet.ts). */
       semInternet?: DadosSemInternet | null
@@ -78,10 +79,12 @@ export const api = {
   salvarEmpresa: funcao<DadosEmpresa, { id: string }>('salvarEmpresa'),
   salvarUsuario: funcao<DadosUsuario, { uid: string }>('salvarUsuario'),
   salvarFuncionario: funcao<DadosFuncionario, { id: string }>('salvarFuncionario'),
-  ativarDispositivo: funcao<{ empresaId: string; nome: string }, { email: string; senha: string; empresaNome: string }>(
+  ativarDispositivo: funcao<{ empresaId: string; nome: string; funcionarioId?: string | null }, { email: string; senha: string; empresaNome: string }>(
     'ativarDispositivo',
   ),
   desativarDispositivo: funcao<{ empresaId: string; dispositivoId: string }, { ok: true }>('desativarDispositivo'),
+  // Uso do aparelho: celular pessoal de um funcionário (funcionarioId) ou aparelho da loja (null).
+  salvarDispositivo: funcao<{ empresaId: string; dispositivoId: string; funcionarioId: string | null }, { ok: true }>('salvarDispositivo'),
   // O aparelho informa o estado da câmera, que o gestor vê em "Aparelhos de ponto".
   sincronizarDispositivo: funcao<{ camera?: DiagnosticoCamera }, Sincronizacao>('sincronizarDispositivo', 15_000),
   registrarPonto: funcao<

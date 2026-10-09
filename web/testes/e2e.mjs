@@ -948,6 +948,47 @@ await etapa('batida sem internet: guardada cifrada, conferida quando chega e mar
   await falha(getDoc(doc(admin.db, 'sistema', 'semInternet')), 'permission-denied')
 })
 
+await etapa('celular pessoal: só o dono bate ponto nele (digitando só o PIN), e a gestora muda o uso pelo painel', async () => {
+  const pessoal = cliente('pessoal')
+  const ativar = (funcionarioId) => gestora.chamar('ativarDispositivo', { empresaId: empresaA, nome: 'Celular da Maria', funcionarioId })
+  await falha(ativar('nao-existe'), 'functions/invalid-argument', /Dono do aparelho/)
+  const cred = await ativar(maria)
+  const { user } = await pessoal.entrar(cred.email, cred.senha)
+  const dispositivo = await getDoc(doc(gestora.db, 'empresas', empresaA, 'dispositivos', user.uid))
+  assert.equal(dispositivo.get('funcionarioNome'), 'Maria Souza')
+  // A tela do aparelho recebe o dono (nome e matrícula do cadastro atual); o da loja não tem dono.
+  assert.deepEqual((await pessoal.chamar('sincronizarDispositivo')).dispositivo.funcionario, { nome: 'Maria Souza', matricula: '12' })
+  assert.equal((await aparelho.chamar('sincronizarDispositivo')).dispositivo.funcionario, null)
+
+  const bater = (matricula, pin) => pessoal.chamar('registrarPonto', { idRequisicao: id(), matricula, pin, foto: jpeg(900), miniatura: jpeg(200) })
+  // Outro funcionário, mesmo com o PIN certo, recebe a resposta de matrícula ou PIN inválidos.
+  const recusa = await falha(bater('7', PIN_JOAO), 'functions/permission-denied', /inválidos/)
+  assert.equal(recusa.details?.motivo, 'credenciais-invalidas')
+  await falha(pessoal.chamar('consultarEspelhosPendentes', { matricula: '7', pin: PIN_JOAO }), 'functions/permission-denied', /inválidos/)
+  // A recusa não conta como erro de PIN do João (ninguém bloqueia a matrícula dele pelo celular de outra pessoa).
+  assert.equal((await aparelho.chamar('consultarEspelhosPendentes', { matricula: '7', pin: PIN_JOAO })).funcionarioNome, 'João Lima')
+  assert.equal((await bater('12', PIN_MARIA)).funcionarioNome, 'Maria Souza')
+
+  // Só quem gerencia a empresa muda o uso; vale na hora no servidor e na próxima sincronização da tela.
+  const mudar = (quem, funcionarioId) => quem.chamar('salvarDispositivo', { empresaId: empresaA, dispositivoId: user.uid, funcionarioId })
+  await falha(mudar(outraGestora, null), 'functions/permission-denied')
+  await falha(mudar(pessoal, null), 'functions/permission-denied')
+  await falha(mudar(gestora, 'nao-existe'), 'functions/invalid-argument', /Dono do aparelho/)
+  await mudar(gestora, null)
+  assert.equal((await pessoal.chamar('sincronizarDispositivo')).dispositivo.funcionario, null)
+  assert.equal((await bater('7', PIN_JOAO)).funcionarioNome, 'João Lima')
+  await mudar(gestora, joao)
+  assert.deepEqual((await pessoal.chamar('sincronizarDispositivo')).dispositivo.funcionario, { nome: 'João Lima', matricula: '7' })
+  await falha(bater('12', PIN_MARIA), 'functions/permission-denied', /inválidos/)
+  const usos = (await getDocs(query(collection(gestora.db, 'empresas', empresaA, 'auditoria'), where('acao', '==', 'dispositivo.uso')))).docs
+  assert.deepEqual(usos.map((d) => d.get('descricao')).sort(), [
+    'Aparelho "Celular da Maria" passou a ser o aparelho da loja (todos os funcionários).',
+    'Aparelho "Celular da Maria" passou a ser o celular pessoal de João Lima.',
+  ])
+  await gestora.chamar('desativarDispositivo', { empresaId: empresaA, dispositivoId: user.uid })
+  await falha(mudar(gestora, maria), 'functions/not-found')
+})
+
 await etapa('aparelho desativado para de registrar na hora', async () => {
   await gestora.chamar('desativarDispositivo', { empresaId: empresaA, dispositivoId: uidAparelho })
   await falha(

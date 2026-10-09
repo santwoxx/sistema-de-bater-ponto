@@ -61,13 +61,21 @@ export function PontoRegistrado({
   )
 }
 
+/** Batida feita sem internet (nome: dono do celular pessoal, se for o caso). */
+export interface DadosGuardada {
+  matricula: string
+  nome: string | null
+  horario: number
+  foto: string
+}
+
 /** Batida feita sem internet: guardada no aparelho, vai sozinha quando a conexão voltar. */
 export function PontoGuardado({
   guardada,
   fuso,
   aoFechar,
 }: {
-  guardada: { matricula: string; horario: number; foto: string }
+  guardada: DadosGuardada
   fuso: string
   aoFechar: () => void
 }) {
@@ -77,7 +85,7 @@ export function PontoGuardado({
       <CloudOff size={64} aria-hidden />
       <h2>Batida guardada</h2>
       <img src={guardada.foto} alt="" className="resultado-foto" />
-      <strong className="resultado-nome">Matrícula {guardada.matricula}</strong>
+      <strong className="resultado-nome">{guardada.nome ?? `Matrícula ${guardada.matricula}`}</strong>
       <span className="resultado-hora">{horaLocal(horario, fuso)}</span>
       <span>{dataPorExtenso(horario, fuso)}</span>
       <p>Estamos sem internet. A batida ficou guardada neste aparelho e vai sozinha quando a conexão voltar; o PIN é conferido nessa hora.</p>
