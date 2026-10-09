@@ -2,6 +2,7 @@ import { deleteApp, FirebaseError, initializeApp, type FirebaseOptions } from 'f
 import {
   browserLocalPersistence,
   browserPopupRedirectResolver,
+  browserSessionPersistence,
   connectAuthEmulator,
   deleteUser,
   getAdditionalUserInfo,
@@ -48,7 +49,9 @@ export const app = initializeApp(configuracao)
 // Sem o módulo de popup no início: o script e o iframe do Google só são carregados
 // no clique em "Entrar com Google" (ver entrarComGoogle). A tela do ponto e o
 // resto do painel não carregam nada de fora.
-export const auth = initializeAuth(app, { persistence: [indexedDBLocalPersistence, browserLocalPersistence] })
+// A sessão "só desta janela" (login sem "Manter conectado") fica no
+// sessionStorage: ele precisa estar na lista para a sessão sobreviver a um F5.
+export const auth = initializeAuth(app, { persistence: [indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence] })
 export const db = getFirestore(app)
 export const functions = getFunctions(app, REGIAO_FUNCOES)
 

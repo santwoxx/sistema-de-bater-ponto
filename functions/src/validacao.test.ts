@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cnpjOpcional, cnpjValido, cpf, cpfValido, matricula, normalizarMatricula, pin, pinTrivial, senha, texto } from "./validacao";
+import { cnpjOpcional, cnpjValido, cpf, cpfValido, estadoDaCamera, matricula, normalizarMatricula, pin, pinTrivial, senha, texto } from "./validacao";
 
 describe("CPF", () => {
   it("aceita CPF válido com ou sem máscara", () => {
@@ -102,5 +102,29 @@ describe("Senha de administrador e gestor", () => {
   it("recusa senha que contém o próprio e-mail", () => {
     expect(() => senha("gisele2026!", "gisele@loja.com")).toThrow(/e-mail/);
     expect(senha("gisele2026!", "ana@loja.com")).toBe("gisele2026!");
+  });
+});
+
+describe("estado da câmera informado pelo aparelho", () => {
+  it("guarda só o que está no formato esperado", () => {
+    expect(
+      estadoDaCamera({ estado: "erro", codigo: "NotAllowedError", detalhe: "Permission denied", permissao: "denied", resolucao: "1280x720" }),
+    ).toEqual({ estado: "erro", codigo: "NotAllowedError", detalhe: "Permission denied", permissao: "denied", resolucao: "1280x720" });
+    expect(estadoDaCamera({ estado: "pronta", codigo: "<script>", permissao: "talvez", resolucao: "grande", detalhe: 7 })).toEqual({
+      estado: "pronta",
+      codigo: null,
+      detalhe: null,
+      permissao: "desconhecida",
+      resolucao: null,
+    });
+  });
+
+  it("limpa e corta o detalhe e descarta estado desconhecido", () => {
+    const longo = estadoDaCamera({ estado: "erro", detalhe: "a‮b\nc" + "x".repeat(500) });
+    expect(longo?.detalhe?.startsWith("ab c")).toBe(true);
+    expect(longo?.detalhe?.length).toBe(160);
+    expect(estadoDaCamera({ estado: "quebrada" })).toBeNull();
+    expect(estadoDaCamera(null)).toBeNull();
+    expect(estadoDaCamera(["erro"])).toBeNull();
   });
 });

@@ -1,5 +1,6 @@
 import { httpsCallable, type Functions } from 'firebase/functions'
 import { functions } from './firebase'
+import type { DiagnosticoCamera } from './hooks/useCamera'
 import type { DocumentoEspelho } from './lib/espelho'
 import type { DadosSemInternet, PacoteSelado, ResultadoEnvio } from './paginas/ponto/terminal/semInternet'
 import type { TipoAbono } from './tipos'
@@ -81,7 +82,8 @@ export const api = {
     'ativarDispositivo',
   ),
   desativarDispositivo: funcao<{ empresaId: string; dispositivoId: string }, { ok: true }>('desativarDispositivo'),
-  sincronizarDispositivo: funcao<Record<string, never>, Sincronizacao>('sincronizarDispositivo', 15_000),
+  // O aparelho informa o estado da câmera, que o gestor vê em "Aparelhos de ponto".
+  sincronizarDispositivo: funcao<{ camera?: DiagnosticoCamera }, Sincronizacao>('sincronizarDispositivo', 15_000),
   registrarPonto: funcao<
     { idRequisicao: string; matricula: string; pin: string; foto: string; miniatura: string },
     ComprovantePonto

@@ -33,6 +33,8 @@ Sistema de controle de ponto para lojas e pequenas empresas. **Tudo roda no Fire
 - **Sem internet, o ponto continua:** a batida (com foto) fica guardada no aparelho, cifrada, e é enviada sozinha quando a conexão volta. O topo da tela mostra quantas estão guardadas; o PIN é conferido quando a batida chega ao servidor, e as recusadas (PIN errado, por exemplo) aparecem nos alertas do painel. Vale para até 72 horas sem internet; "Esqueci de bater o ponto", "Assinar meu espelho" e "Trocar meu PIN" precisam de conexão.
 - Relógio sincronizado com o servidor, aviso de "Sem internet", tela sempre acesa e tela cheia. Pode ser instalado como aplicativo (PWA).
 - Funciona em tablet, computador e **celular** (em pé ou deitado): a moldura do rosto sempre cabe inteira na câmera e, no celular em pé, na hora da foto a câmera ocupa a tela toda.
+- **Câmera feita para celular de todo tipo:** se a câmera frontal não abre em HD, usa uma resolução menor; se o pedido de permissão não aparece, mostra o botão **"Ligar a câmera"**; religa sozinha quando cai ou quando a tela volta; e, se estiver bloqueada, mostra o passo a passo para liberar no Android ou no iPhone (e liga sozinha quando liberada). O gestor vê o estado da câmera de cada aparelho no painel.
+- **Atualização automática:** quando sai uma versão nova do sistema, o aparelho recarrega sozinho num momento sem ninguém usando.
 - Ativado uma única vez por um gestor e desativável pelo painel a qualquer momento.
 
 ### No painel (`/admin`)
@@ -46,7 +48,7 @@ Sistema de controle de ponto para lojas e pequenas empresas. **Tudo roda no Fire
 | **Fechamento mensal** | Congela o espelho de todos os funcionários de um mês e envia para assinatura. Mostra quem assinou, quem contestou e quem falta, com os totais de cada um; CSV do mês para a folha. Reabrir um espelho assinado exige motivo e guarda a versão anterior |
 | **Exportar dados** | Baixa os dados de ponto da empresa escolhida, com filtros de período (até 12 meses), funcionários, origem e situação: **marcações** (uma linha por batida), **espelho diário**, **resumo por funcionário** (CSV que abre no Excel) ou **espelhos para imprimir/PDF**, um por folha. Cada exportação fica na auditoria |
 | **Funcionários** | CPF, matrícula, cargo, admissão, jornada de cada dia da semana e PIN provisório (mostra quem ainda não criou o PIN pessoal) |
-| **Aparelhos de ponto** | Aparelhos ativados, último sinal, último registro e desativação |
+| **Aparelhos de ponto** | Aparelhos ativados, último sinal, **câmera** (funcionando ou o problema, com o que fazer), último registro e desativação |
 | **Auditoria** | Quem fez o quê e quando, com as justificativas. Bloqueios por PIN errado aparecem com a foto de quem tentou. **Verificação de integridade**: refaz a cadeia de hashes e aponta marcação apagada, inserida ou alterada, mesmo direto no banco |
 | **Empresas** *(admin)* | CNPJ (inclusive o novo CNPJ alfanumérico), fuso horário, intervalo mínimo entre batidas, tolerância e início do controle de ponto |
 | **Usuários** *(admin)* | Administradores e gestores, com as empresas que cada gestor acessa |

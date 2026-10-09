@@ -209,3 +209,27 @@ export function jornada(valor: unknown): number[] {
   if (!Array.isArray(valor) || valor.length !== 7) invalido("Jornada", "informe os 7 dias da semana.");
   return valor.map((minutos) => inteiro(minutos, "Jornada", 0, 24 * 60));
 }
+
+const ESTADOS_CAMERA = ["iniciando", "pronta", "toque", "erro"];
+const PERMISSOES_CAMERA = ["granted", "denied", "prompt", "desconhecida"];
+
+/**
+ * Estado da câmera informado pelo aparelho de ponto, só para o gestor ver no
+ * painel (nada aqui decide acesso). Campo fora do formato vira null; estado
+ * desconhecido descarta tudo.
+ */
+export function estadoDaCamera(valor: unknown): Record<string, string | null> | null {
+  if (typeof valor !== "object" || valor === null || Array.isArray(valor)) return null;
+  const c = valor as Record<string, unknown>;
+  if (typeof c.estado !== "string" || !ESTADOS_CAMERA.includes(c.estado)) return null;
+  const curto = (v: unknown, max: number, padrao: RegExp) => (typeof v === "string" && v.length <= max && padrao.test(v) ? v : null);
+  const detalhe =
+    typeof c.detalhe === "string" ? c.detalhe.slice(0, 400).normalize("NFC").replace(FORMATACAO_INVISIVEL, "").replace(CONTROLE, " ").trim().slice(0, 160) : "";
+  return {
+    estado: c.estado,
+    codigo: curto(c.codigo, 40, /^[A-Za-z]+$/),
+    detalhe: detalhe || null,
+    permissao: typeof c.permissao === "string" && PERMISSOES_CAMERA.includes(c.permissao) ? c.permissao : "desconhecida",
+    resolucao: curto(c.resolucao, 11, /^\d{1,5}x\d{1,5}$/),
+  };
+}

@@ -278,6 +278,22 @@ await etapa('gestora ativa um aparelho; ele não lê nada do banco, só fala com
   assert.equal(sinc.ativo, true)
   assert.equal(sinc.empresa.nome, 'Loja Centro')
   assert.ok(Math.abs(sinc.agora - Date.now()) < 60_000)
+
+  // O aparelho informa o estado da câmera e o painel mostra; campo fora do formato é descartado.
+  const cameraDoAparelho = async () => (await getDoc(doc(gestora.db, 'empresas', empresaA, 'dispositivos', uidAparelho))).get('camera')
+  await aparelho.chamar('sincronizarDispositivo', {
+    camera: { estado: 'erro', codigo: 'NotAllowedError', detalhe: 'Permission denied', permissao: 'denied', resolucao: null },
+  })
+  assert.deepEqual(
+    { ...(await cameraDoAparelho()), atualizadaEm: null },
+    { estado: 'erro', codigo: 'NotAllowedError', detalhe: 'Permission denied', permissao: 'denied', resolucao: null, atualizadaEm: null },
+  )
+  await aparelho.chamar('sincronizarDispositivo', { camera: { estado: 'pronta', codigo: '<b>x</b>', resolucao: '1280x720', permissao: 'talvez' } })
+  const pronta = await cameraDoAparelho()
+  assert.equal(pronta.estado, 'pronta')
+  assert.equal(pronta.codigo, null)
+  assert.equal(pronta.permissao, 'desconhecida')
+  assert.equal(pronta.resolucao, '1280x720')
 })
 
 await etapa('PIN do gestor é provisório: só serve para o funcionário criar o PIN pessoal', async () => {

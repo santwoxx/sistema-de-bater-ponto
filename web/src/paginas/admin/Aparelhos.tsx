@@ -8,11 +8,42 @@ import { useNotificar } from '../../componentes/Notificacoes'
 import { useEmpresaAtual } from '../../contexto/Empresa'
 import { db } from '../../firebase'
 import { useAgora, useColecao } from '../../hooks/useColecao'
+import { mensagemDaCamera, navegadorInterno, plataformaDe } from '../../lib/camera'
 import { mensagemErro } from '../../lib/erros'
 import { formatarDataHora, tempoRelativo } from '../../lib/tempo'
 import { paraDispositivo, type Dispositivo } from '../../tipos'
 
 const ONLINE_MS = 20 * 60_000
+
+// O que o problema da câmera informado pelo aparelho quer dizer (ver lib/camera.ts).
+const PROBLEMA_DA_CAMERA: Record<string, string> = {
+  NotAllowedError: 'bloqueada no navegador',
+  SecurityError: 'bloqueada no navegador',
+  NotReadableError: 'ocupada por outro aplicativo ou travada',
+  AbortError: 'ocupada por outro aplicativo ou travada',
+  NotFoundError: 'nenhuma câmera encontrada',
+  SemSuporte: 'o navegador não permite câmera',
+  Inseguro: 'aberto sem https',
+  SemImagem: 'abre, mas sem imagem',
+  Desconectada: 'desligada pelo aparelho',
+  Aguardando: 'esperando alguém tocar em "Ligar a câmera"',
+  ReproducaoBloqueada: 'esperando um toque para mostrar a imagem',
+}
+
+const problemaDaCamera = (codigo: string | null) => PROBLEMA_DA_CAMERA[codigo ?? ''] ?? `erro${codigo ? ` (${codigo})` : ''}`
+
+function SituacaoCamera({ aparelho }: { aparelho: Dispositivo }) {
+  const camera = aparelho.camera
+  if (!aparelho.ativo || !camera) return <>—</>
+  if (camera.estado === 'pronta') return <Selo cor="verde">Funcionando{camera.resolucao ? ` · ${camera.resolucao.replace('x', '×')}` : ''}</Selo>
+  if (camera.estado === 'iniciando') return <Selo>Ligando</Selo>
+  return (
+    <span title={camera.detalhe ?? undefined}>
+      <Selo cor={camera.estado === 'erro' ? 'vermelho' : 'amarelo'}>{camera.estado === 'toque' ? 'Esperando toque' : 'Com problema'}</Selo>
+      <small className="bloco">{problemaDaCamera(camera.codigo)}</small>
+    </span>
+  )
+}
 
 function resumirNavegador(agente?: string): string {
   if (!agente) return '—'
@@ -52,6 +83,8 @@ export default function Aparelhos() {
   const endereco = `${window.location.origin}/ponto`
 
   const lista = [...aparelhos.dados].sort((a, b) => Number(b.ativo) - Number(a.ativo) || a.nome.localeCompare(b.nome, 'pt-BR'))
+  // Aparelho ativo cuja câmera não está funcionando: sem câmera, ninguém bate o ponto nele.
+  const comProblema = lista.filter((a) => a.ativo && (a.camera?.estado === 'erro' || a.camera?.estado === 'toque'))
 
   async function copiar() {
     try {
@@ -94,7 +127,10 @@ export default function Aparelhos() {
             </span>
           </li>
           <li>Entre com o seu e-mail e senha de gestor, escolha a empresa "{empresa.nome}" e dê um nome ao aparelho.</li>
-          <li>Permita o uso da câmera quando o navegador pedir. Pronto: o aparelho fica no modo ponto.</li>
+          <li>
+            Se aparecer o botão "Ligar a câmera", toque nele, e permita o uso da câmera quando o navegador pedir. Pronto: o aparelho
+            fica no modo ponto.
+          </li>
         </ol>
         <p className="texto-suave">
           Dica: no Android, use "Fixar app" (ou um navegador de quiosque); no iPad, use o "Acesso Guiado". Assim ninguém sai da tela do
@@ -103,6 +139,23 @@ export default function Aparelhos() {
       </section>
 
       {aparelhos.erro && <Aviso tipo="erro">{aparelhos.erro}</Aviso>}
+      {comProblema.map((a) => {
+        const agente = a.agenteUsuario ?? ''
+        const quando = a.camera?.atualizadaEm ? `, informado ${tempoRelativo(a.camera.atualizadaEm.toMillis(), agora)}` : ''
+        return (
+          <Aviso key={a.id} tipo="alerta">
+            <strong>
+              Câmera do aparelho "{a.nome}": {problemaDaCamera(a.camera!.codigo)}.
+            </strong>{' '}
+            {mensagemDaCamera(a.camera!.codigo ?? '', plataformaDe(agente), navegadorInterno(agente))}{' '}
+            <small>
+              (código {a.camera!.codigo ?? '—'}
+              {a.camera!.detalhe ? `: ${a.camera!.detalhe}` : ''}
+              {quando})
+            </small>
+          </Aviso>
+        )
+      })}
 
       <section className="cartao sem-preenchimento">
         {aparelhos.carregando ? (
@@ -116,6 +169,7 @@ export default function Aparelhos() {
                 <tr>
                   <th>Aparelho</th>
                   <th>Situação</th>
+                  <th>Câmera</th>
                   <th>Último registro de ponto</th>
                   <th>Navegador</th>
                   <th>Ativado</th>
@@ -138,6 +192,9 @@ export default function Aparelhos() {
                         ) : (
                           <Selo cor="amarelo">{sinal ? `Sem sinal ${tempoRelativo(sinal, agora)}` : 'Nunca conectou'}</Selo>
                         )}
+                      </td>
+                      <td>
+                        <SituacaoCamera aparelho={a} />
                       </td>
                       <td>{a.ultimoRegistroEm ? formatarDataHora(a.ultimoRegistroEm.toDate(), empresa.fusoHorario) : '—'}</td>
                       <td>{resumirNavegador(a.agenteUsuario)}</td>

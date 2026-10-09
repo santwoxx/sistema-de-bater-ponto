@@ -103,6 +103,15 @@ export interface Dispositivo {
   agenteUsuario?: string
   desativadoEm?: Timestamp | null
   desativadoPor?: Autor
+  /** Estado da câmera informado pelo aparelho na última sincronização. */
+  camera?: {
+    estado: 'iniciando' | 'pronta' | 'toque' | 'erro'
+    codigo: string | null
+    detalhe: string | null
+    permissao: string
+    resolucao: string | null
+    atualizadaEm: Timestamp | null
+  }
 }
 
 export type TipoAbono = 'feriado' | 'atestado' | 'ferias' | 'folga' | 'outro'
@@ -268,6 +277,7 @@ export function paraDispositivo(snap: DocumentSnapshot): Dispositivo {
     agenteUsuario: d.agenteUsuario,
     desativadoEm: d.desativadoEm ?? null,
     desativadoPor: d.desativadoPor,
+    camera: d.camera,
   }
 }
 

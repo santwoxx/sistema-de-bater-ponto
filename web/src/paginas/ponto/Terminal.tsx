@@ -26,6 +26,7 @@ import { instrucaoDaTela, textoDeEspera, tituloDaTela } from './terminal/textos'
 import { ETAPAS_DE_RESULTADO, OUTRO_MOTIVO, PEDIDO_VAZIO, type Etapa, type Modo, type Pedido } from './terminal/tipos'
 import TopoTerminal from './terminal/TopoTerminal'
 import { useBatidasGuardadas } from './terminal/useBatidasGuardadas'
+import { useAtualizacaoAutomatica } from './terminal/useAtualizacaoAutomatica'
 import { useSincronizacao } from './terminal/useSincronizacao'
 
 // Tela do aparelho de ponto: a máquina de estados (etapa + modo) e as chamadas
@@ -42,8 +43,17 @@ function esperar(ms: number) {
 }
 
 export default function Terminal({ empresaId }: { empresaId: string }) {
-  const { videoRef, estado: estadoCamera, erro: erroCamera, iniciar: iniciarCamera, capturar } = useCamera()
-  const { info, deslocamento, conectado, desativado, setConectado } = useSincronizacao()
+  const {
+    videoRef,
+    estado: estadoCamera,
+    mensagem: erroCamera,
+    codigo: codigoCamera,
+    interno: navegadorInterno,
+    tocar: tocarCamera,
+    capturar,
+    diagnostico: diagnosticoCamera,
+  } = useCamera()
+  const { info, deslocamento, conectado, desativado, setConectado } = useSincronizacao(diagnosticoCamera)
   const guardadas = useBatidasGuardadas(conectado, () => setConectado(true))
   const guardarNoAparelho = guardadas.guardar
   useTelaSempreAcesa()
@@ -59,6 +69,8 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
   const [guardada, setGuardada] = useState<{ matricula: string; horario: number; foto: string } | null>(null)
   const [mensagem, setMensagem] = useState('')
   const [configuracoes, setConfiguracoes] = useState(false)
+  // Versão nova do site publicada: recarrega com a tela parada na matrícula.
+  useAtualizacaoAutomatica(etapa === 'matricula' && modo === 'ponto' && matricula === '' && !configuracoes && !guardadas.enviando)
   const [pedido, setPedido] = useState<Pedido>(PEDIDO_VAZIO)
   const [pedidoEnviado, setPedidoEnviado] = useState<{ funcionarioNome: string; data: string; hora: string } | null>(null)
   const [erroPedido, setErroPedido] = useState('')
@@ -478,8 +490,10 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
         <CameraPonto
           videoRef={videoRef}
           estado={estadoCamera}
-          erro={erroCamera}
-          aoTentarDeNovo={() => void iniciarCamera()}
+          mensagem={erroCamera}
+          codigo={codigoCamera}
+          interno={navegadorInterno}
+          aoTocar={tocarCamera}
           contagem={etapa === 'foto' ? contagem : null}
           aguardando={etapa === 'enviando' ? textoDeEspera(estadoTexto) : null}
         />

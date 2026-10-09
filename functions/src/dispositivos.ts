@@ -6,7 +6,7 @@ import { autor, carregarEmpresa, exigirAcessoEmpresa, exigirDispositivo } from "
 import { auditarNa } from "./auditoria";
 import { dadosParaSemInternet } from "./semInternet";
 import { idAleatorio, senhaAleatoria } from "./seguranca";
-import { idDocumento, objeto, texto } from "./validacao";
+import { estadoDaCamera, idDocumento, objeto, texto } from "./validacao";
 
 // Cada aparelho de ponto (tablet, celular ou PC da loja) recebe uma conta
 // própria, presa a UMA empresa. A conta só consegue registrar ponto: não lê
@@ -105,7 +105,16 @@ export const sincronizarDispositivo = onCall(async (request) => {
   if (!dispositivo || dispositivo.ativo !== true) return { ativo: false, agora: Date.now() };
 
   const agenteUsuario = String(request.rawRequest.headers["user-agent"] ?? "").slice(0, 200);
-  await ref.update({ ultimoSinalEm: FieldValue.serverTimestamp(), agenteUsuario });
+  // Estado da câmera (o gestor vê em "Aparelhos de ponto"): aparelho que não abre a câmera não bate ponto.
+  const camera = estadoDaCamera((request.data as { camera?: unknown } | null)?.camera);
+  await ref.update({
+    ultimoSinalEm: FieldValue.serverTimestamp(),
+    agenteUsuario,
+    ...(camera ? { camera: { ...camera, atualizadaEm: FieldValue.serverTimestamp() } } : {}),
+  });
+  if (camera?.estado === "erro" && camera.codigo !== dispositivo.camera?.codigo) {
+    logger.warn("Câmera com problema no aparelho", { empresaId, dispositivoId, ...camera, agenteUsuario });
+  }
 
   const agora = Date.now();
   // Para guardar batidas se a internet cair: a chave pública do servidor e a

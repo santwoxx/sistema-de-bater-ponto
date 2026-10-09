@@ -1758,9 +1758,55 @@ html.modo-ponto body {
   font-size: 1.1rem;
 }
 
-.camera-aviso svg {
+.camera-aviso > svg {
   width: 40px;
   height: 40px;
+  flex: none;
+}
+
+/* Avisos da câmera: o botão vem primeiro; o texto rola dentro da área se precisar. */
+.terminal-camera .camera-aviso {
+  overflow-y: auto;
+  justify-content: safe center;
+}
+
+.camera-aviso p {
+  max-width: 520px;
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.4;
+}
+
+.camera-acoes {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.camera-ligar {
+  min-height: 48px;
+  padding: 10px 22px;
+  font-size: 1.05rem;
+}
+
+/* Botões secundários sobre a câmera (tema escuro do aparelho). */
+.camera-aviso .botao:not(.primario) {
+  background: #162238;
+  border-color: #2b3b5a;
+  color: #e9eef7;
+}
+
+/* Com aviso na câmera (ligando, problema, enviando), a moldura do rosto some. */
+.terminal-camera:has(.camera-aviso) .moldura-rosto {
+  display: none;
+}
+
+.camera-codigo,
+.camera-endereco {
+  color: #8d9ab0;
+  font-size: 0.78rem;
+  word-break: break-all;
 }
 
 .contagem {
@@ -2493,6 +2539,22 @@ html.modo-ponto body {
 
   .terminal-camera {
     border-radius: 16px;
+  }
+
+  .terminal-camera .camera-aviso {
+    gap: 8px;
+    padding: 12px;
+    font-size: 0.95rem;
+  }
+
+  .camera-aviso > svg {
+    width: 28px;
+    height: 28px;
+  }
+
+  .camera-aviso p {
+    font-size: 0.86rem;
+    line-height: 1.35;
   }
 
   .terminal-painel {
