@@ -1,5 +1,5 @@
 import { collection } from 'firebase/firestore'
-import { Pencil, Search, UserPlus, Users } from 'lucide-react'
+import { Pencil, Search, Shuffle, UserPlus, Users } from 'lucide-react'
 import { useState } from 'react'
 import { api } from '../../api'
 import { Aviso, CabecalhoPagina, Campo, Carregando, Selo, Vazio } from '../../componentes/Basicos'
@@ -10,7 +10,7 @@ import { db } from '../../firebase'
 import { useColecao } from '../../hooks/useColecao'
 import { mensagemErro } from '../../lib/erros'
 import { cpfValido, formatarCpf, normalizarBusca, somenteDigitos } from '../../lib/formatos'
-import { problemaNoPin } from '../../lib/pin'
+import { gerarPin, problemaNoPin, TAMANHO_PIN } from '../../lib/pin'
 import { hhmmParaMinutos, minutosParaHHMM, NOMES_DIAS_LONGOS } from '../../lib/tempo'
 import { JORNADA_PADRAO, ordenarPorNome, paraFuncionario, type Empresa, type Funcionario } from '../../tipos'
 
@@ -108,11 +108,7 @@ export default function Funcionarios() {
                     <td>{totalSemanal(f.jornada)}/sem</td>
                     <td>
                       {f.ativo ? <Selo cor="verde">Ativo</Selo> : <Selo>Inativo</Selo>}{' '}
-                      {!f.pinDefinido ? (
-                        <Selo cor="amarelo">Sem PIN</Selo>
-                      ) : (
-                        f.pinProvisorio && <Selo cor="amarelo">PIN provisório</Selo>
-                      )}
+                      {!f.pinDefinido && <Selo cor="amarelo">Sem PIN</Selo>}
                     </td>
                     <td>
                       <button type="button" className="botao-icone" aria-label={`Editar ${f.nome}`}>
@@ -164,9 +160,9 @@ function FormFuncionario({
   const [admissao, setAdmissao] = useState(funcionario?.admissao ?? '')
   const [jornada, setJornada] = useState(() => (funcionario?.jornada ?? JORNADA_PADRAO).map((m) => minutosParaHHMM(m)))
   const [ativo, setAtivo] = useState(funcionario?.ativo ?? true)
+  // Sem PIN (cadastro novo ou PIN antigo): já sugere um, que o gestor pode trocar.
   const [alterarPin, setAlterarPin] = useState(novo || !funcionario?.pinDefinido)
-  const [pin, setPin] = useState('')
-  const [confirmacaoPin, setConfirmacaoPin] = useState('')
+  const [pin, setPin] = useState(() => (novo || !funcionario?.pinDefinido ? gerarPin() : ''))
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState('')
 
@@ -180,7 +176,6 @@ function FormFuncionario({
     if (alterarPin) {
       const problema = problemaNoPin(pin)
       if (problema) return setErro(problema)
-      if (pin !== confirmacaoPin) return setErro('Os PINs digitados não conferem.')
     }
 
     setSalvando(true)
@@ -197,7 +192,8 @@ function FormFuncionario({
         ativo,
         ...(alterarPin ? { pin } : {}),
       })
-      notificar(novo ? 'Funcionário cadastrado.' : 'Funcionário atualizado.')
+      const feito = novo ? 'Funcionário cadastrado.' : 'Funcionário atualizado.'
+      notificar(alterarPin ? `${feito} Passe o PIN ${pin} para ${nome.trim()}.` : feito)
       aoFechar()
     } catch (e) {
       setErro(mensagemErro(e))
@@ -273,38 +269,37 @@ function FormFuncionario({
       <fieldset className="grupo">
         <legend>PIN do ponto</legend>
         <p className="texto-suave">
-          O PIN definido aqui é <strong>provisório</strong>: no primeiro uso, o aparelho pede que o funcionário crie o PIN
-          pessoal dele. Assim ninguém da empresa conhece o PIN que bate o ponto.
-          {!novo &&
-            funcionario?.pinDefinido &&
-            (funcionario.pinProvisorio ? ' Este funcionário ainda não criou o PIN pessoal.' : ' Este funcionário já usa o PIN pessoal.')}
+          O funcionário bate o ponto digitando o CPF e este PIN de {TAMANHO_PIN} números (no celular pessoal dele, só o PIN). Passe o
+          PIN para ele; se ele esquecer ou outra pessoa descobrir, troque aqui (trocar também desbloqueia quem errou demais).
+          {!novo && !funcionario?.pinDefinido && ' Este funcionário ainda não tem o PIN de 4 números: salve um para ele bater o ponto.'}
         </p>
         {!novo && funcionario?.pinDefinido && (
           <label className="caixa-marcar">
-            <input type="checkbox" checked={alterarPin} onChange={(e) => setAlterarPin(e.target.checked)} />
-            Redefinir o PIN (para quem esqueceu: ele volta a ser provisório e a matrícula é desbloqueada)
+            <input
+              type="checkbox"
+              checked={alterarPin}
+              onChange={(e) => {
+                setAlterarPin(e.target.checked)
+                if (e.target.checked && !pin) setPin(gerarPin())
+              }}
+            />
+            Trocar o PIN (esqueceu, ou outra pessoa descobriu)
           </label>
         )}
         {alterarPin && (
           <div className="grade-2">
-            <Campo rotulo="PIN provisório" ajuda="4 a 6 números. Evite sequências (1234) e repetições (1111).">
+            <Campo rotulo={`PIN (${TAMANHO_PIN} números)`} ajuda="Evite sequências (1234) e repetições (1111).">
               <input
-                type="password"
+                className="numeros"
                 inputMode="numeric"
-                autoComplete="new-password"
+                autoComplete="off"
                 value={pin}
-                onChange={(e) => setPin(somenteDigitos(e.target.value).slice(0, 6))}
+                onChange={(e) => setPin(somenteDigitos(e.target.value).slice(0, TAMANHO_PIN))}
               />
             </Campo>
-            <Campo rotulo="Confirme o PIN provisório">
-              <input
-                type="password"
-                inputMode="numeric"
-                autoComplete="new-password"
-                value={confirmacaoPin}
-                onChange={(e) => setConfirmacaoPin(somenteDigitos(e.target.value).slice(0, 6))}
-              />
-            </Campo>
+            <button type="button" className="botao alinhar-base" onClick={() => setPin(gerarPin())}>
+              <Shuffle size={16} aria-hidden /> Gerar PIN
+            </button>
           </div>
         )}
       </fieldset>

@@ -3,7 +3,7 @@ rules_version = '2';
 // Regra geral: o navegador NUNCA grava diretamente no banco. Toda escrita
 // passa pelas Cloud Functions, que validam os dados e registram auditoria.
 // Aqui definimos apenas quem pode LER o quê. Tudo que não está listado
-// (credenciais com hash de PIN, contador de NSR etc.) é negado.
+// (credenciais com a chave do PIN, segredos do servidor, contador de NSR etc.) é negado.
 //
 // Os aparelhos de ponto não leem nada daqui: falam só com as funções.
 

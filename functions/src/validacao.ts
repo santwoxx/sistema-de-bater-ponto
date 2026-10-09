@@ -174,7 +174,7 @@ export function pinTrivial(pin: string): boolean {
 }
 
 export function pin(valor: unknown): string {
-  if (typeof valor !== "string" || !/^\d{4,6}$/.test(valor)) invalido("PIN", "use de 4 a 6 números.");
+  if (typeof valor !== "string" || !/^\d{4}$/.test(valor)) invalido("PIN", "use 4 números.");
   if (pinTrivial(valor)) invalido("PIN", "muito fácil de adivinhar (evite sequências e números repetidos).");
   return valor;
 }

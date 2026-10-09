@@ -48,6 +48,8 @@ describe("PIN", () => {
     expect(pin("2580")).toBe("2580");
     expect(() => pin("258")).toThrow();
     expect(() => pin("2580135")).toThrow();
+    // Exatamente 4 números: o PIN identifica o funcionário sozinho no aparelho.
+    expect(() => pin("25801")).toThrow(/4 números/);
     expect(() => pin("25a0")).toThrow();
     expect(() => pin("1234")).toThrow();
   });

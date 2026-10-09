@@ -11,9 +11,11 @@ import { gravarLocal, lerLocal } from '../../../lib/util'
 export const CHAVE_REFERENCIA = 'ponto.semInternet'
 const BANCO = 'ponto-sem-internet'
 const FILA = 'batidas'
-/** Cabem alguns dias sem internet, mas ninguém consegue testar PINs à vontade. */
+/**
+ * Cabem alguns dias sem internet. Testar PINs sem internet não adianta: CPF e
+ * PIN são conferidos quando a batida chega, com os mesmos bloqueios de sempre.
+ */
 export const MAX_GUARDADAS = 300
-export const MAX_POR_MATRICULA = 12
 
 export interface Ancora {
   em: number
@@ -40,9 +42,9 @@ export interface PacoteSelado {
   dados: string
 }
 
+/** Fora do pacote cifrado, só o necessário para enviar em ordem (nada sobre a pessoa). */
 interface BatidaGuardada {
   id: string
-  matricula: string
   horario: number
   pacote: PacoteSelado
 }
@@ -51,7 +53,8 @@ export type ResultadoEnvio = { resultado: 'registrada'; conferir: boolean } | { 
 
 export interface ResumoEnvio {
   enviadas: number
-  recusadas: Array<{ matricula: string; motivo: string }>
+  /** Motivo de cada batida recusada pelo servidor (ex.: PIN incorreto). */
+  recusadas: string[]
   restantes: number
 }
 
@@ -124,17 +127,13 @@ async function naFila<T>(modo: IDBTransactionMode, acao: (fila: IDBObjectStore) 
 }
 
 export const listarGuardadas = () => naFila<BatidaGuardada[]>('readonly', (fila) => fila.getAll())
+export const contarGuardadas = () => naFila<number>('readonly', (fila) => fila.count())
 const tirarDaFila = (id: string) => naFila('readwrite', (fila) => fila.delete(id))
 export const esvaziarFila = () => naFila('readwrite', (fila) => fila.clear())
 
-const normalizarMatricula = (matricula: string) => matricula.replace(/^0+(?=\d)/, '')
-
-/** Motivo para não guardar mais uma batida (limites), ou null se pode guardar. */
-export function limiteAtingido(guardadas: Array<{ matricula: string }>, matricula: string): string | null {
-  if (guardadas.length >= MAX_GUARDADAS) return `Sem internet, e este aparelho já guardou ${MAX_GUARDADAS} batidas. Aguarde a conexão voltar.`
-  const daMatricula = guardadas.filter((g) => g.matricula === normalizarMatricula(matricula)).length
-  if (daMatricula >= MAX_POR_MATRICULA) return 'Sem internet, e esta matrícula já tem muitas batidas guardadas. Aguarde a conexão voltar.'
-  return null
+/** Motivo para não guardar mais uma batida (limite do aparelho), ou null se pode guardar. */
+export function limiteAtingido(guardadas: number): string | null {
+  return guardadas >= MAX_GUARDADAS ? `Sem internet, e este aparelho já guardou ${MAX_GUARDADAS} batidas. Aguarde a conexão voltar.` : null
 }
 
 /**
@@ -145,14 +144,15 @@ export function limiteAtingido(guardadas: Array<{ matricula: string }>, matricul
 export async function guardarBatida(batida: {
   idRequisicao: string
   dispositivoId: string
-  matricula: string
+  /** No celular pessoal não vai CPF: o servidor sabe quem é pelo aparelho. */
+  cpf?: string
   pin: string
   foto: string
   miniatura: string
 }): Promise<{ horario: number } | { erro: string }> {
   const referencia = lerReferencia()
   if (!referencia) return { erro: 'Sem internet, e este aparelho ainda não está preparado para guardar batidas. Tente de novo quando a conexão voltar.' }
-  const limite = limiteAtingido(await listarGuardadas(), batida.matricula)
+  const limite = limiteAtingido(await contarGuardadas())
   if (limite) return { erro: limite }
 
   const relogioAgora = Date.now()
@@ -162,7 +162,7 @@ export async function guardarBatida(batida: {
     horario: { ancora: referencia.ancora, relogioNaAncora: referencia.relogio, relogioAgora, decorrido },
   })
   const horario = referencia.ancora.em + (decorrido ?? relogioAgora - referencia.relogio)
-  const guardada: BatidaGuardada = { id: batida.idRequisicao, matricula: normalizarMatricula(batida.matricula), horario, pacote }
+  const guardada: BatidaGuardada = { id: batida.idRequisicao, horario, pacote }
   await naFila('readwrite', (fila) => fila.put(guardada))
   return { horario }
 }
@@ -183,7 +183,7 @@ export function enviarGuardadas(enviar: (pacote: PacoteSelado) => Promise<Result
       try {
         const resultado = await enviar(batida.pacote)
         await tirarDaFila(batida.id)
-        if (resultado.resultado === 'recusada') resumo.recusadas.push({ matricula: batida.matricula, motivo: resultado.motivo })
+        if (resultado.resultado === 'recusada') resumo.recusadas.push(resultado.motivo)
         else resumo.enviadas++
       } catch (erro) {
         if (codigoErro(erro) === 'functions/resource-exhausted') {

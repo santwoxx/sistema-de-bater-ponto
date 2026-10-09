@@ -2,8 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, type ComprovantePonto } from '../../api'
 import { useCamera, useTelaSempreAcesa } from '../../hooks/useCamera'
 import { useAgora } from '../../hooks/useColecao'
-import { credenciaisInvalidas, erroDeRede, mensagemErro, pinProvisorio } from '../../lib/erros'
-import { problemaNoPin } from '../../lib/pin'
+import { credenciaisInvalidas, erroDeRede, mensagemErro } from '../../lib/erros'
+import { cpfValido, mascararCpf } from '../../lib/formatos'
+import { TAMANHO_PIN } from '../../lib/pin'
 import { somErro, somFoto, somSucesso } from '../../lib/sons'
 import { gerarId } from '../../lib/util'
 import CameraPonto from './terminal/CameraPonto'
@@ -11,17 +12,18 @@ import { AparelhoDesativado, ConfiguracoesAparelho } from './terminal/CicloDoApa
 import { FalhaNoAparelho, PontoGuardado, PontoRegistrado, type DadosGuardada } from './terminal/Resultados'
 import { podeGuardar } from './terminal/semInternet'
 import TecladoPonto, { type Visor } from './terminal/TecladoPonto'
-import { instrucaoDaTela, mensagemCredenciais, textoDeEspera, tituloDaTela } from './terminal/textos'
+import { instrucaoDaTela, mensagemRecusa, TAMANHO_CPF, tituloDaTela } from './terminal/textos'
 import { ETAPAS_DE_RESULTADO, type Etapa } from './terminal/tipos'
 import TopoTerminal from './terminal/TopoTerminal'
 import { useBatidasGuardadas } from './terminal/useBatidasGuardadas'
 import { useAtualizacaoAutomatica } from './terminal/useAtualizacaoAutomatica'
 import { useSincronizacao } from './terminal/useSincronizacao'
 
-// Tela do aparelho de ponto: o funcionário só bate o ponto (matrícula, PIN e
-// foto, com a hora do momento da foto). Solicitações, ajustes e o fechamento
-// do mês ficam com o gestor, no painel. Aqui ficam a máquina de estados e as
-// chamadas ao servidor; a apresentação fica nos componentes de ./terminal.
+// Tela do aparelho de ponto: o funcionário só bate o ponto. No aparelho da
+// loja, digita o CPF e o PIN de 4 números (definido pelo gestor); no celular
+// pessoal, só o PIN. A hora é a do momento da foto. Solicitações, ajustes, PIN
+// e o fechamento do mês ficam com o gestor, no painel. Aqui ficam a máquina de
+// estados e as chamadas ao servidor; a apresentação fica em ./terminal.
 
 /** Volta ao início depois de tanto tempo parado em cada situação. */
 const INATIVIDADE_MS = 20_000
@@ -48,49 +50,49 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
   useTelaSempreAcesa()
   const agora = new Date(useAgora(1000) + deslocamento)
   const fuso = info?.empresa.fusoHorario ?? 'America/Sao_Paulo'
-  // Celular pessoal: só o dono bate ponto aqui; a tela já usa a matrícula dele e pede só o PIN.
-  const dono = info?.dispositivo.funcionario ?? null
-  const pessoal = dono !== null
-  const donoRef = useRef(dono)
+  // Celular pessoal: o aparelho já sabe quem é o dono; a tela o cumprimenta e pede só o PIN.
+  const nomeDono = info?.dispositivo.funcionario?.nome ?? null
+  const pessoal = nomeDono !== null
+  const pessoalRef = useRef(pessoal)
   useEffect(() => {
-    donoRef.current = dono
+    pessoalRef.current = pessoal
   })
 
-  const [etapa, setEtapa] = useState<Etapa>(() => (dono ? 'pin' : 'matricula'))
-  const [matricula, setMatricula] = useState(() => dono?.matricula ?? '')
+  const [etapa, setEtapa] = useState<Etapa>(() => (pessoal ? 'pin' : 'cpf'))
+  const [cpf, setCpf] = useState('')
+  const [erroCpf, setErroCpf] = useState('')
   const [pin, setPin] = useState('')
   const [contagem, setContagem] = useState(3)
   const [comprovante, setComprovante] = useState<{ dados: ComprovantePonto; foto: string } | null>(null)
   const [guardada, setGuardada] = useState<DadosGuardada | null>(null)
   const [mensagem, setMensagem] = useState('')
   const [configuracoes, setConfiguracoes] = useState(false)
-  // PIN pessoal: no primeiro uso (PIN provisório do gestor), o funcionário cria o dele e o ponto segue.
-  const [novoPin, setNovoPin] = useState('')
-  const [primeiroNovoPin, setPrimeiroNovoPin] = useState('')
-  const [erroPin, setErroPin] = useState('')
-  const [pinPessoalCriado, setPinPessoalCriado] = useState(false)
-  const [salvandoPin, setSalvandoPin] = useState(false)
 
-  // Tela parada no início (matrícula; no celular pessoal, o PIN), sem nada digitado.
-  const telaInicial = pessoal ? etapa === 'pin' : etapa === 'matricula'
-  const ocioso = telaInicial && pin === '' && (pessoal || matricula === '') && !configuracoes
+  // Tela parada no início (CPF; no celular pessoal, o PIN), sem nada digitado.
+  const ocioso = etapa === (pessoal ? 'pin' : 'cpf') && cpf === '' && pin === '' && !configuracoes
   // Versão nova do site publicada: recarrega com a tela parada.
   useAtualizacaoAutomatica(ocioso && !guardadas.enviando)
 
   const reiniciar = useCallback(() => {
-    const donoAtual = donoRef.current
-    setEtapa(donoAtual ? 'pin' : 'matricula')
-    setMatricula(donoAtual?.matricula ?? '')
+    setEtapa(pessoalRef.current ? 'pin' : 'cpf')
+    setCpf('')
+    setErroCpf('')
     setPin('')
     setMensagem('')
     setComprovante(null)
     setGuardada(null)
-    setNovoPin('')
-    setPrimeiroNovoPin('')
-    setErroPin('')
-    setPinPessoalCriado(false)
-    setSalvandoPin(false)
   }, [])
+
+  // O uso do aparelho mudou na sincronização (virou celular pessoal ou da loja):
+  // se a tela estava parada, volta ao início certo. Este efeito vem antes do que
+  // atualiza ociosoRef, para olhar como a tela estava antes da mudança.
+  const ociosoRef = useRef(ocioso)
+  useEffect(() => {
+    if (ociosoRef.current) reiniciar()
+  }, [pessoal, reiniciar])
+  useEffect(() => {
+    ociosoRef.current = ocioso
+  })
 
   const falhar = useCallback((texto: string) => {
     setMensagem(texto)
@@ -99,43 +101,18 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
     somErro()
   }, [])
 
-  // O servidor recusou o PIN provisório do gestor: o funcionário cria o dele e o ponto continua.
-  const pedirPinPessoal = useCallback(() => {
-    setNovoPin('')
-    setPrimeiroNovoPin('')
-    setErroPin('')
-    setEtapa('novoPin')
-  }, [])
-
-  // O uso do aparelho mudou na sincronização (virou celular pessoal ou da loja):
-  // se a tela estava parada, volta ao início certo. Este efeito vem antes do que
-  // atualiza ociosoRef, para olhar como a tela estava antes da mudança.
-  const ociosoRef = useRef(ocioso)
-  const matriculaDono = dono?.matricula ?? null
-  useEffect(() => {
-    if (ociosoRef.current) reiniciar()
-  }, [matriculaDono, reiniciar])
-  useEffect(() => {
-    ociosoRef.current = ocioso
-  })
-
-  /** Mensagem de uma recusa do servidor; matrícula ou PIN errados ganham explicação. */
+  /** Mensagem de uma recusa do servidor. */
   const mensagemDaFalha = useCallback(
-    (e: unknown, matriculaDigitada: string) => {
+    (e: unknown) => {
       if (!credenciaisInvalidas(e)) return mensagemErro(e)
       // O gestor pode ter mudado o uso do aparelho (celular pessoal ou da loja): confere já.
       conferir()
-      return mensagemCredenciais(matriculaDigitada, donoRef.current !== null)
+      return mensagemRecusa(pessoalRef.current)
     },
     [conferir],
   )
 
-  const iniciarFoto = useCallback(() => {
-    setContagem(3)
-    setEtapa('foto')
-  }, [])
-
-  // --- Ações no servidor ----------------------------------------------------
+  // --- Ação no servidor ----------------------------------------------------
 
   const enviar = useCallback(async () => {
     const captura = capturar()
@@ -145,7 +122,8 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
     }
     somFoto()
     setEtapa('enviando')
-    const dados = { idRequisicao: gerarId(), matricula, pin, foto: captura.foto, miniatura: captura.miniatura }
+    // No celular pessoal, o servidor sabe quem é pelo aparelho: vai só o PIN.
+    const dados = { idRequisicao: gerarId(), ...(pessoal ? {} : { cpf }), pin, foto: captura.foto, miniatura: captura.miniatura }
 
     // Sem internet: a batida fica guardada (cifrada) neste aparelho e vai sozinha
     // quando a conexão voltar. Com o mesmo id: se chegou ao servidor, não duplica.
@@ -153,7 +131,7 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
       try {
         const resultado = await guardarNoAparelho({ ...dados, dispositivoId: info?.dispositivo.id ?? '' })
         if ('erro' in resultado) return falhar(resultado.erro)
-        setGuardada({ matricula, nome: donoRef.current?.nome ?? null, horario: resultado.horario, foto: captura.foto })
+        setGuardada({ quem: nomeDono ?? `CPF ${mascararCpf(cpf)}`, horario: resultado.horario, foto: captura.foto })
         setEtapa('guardado')
         setPin('')
         somSucesso()
@@ -181,41 +159,13 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
       setPin('')
       somSucesso()
     } catch (e) {
-      if (pinProvisorio(e)) return pedirPinPessoal()
       if (erroDeRede(e)) {
         setConectado(false)
         if (info && podeGuardar()) return guardarSemInternet()
       }
-      falhar(mensagemDaFalha(e, matricula))
+      falhar(mensagemDaFalha(e))
     }
-  }, [capturar, matricula, pin, falhar, setConectado, pedirPinPessoal, conectado, info, guardarNoAparelho, mensagemDaFalha])
-
-  async function salvarPinPessoal(pinNovo: string) {
-    // Foto pequena de quem criou o PIN, como prova (se a câmera estiver disponível).
-    const miniatura = estadoCamera === 'pronta' ? (capturar()?.miniatura ?? null) : null
-    setSalvandoPin(true)
-    setEtapa('enviando')
-    try {
-      await api.definirPin({ matricula, pin, novoPin: pinNovo, miniatura })
-      setConectado(true)
-      setNovoPin('')
-      setPrimeiroNovoPin('')
-      setSalvandoPin(false)
-      // Segue para o ponto, já com o PIN novo.
-      setPin(pinNovo)
-      setPinPessoalCriado(true)
-      if (estadoCamera !== 'pronta') falhar(erroCamera || 'Seu PIN foi criado, mas a câmera não está pronta. Tente bater o ponto de novo.')
-      else iniciarFoto()
-    } catch (e) {
-      setSalvandoPin(false)
-      if (erroDeRede(e)) setConectado(false)
-      falhar(mensagemDaFalha(e, matricula))
-    }
-  }
-  const salvarPinRef = useRef(salvarPinPessoal)
-  useEffect(() => {
-    salvarPinRef.current = salvarPinPessoal
-  })
+  }, [capturar, pessoal, cpf, pin, falhar, setConectado, conectado, info, nomeDono, guardarNoAparelho, mensagemDaFalha])
 
   // --- Tempo ------------------------------------------------------------------
 
@@ -239,17 +189,14 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
     return () => clearInterval(id)
   }, [etapa])
 
-  // Volta ao início após inatividade ou depois de mostrar o resultado.
+  // Volta ao início com algo digitado pela metade ou depois de mostrar o resultado.
   useEffect(() => {
-    // No celular pessoal, a matrícula já vem preenchida: só o PIN conta como digitação.
-    const digitando = pin !== '' || (!pessoal && matricula !== '')
-    const emDigitacao = (etapa === 'matricula' || etapa === 'pin') && digitando
-    const criandoPin = etapa === 'novoPin' || etapa === 'confirmarPin'
-    const espera = ETAPAS_DE_RESULTADO.includes(etapa) ? RESULTADO_MS : criandoPin ? INATIVIDADE_MS * 2 : emDigitacao ? INATIVIDADE_MS : 0
+    const digitando = (etapa === 'cpf' || etapa === 'pin') && (cpf !== '' || pin !== '')
+    const espera = ETAPAS_DE_RESULTADO.includes(etapa) ? RESULTADO_MS : digitando ? INATIVIDADE_MS : 0
     if (!espera) return
     const id = setTimeout(reiniciar, espera)
     return () => clearTimeout(id)
-  }, [etapa, matricula, pin, novoPin, pessoal, reiniciar])
+  }, [etapa, cpf, pin, reiniciar])
 
   // --- Teclado ----------------------------------------------------------------
 
@@ -260,47 +207,30 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
         reiniciar()
         return
       }
-      if (etapa === 'matricula') {
-        if (tecla === 'apagar') setMatricula((m) => m.slice(0, -1))
+      if (etapa === 'cpf') {
+        setErroCpf('')
+        if (tecla === 'apagar') setCpf((c) => c.slice(0, -1))
         else if (tecla === 'ok') {
-          if (matricula) setEtapa('pin')
-        } else if (matricula.length < 10) setMatricula((m) => m + tecla)
+          if (cpf.length < TAMANHO_CPF) return
+          // Confere os dígitos do CPF aqui mesmo: um erro de digitação não chega ao servidor.
+          if (cpfValido(cpf)) setEtapa('pin')
+          else setErroCpf('CPF inválido. Confira os números e corrija.')
+        } else if (cpf.length < TAMANHO_CPF) setCpf((c) => c + tecla)
       } else if (etapa === 'pin') {
         if (tecla === 'apagar') {
           if (pin) setPin((p) => p.slice(0, -1))
-          else if (!donoRef.current) setEtapa('matricula')
+          else if (!pessoal) setEtapa('cpf')
         } else if (tecla === 'ok') {
-          if (pin.length < 4) return
+          if (pin.length < TAMANHO_PIN) return
           if (estadoCamera !== 'pronta') falhar(erroCamera || 'A câmera ainda não está pronta. Aguarde e tente de novo.')
-          else iniciarFoto()
-        } else if (pin.length < 6) setPin((p) => p + tecla)
-      } else if (etapa === 'novoPin' || etapa === 'confirmarPin') {
-        if (tecla === 'apagar') {
-          if (novoPin) setNovoPin((p) => p.slice(0, -1))
-          else if (etapa === 'confirmarPin') {
-            setPrimeiroNovoPin('')
-            setEtapa('novoPin')
+          else {
+            setContagem(3)
+            setEtapa('foto')
           }
-        } else if (tecla === 'ok') {
-          if (etapa === 'novoPin') {
-            const problema = problemaNoPin(novoPin) ?? (novoPin === pin ? 'Escolha um PIN diferente do atual.' : null)
-            setNovoPin('')
-            if (problema) return setErroPin(problema)
-            setErroPin('')
-            setPrimeiroNovoPin(novoPin)
-            setEtapa('confirmarPin')
-          } else if (novoPin !== primeiroNovoPin) {
-            setErroPin('Os dois PINs não conferem. Digite o novo PIN de novo.')
-            setNovoPin('')
-            setPrimeiroNovoPin('')
-            setEtapa('novoPin')
-          } else {
-            void salvarPinRef.current(novoPin)
-          }
-        } else if (novoPin.length < 6) setNovoPin((p) => p + tecla)
+        } else if (pin.length < TAMANHO_PIN) setPin((p) => p + tecla)
       }
     },
-    [configuracoes, etapa, matricula, pin, novoPin, primeiroNovoPin, estadoCamera, erroCamera, reiniciar, falhar, iniciarFoto],
+    [configuracoes, etapa, cpf, pin, pessoal, estadoCamera, erroCamera, reiniciar, falhar],
   )
 
   // Também aceita teclado físico (computador com webcam).
@@ -323,19 +253,12 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
 
   if (desativado) return <AparelhoDesativado />
 
-  const criandoPin = etapa === 'novoPin' || etapa === 'confirmarPin'
   // Na hora da foto (e enquanto envia), nada pode ser digitado; com o aparelho
   // em pé, a câmera ocupa a tela toda (ver estilos.css).
   const bloqueado = etapa === 'foto' || etapa === 'enviando'
-  const podeConfirmar =
-    etapa === 'matricula' ? matricula.length > 0 : etapa === 'pin' ? pin.length >= 4 : criandoPin ? novoPin.length >= 4 : false
-  const estadoTexto = { etapa, salvandoPin, erroPin, nomeDono: dono?.nome ?? null }
-  const quem = dono ? dono.nome : `Matrícula ${matricula}`
-  const visor: Visor = criandoPin
-    ? { tipo: 'pin', legenda: `${quem} · novo PIN`, digitos: novoPin.length }
-    : etapa === 'pin' || (bloqueado && pin)
-      ? { tipo: 'pin', legenda: quem, digitos: pin.length }
-      : { tipo: 'matricula', valor: matricula }
+  const visor: Visor =
+    etapa === 'cpf' ? { tipo: 'cpf', digitos: cpf } : { tipo: 'pin', legenda: nomeDono ?? (cpf ? `CPF ${mascararCpf(cpf)}` : null), digitos: pin.length }
+  const podeConfirmar = etapa === 'cpf' ? cpf.length === TAMANHO_CPF : etapa === 'pin' && pin.length === TAMANHO_PIN
 
   return (
     <div className={bloqueado ? 'terminal terminal-capturando' : 'terminal'}>
@@ -363,24 +286,23 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
           interno={navegadorInterno}
           aoTocar={tocarCamera}
           contagem={etapa === 'foto' ? contagem : null}
-          aguardando={etapa === 'enviando' ? textoDeEspera(salvandoPin) : null}
+          aguardando={etapa === 'enviando' ? 'Registrando...' : null}
         />
         <section className="terminal-painel">
           <TecladoPonto
-            titulo={tituloDaTela(estadoTexto)}
+            titulo={tituloDaTela(etapa, nomeDono)}
             visor={visor}
             podeConfirmar={podeConfirmar}
             bloqueado={bloqueado}
             aoTeclar={teclar}
-            aoCancelar={criandoPin ? reiniciar : null}
-            instrucao={instrucaoDaTela(estadoTexto)}
-            instrucaoComErro={criandoPin && erroPin !== ''}
+            instrucao={instrucaoDaTela(etapa)}
+            erro={etapa === 'cpf' ? erroCpf : ''}
           />
         </section>
       </div>
 
       {etapa === 'sucesso' && comprovante && (
-        <PontoRegistrado comprovante={comprovante.dados} foto={comprovante.foto} fuso={fuso} pinCriado={pinPessoalCriado} aoFechar={reiniciar} />
+        <PontoRegistrado comprovante={comprovante.dados} foto={comprovante.foto} fuso={fuso} aoFechar={reiniciar} />
       )}
       {etapa === 'guardado' && guardada && <PontoGuardado guardada={guardada} fuso={fuso} aoFechar={reiniciar} />}
       {etapa === 'erro' && <FalhaNoAparelho mensagem={mensagem} aoFechar={reiniciar} />}

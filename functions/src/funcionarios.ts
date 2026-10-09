@@ -3,7 +3,7 @@ import { HttpsError, onCall } from "firebase-functions/https";
 import { db } from "./admin";
 import { autor, exigirAcessoEmpresa } from "./acesso";
 import { auditarNa } from "./auditoria";
-import { gerarHashPin } from "./seguranca";
+import { chaveDoPin } from "./pin";
 import {
   booleano,
   cpf,
@@ -33,14 +33,16 @@ export const salvarFuncionario = onCall(async (request) => {
   const ativo = dados.ativo === undefined ? true : booleano(dados.ativo, "Ativo");
   const novoPin = dados.pin ? pin(dados.pin) : null;
 
-  if (!id && !novoPin) throw new HttpsError("invalid-argument", "PIN: defina um PIN para o funcionário.");
+  if (!id && !novoPin) throw new HttpsError("invalid-argument", "PIN: defina o PIN de 4 números do funcionário.");
 
   const colecao = db.collection(`empresas/${empresaId}/funcionarios`);
   const ref = id ? colecao.doc(id) : colecao.doc();
   const credenciaisRef = db.doc(`empresas/${empresaId}/credenciais/${ref.id}`);
-  const credenciais = novoPin ? await gerarHashPin(novoPin) : null;
+  // O PIN não é gravado: só a chave dele (ver pin.ts).
+  const chave = novoPin ? await chaveDoPin(empresaId, ref.id, novoPin) : null;
 
-  // Transação: garante matrícula e CPF únicos mesmo com dois cadastros simultâneos.
+  // Transação: garante matrícula e CPF únicos mesmo com dois cadastros simultâneos
+  // (o CPF identifica o funcionário no aparelho da loja).
   await db.runTransaction(async (tx) => {
     const [mesmaMatricula, mesmoCpf, atual] = await Promise.all([
       tx.get(colecao.where("matricula", "==", matriculaFuncionario).limit(2)),
@@ -67,15 +69,28 @@ export const salvarFuncionario = onCall(async (request) => {
         jornada: jornadaSemanal,
         ativo,
         atualizadoEm: agora,
-        ...(id ? {} : { criadoEm: agora, pinDefinido: false }),
-        ...(credenciais ? { pinDefinido: true, pinProvisorio: true, pinAtualizadoEm: agora } : {}),
+        ...(id ? {} : { criadoEm: agora, pinAtivo: false }),
+        // PIN antigo (provisório/pessoal, com matrícula) dá lugar ao de 4 números.
+        ...(chave ? { pinAtivo: true, pinAtualizadoEm: agora, pinDefinido: FieldValue.delete(), pinProvisorio: FieldValue.delete() } : {}),
       },
       { merge: true },
     );
-    if (credenciais) {
-      // O PIN do gestor é provisório: o funcionário cria o dele no primeiro uso
-      // (ver pinPessoal.ts). Redefinir também desbloqueia quem errou demais.
-      tx.set(credenciaisRef, { ...credenciais, provisorio: true, falhas: 0, bloqueios: 0, bloqueadoAte: null }, { merge: true });
+    if (chave) {
+      // Trocar o PIN também desbloqueia quem errou demais.
+      tx.set(
+        credenciaisRef,
+        {
+          pinChave: chave,
+          pinAtualizadoEm: agora,
+          falhas: 0,
+          bloqueios: 0,
+          bloqueadoAte: null,
+          pinHash: FieldValue.delete(),
+          pinSal: FieldValue.delete(),
+          provisorio: FieldValue.delete(),
+        },
+        { merge: true },
+      );
     }
     auditarNa(tx, {
       empresaId,
@@ -83,7 +98,7 @@ export const salvarFuncionario = onCall(async (request) => {
       acao: id ? "funcionario.atualizado" : "funcionario.criado",
       descricao:
         `Funcionário ${nome} (matrícula ${matriculaFuncionario}) ${id ? "atualizado" : "cadastrado"}` +
-        `${novoPin && id ? "; PIN provisório redefinido" : ""}${ativo ? "" : "; inativo"}.`,
+        `${novoPin && id ? "; PIN redefinido" : ""}${ativo ? "" : "; inativo"}.`,
       detalhes: { funcionarioId: ref.id, matricula: matriculaFuncionario, cargo, ativo, pinAlterado: Boolean(novoPin) },
     });
   });

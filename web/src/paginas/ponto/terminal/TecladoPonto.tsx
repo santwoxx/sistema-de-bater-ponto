@@ -1,20 +1,21 @@
 import { Check, Delete } from 'lucide-react'
+import { TAMANHO_PIN } from '../../../lib/pin'
+import { cpfNoVisor } from './textos'
 
 const TECLAS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'apagar', '0', 'ok'] as const
 
-/** O que o visor mostra: a matrícula digitada ou os pontos do PIN. */
-export type Visor = { tipo: 'matricula'; valor: string } | { tipo: 'pin'; legenda: string; digitos: number }
+/** O que o visor mostra: o CPF digitado ou os pontos do PIN (e, acima, quem é). */
+export type Visor = { tipo: 'cpf'; digitos: string } | { tipo: 'pin'; legenda: string | null; digitos: number }
 
-/** Título, visor, teclado numérico e instrução do aparelho. */
+/** Título, visor, teclado numérico e instrução (ou o erro do que foi digitado) do aparelho. */
 export default function TecladoPonto({
   titulo,
   visor,
   podeConfirmar,
   bloqueado,
   aoTeclar,
-  aoCancelar,
   instrucao,
-  instrucaoComErro,
+  erro,
 }: {
   titulo: string
   visor: Visor
@@ -22,26 +23,25 @@ export default function TecladoPonto({
   /** Durante a foto e o envio, nada pode ser digitado. */
   bloqueado: boolean
   aoTeclar: (tecla: string) => void
-  /** Criando o PIN pessoal: botão para desistir e voltar ao início. */
-  aoCancelar: (() => void) | null
   instrucao: string
-  instrucaoComErro: boolean
+  /** Problema no que foi digitado (ex.: CPF inválido): aparece no lugar da instrução. */
+  erro: string
 }) {
   return (
     <>
       <h1>{titulo}</h1>
       <div className="visor" aria-live="polite">
-        {visor.tipo === 'pin' ? (
+        {visor.tipo === 'cpf' ? (
+          <span className="visor-numero">{visor.digitos ? cpfNoVisor(visor.digitos) : <span className="visor-dica">000.000.000-00</span>}</span>
+        ) : (
           <>
-            <small>{visor.legenda}</small>
-            <div className="pontos-pin">
-              {Array.from({ length: Math.max(4, visor.digitos) }, (_, i) => (
+            {visor.legenda && <small>{visor.legenda}</small>}
+            <div className="pontos-pin" aria-label={`${visor.digitos} de ${TAMANHO_PIN} números do PIN digitados`}>
+              {Array.from({ length: TAMANHO_PIN }, (_, i) => (
                 <span key={i} className={i < visor.digitos ? 'cheio' : ''} />
               ))}
             </div>
           </>
-        ) : (
-          <span className="visor-numero">{visor.valor || <span className="visor-dica">0000</span>}</span>
         )}
       </div>
       <div className="teclado">
@@ -58,12 +58,9 @@ export default function TecladoPonto({
           </button>
         ))}
       </div>
-      {aoCancelar && (
-        <button type="button" className="terminal-link" onClick={aoCancelar} disabled={bloqueado}>
-          Cancelar e voltar ao início
-        </button>
-      )}
-      <p className={`terminal-instrucao ${instrucaoComErro ? 'terminal-erro' : ''}`}>{instrucao}</p>
+      <p className={`terminal-instrucao${erro ? ' terminal-erro' : ''}`} role={erro ? 'alert' : undefined}>
+        {erro || instrucao}
+      </p>
     </>
   )
 }

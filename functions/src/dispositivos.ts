@@ -17,8 +17,8 @@ const MAX_APARELHOS_ATIVOS = 50;
 
 /**
  * Dono do aparelho, quando ele é o celular pessoal de um funcionário: só o dono
- * bate ponto nele (ver identificarNoAparelho), e a tela pede só o PIN. Sem
- * dono, é o aparelho da loja, em que cada um digita a matrícula.
+ * bate ponto nele, digitando só o PIN (ver identificarNoAparelho). Sem dono, é
+ * o aparelho da loja, em que cada um digita o CPF e o PIN.
  */
 async function donoDoAparelho(empresaId: string, valor: unknown): Promise<{ id: string; nome: string } | null> {
   const funcionarioId = idOpcional(valor, "Dono do aparelho");
@@ -159,10 +159,9 @@ export const sincronizarDispositivo = onCall(async (request) => {
     logger.warn("Câmera com problema no aparelho", { empresaId, dispositivoId, ...camera, agenteUsuario });
   }
 
-  // Celular pessoal: a tela mostra o nome do dono e já usa a matrícula dele (lida
-  // do cadastro atual, que o gestor pode ter mudado).
+  // Celular pessoal: a tela cumprimenta o dono pelo nome (do cadastro atual).
   const donoSnap = dispositivo.funcionarioId ? await db.doc(`empresas/${empresaId}/funcionarios/${dispositivo.funcionarioId}`).get() : null;
-  const funcionario = donoSnap?.get("ativo") === true ? { nome: String(donoSnap.get("nome")), matricula: String(donoSnap.get("matricula")) } : null;
+  const funcionario = donoSnap?.get("ativo") === true ? { nome: String(donoSnap.get("nome")) } : null;
 
   const agora = Date.now();
   // Para guardar batidas se a internet cair: a chave pública do servidor e a

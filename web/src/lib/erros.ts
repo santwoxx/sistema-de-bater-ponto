@@ -54,12 +54,7 @@ export function erroDeRede(erro: unknown): boolean {
   )
 }
 
-/** O servidor recusou a matrícula e o PIN (a resposta é a mesma para matrícula ou PIN errados). */
+/** O servidor recusou o CPF ou o PIN digitados no aparelho (a resposta é a mesma para os dois). */
 export function credenciaisInvalidas(erro: unknown): boolean {
   return (erro as { details?: { motivo?: string } } | null)?.details?.motivo === 'credenciais-invalidas'
-}
-
-/** O servidor recusou porque o PIN usado é o provisório: o funcionário precisa criar o dele. */
-export function pinProvisorio(erro: unknown): boolean {
-  return (erro as { details?: { motivo?: string } } | null)?.details?.motivo === 'pin-provisorio'
 }

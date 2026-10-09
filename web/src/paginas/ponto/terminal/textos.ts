@@ -2,14 +2,11 @@ import type { Etapa } from './tipos'
 
 // Textos da tela do aparelho para cada momento (funções puras, testadas em textos.test.ts).
 
-export interface EstadoTexto {
-  etapa: Etapa
-  /** Salvando o PIN pessoal no servidor. */
-  salvandoPin: boolean
-  /** Problema com o PIN novo digitado (ex.: sequência). */
-  erroPin: string
-  /** Celular pessoal: nome do dono (a tela pede só o PIN dele). */
-  nomeDono?: string | null
+export const TAMANHO_CPF = 11
+
+/** O servidor recusou: no celular pessoal só pode ser o PIN; no aparelho da loja, o CPF ou o PIN. */
+export function mensagemRecusa(pessoal: boolean): string {
+  return pessoal ? 'PIN incorreto. Confira o seu PIN e tente de novo.' : 'CPF ou PIN incorretos. Confira e tente de novo.'
 }
 
 /** "ELIANA MOREIRA DOS SANTOS" → "Eliana". */
@@ -18,36 +15,22 @@ export function primeiroNome(nome: string): string {
   return primeiro.charAt(0).toUpperCase() + primeiro.slice(1).toLowerCase()
 }
 
-/**
- * Matrícula ou PIN recusados. O servidor dá a mesma resposta para os dois (para
- * ninguém descobrir quais matrículas existem); a tela mostra o que foi digitado
- * e lembra o que é a matrícula. No celular pessoal, a matrícula é a do dono.
- */
-export function mensagemCredenciais(matricula: string, pessoal: boolean): string {
-  if (pessoal) return 'PIN incorreto. Confira o seu PIN e tente de novo.'
-  return `Matrícula ${matricula} ou PIN inválidos. A matrícula é o número que o gestor cadastrou para você (não é o CPF nem o telefone). Confira também o PIN.`
+/** CPF formatado enquanto é digitado: "5299822" → "529.982.2". */
+export function cpfNoVisor(digitos: string): string {
+  const blocos = [digitos.slice(0, 3), digitos.slice(3, 6), digitos.slice(6, 9)].filter(Boolean).join('.')
+  return digitos.length > 9 ? `${blocos}-${digitos.slice(9)}` : blocos
 }
 
-export function textoDeEspera(salvandoPin: boolean): string {
-  return salvandoPin ? 'Salvando seu PIN...' : 'Registrando...'
-}
-
-export function tituloDaTela({ etapa, salvandoPin, nomeDono }: EstadoTexto): string {
-  if (etapa === 'novoPin') return 'Crie seu PIN pessoal'
-  if (etapa === 'confirmarPin') return 'Digite o novo PIN de novo'
-  if (etapa === 'pin') return nomeDono ? `Olá, ${primeiroNome(nomeDono)}! Digite seu PIN` : 'Digite seu PIN'
+/** nomeDono: celular pessoal (a tela cumprimenta o dono e pede só o PIN). */
+export function tituloDaTela(etapa: Etapa, nomeDono: string | null): string {
+  if (etapa === 'cpf') return 'Digite seu CPF'
   if (etapa === 'foto') return 'Olhe para a câmera'
-  if (etapa === 'enviando') return textoDeEspera(salvandoPin)
-  return 'Digite sua matrícula'
+  if (etapa === 'enviando') return 'Registrando...'
+  return nomeDono ? `Olá, ${primeiroNome(nomeDono)}! Digite seu PIN` : 'Digite seu PIN'
 }
 
-export function instrucaoDaTela({ etapa, salvandoPin, erroPin }: EstadoTexto): string {
-  if (etapa === 'novoPin' || etapa === 'confirmarPin') {
-    if (erroPin) return erroPin
-    if (etapa === 'confirmarPin') return 'Confirme digitando o mesmo PIN.'
-    return 'Primeiro acesso: o PIN que você recebeu é provisório. Escolha um de 4 a 6 números que só você saiba.'
-  }
-  if (etapa === 'pin') return 'Ao confirmar, olhe para a câmera: a foto é tirada automaticamente.'
-  if (etapa === 'foto' || etapa === 'enviando') return salvandoPin ? 'Aguarde um instante.' : 'Fique parado, olhando para a câmera.'
-  return 'Matrícula, depois o PIN.'
+export function instrucaoDaTela(etapa: Etapa): string {
+  if (etapa === 'cpf') return 'Só os números do CPF. Depois, o PIN de 4 números.'
+  if (etapa === 'foto' || etapa === 'enviando') return 'Fique parado, olhando para a câmera.'
+  return 'Ao confirmar, olhe para a câmera: a foto é tirada automaticamente.'
 }

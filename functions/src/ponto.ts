@@ -3,7 +3,7 @@ import { HttpsError, onCall } from "firebase-functions/https";
 import * as logger from "firebase-functions/logger";
 import { db } from "./admin";
 import { exigirDispositivo } from "./acesso";
-import { decodificarJpeg, identificarNoAparelho, lerMatriculaPin, MAX_MINIATURA_BYTES } from "./identificacao";
+import { decodificarJpeg, identificarNoAparelho, lerCpfPin, MAX_MINIATURA_BYTES } from "./identificacao";
 import { comprovante, guardarFoto, MAX_FOTO_BYTES, montarMarcacao, ordinalNoDia } from "./marcacao";
 import { dataLocal, horaLocal } from "./tempo";
 import { objeto } from "./validacao";
@@ -22,13 +22,13 @@ export const registrarPonto = onCall({ memory: "512MiB", cpu: 1, timeoutSeconds:
   // se a internet cair e o aparelho reenviar, não nasce um registro duplicado.
   const idRequisicao = typeof dados.idRequisicao === "string" ? dados.idRequisicao : "";
   if (!/^[A-Za-z0-9-]{16,64}$/.test(idRequisicao)) throw new HttpsError("invalid-argument", "Requisição inválida.");
-  const { matricula, pin } = lerMatriculaPin(dados);
+  const { cpf, pin } = lerCpfPin(dados);
   const foto = decodificarJpeg(dados.foto, "Foto", MAX_FOTO_BYTES);
   const miniatura = decodificarJpeg(dados.miniatura, "Miniatura da foto", MAX_MINIATURA_BYTES);
 
-  // Matrícula + PIN são conferidos antes de qualquer outra coisa, inclusive do reenvio.
+  // CPF e PIN são conferidos antes de qualquer outra coisa, inclusive do reenvio.
   const { empresa, empresaRef, dispositivoRef, dispositivo, funcionarioId, funcionario, credenciaisRef } =
-    await identificarNoAparelho({ empresaId, dispositivoId, matricula, pin, miniatura });
+    await identificarNoAparelho({ empresaId, dispositivoId, cpf, pin, miniatura });
 
   const fuso = empresa.fusoHorario;
   const hoje = dataLocal(new Date(), fuso);

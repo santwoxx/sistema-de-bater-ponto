@@ -1,12 +1,10 @@
-// Estados da tela do aparelho de ponto. O funcionário só bate o ponto:
-// solicitações, ajustes e o fechamento do mês ficam com o gestor, no painel.
+// Estados da tela do aparelho de ponto. O funcionário só bate o ponto: no
+// aparelho da loja, digita o CPF e o PIN de 4 números; no celular pessoal, só
+// o PIN. Solicitações, ajustes, PIN e o fechamento do mês ficam com o gestor.
 
 export type Etapa =
-  | 'matricula'
+  | 'cpf'
   | 'pin'
-  // Primeiro uso: o funcionário cria o PIN pessoal (digita o novo e confirma).
-  | 'novoPin'
-  | 'confirmarPin'
   | 'foto'
   | 'enviando'
   | 'sucesso'

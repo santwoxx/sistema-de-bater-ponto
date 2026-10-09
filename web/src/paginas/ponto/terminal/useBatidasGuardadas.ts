@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api } from '../../../api'
-import { enviarGuardadas, guardarBatida, listarGuardadas, type ResumoEnvio } from './semInternet'
+import { contarGuardadas, enviarGuardadas, guardarBatida, type ResumoEnvio } from './semInternet'
 
 /** Enquanto houver batidas guardadas, tenta enviar a cada minuto. */
 const TENTAR_A_CADA_MS = 60_000
@@ -13,9 +13,9 @@ export interface AvisoDeEnvio {
 
 export function avisoDoEnvio({ enviadas, recusadas }: ResumoEnvio): AvisoDeEnvio | null {
   if (recusadas.length > 0) {
-    const quais = recusadas.map((r) => `matrícula ${r.matricula}: ${r.motivo.replace(/\.$/, '')}`).join('; ')
+    const motivos = [...new Set(recusadas.map((motivo) => motivo.replace(/\.$/, '')))].join('; ')
     const quantas = recusadas.length === 1 ? '1 batida feita sem internet foi recusada' : `${recusadas.length} batidas feitas sem internet foram recusadas`
-    return { tipo: 'alerta', texto: `${quantas} (${quais}). O gestor foi avisado no painel.` }
+    return { tipo: 'alerta', texto: `${quantas} (${motivos}). O gestor foi avisado no painel.` }
   }
   if (enviadas === 0) return null
   return { tipo: 'ok', texto: enviadas === 1 ? 'Internet de volta: a batida guardada foi enviada.' : `Internet de volta: as ${enviadas} batidas guardadas foram enviadas.` }
@@ -35,9 +35,9 @@ export function useBatidasGuardadas(conectado: boolean, aoConectar: () => void) 
   })
 
   const contar = useCallback(async () => {
-    const guardadas = await listarGuardadas().catch(() => [])
-    setPendentes(guardadas.length)
-    return guardadas.length
+    const guardadas = await contarGuardadas().catch(() => 0)
+    setPendentes(guardadas)
+    return guardadas
   }, [])
 
   const enviar = useCallback(async () => {

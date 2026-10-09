@@ -26,21 +26,15 @@ function Resultado({
   )
 }
 
-function AvisoPinCriado({ mostrar }: { mostrar: boolean }) {
-  return mostrar ? <small>Seu PIN pessoal foi criado: use-o a partir de agora.</small> : null
-}
-
 export function PontoRegistrado({
   comprovante,
   foto,
   fuso,
-  pinCriado,
   aoFechar,
 }: {
   comprovante: ComprovantePonto
   foto: string
   fuso: string
-  pinCriado: boolean
   aoFechar: () => void
 }) {
   return (
@@ -57,15 +51,13 @@ export function PontoRegistrado({
       <small>
         NSR {formatarNsr(comprovante.nsr)} · Código {comprovante.codigoVerificacao}
       </small>
-      <AvisoPinCriado mostrar={pinCriado} />
     </Resultado>
   )
 }
 
-/** Batida feita sem internet (nome: dono do celular pessoal, se for o caso). */
+/** Batida feita sem internet. quem: o dono do celular pessoal, ou o CPF (mascarado) digitado no aparelho da loja. */
 export interface DadosGuardada {
-  matricula: string
-  nome: string | null
+  quem: string
   horario: number
   foto: string
 }
@@ -86,10 +78,10 @@ export function PontoGuardado({
       <CloudOff size={64} aria-hidden />
       <h2>Batida guardada</h2>
       <img src={guardada.foto} alt="" className="resultado-foto" />
-      <strong className="resultado-nome">{guardada.nome ?? `Matrícula ${guardada.matricula}`}</strong>
+      <strong className="resultado-nome">{guardada.quem}</strong>
       <span className="resultado-hora">{horaLocal(horario, fuso)}</span>
       <span>{dataPorExtenso(horario, fuso)}</span>
-      <p>Estamos sem internet. A batida ficou guardada neste aparelho e vai sozinha quando a conexão voltar; o PIN é conferido nessa hora.</p>
+      <p>Estamos sem internet. A batida ficou guardada neste aparelho e vai sozinha quando a conexão voltar; o CPF e o PIN são conferidos nessa hora.</p>
     </Resultado>
   )
 }

@@ -67,8 +67,8 @@ export type Sincronizacao =
   | {
       ativo: true
       agora: number
-      /** funcionario: dono, se for o celular pessoal de alguém (só ele bate ponto e digita só o PIN). */
-      dispositivo: { id: string; nome: string; funcionario?: { nome: string; matricula: string } | null }
+      /** funcionario: dono, se for o celular pessoal de alguém (só ele bate ponto, digitando só o PIN). */
+      dispositivo: { id: string; nome: string; funcionario?: { nome: string } | null }
       empresa: { id: string; nome: string; fusoHorario: string; ativo: boolean }
       /** Para guardar batidas se a internet cair (ver paginas/ponto/terminal/semInternet.ts). */
       semInternet?: DadosSemInternet | null
@@ -87,17 +87,13 @@ export const api = {
   salvarDispositivo: funcao<{ empresaId: string; dispositivoId: string; funcionarioId: string | null }, { ok: true }>('salvarDispositivo'),
   // O aparelho informa o estado da câmera, que o gestor vê em "Aparelhos de ponto".
   sincronizarDispositivo: funcao<{ camera?: DiagnosticoCamera }, Sincronizacao>('sincronizarDispositivo', 15_000),
-  registrarPonto: funcao<
-    { idRequisicao: string; matricula: string; pin: string; foto: string; miniatura: string },
-    ComprovantePonto
-  >('registrarPonto', 25_000),
+  // Aparelho da loja: CPF + PIN de 4 números. Celular pessoal: só o PIN (o aparelho já é do funcionário).
+  registrarPonto: funcao<{ idRequisicao: string; cpf?: string; pin: string; foto: string; miniatura: string }, ComprovantePonto>(
+    'registrarPonto',
+    25_000,
+  ),
   // Batida feita sem internet, guardada cifrada no aparelho e enviada quando a conexão volta.
   registrarPontoGuardado: funcao<{ pacote: PacoteSelado }, ResultadoEnvio>('registrarPontoGuardado', 60_000),
-  // No primeiro uso, o funcionário troca o PIN provisório do gestor pelo dele, no aparelho.
-  definirPin: funcao<
-    { matricula: string; pin: string; novoPin: string; miniatura: string | null },
-    { funcionarioNome: string }
-  >('definirPin', 25_000),
   // Foto completa de uma marcação, conferida com o hash gravado no registro.
   obterFoto: funcao<{ empresaId: string; registroId: string }, { foto: string; confere: boolean }>('obterFoto', 30_000),
   incluirMarcacao: funcao<

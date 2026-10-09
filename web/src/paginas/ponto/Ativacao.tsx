@@ -159,7 +159,7 @@ export default function Ativacao() {
           <form onSubmit={entrar} className="formulario">
             <Aviso tipo="info">
               Um <strong>gestor</strong> precisa autorizar este aparelho uma única vez. Depois disso, ele fica no modo ponto e os
-              funcionários registram com matrícula, PIN e foto.
+              funcionários registram com CPF, PIN e foto.
             </Aviso>
             {sessao.tipo === 'usuario' && (
               <Aviso tipo="alerta">

@@ -4,22 +4,21 @@ import * as logger from "firebase-functions/logger";
 import { db } from "./admin";
 import { carregarEmpresa, type Empresa } from "./acesso";
 import { registrarAuditoria } from "./auditoria";
-import { simularConferenciaPin, verificarPin } from "./seguranca";
-import { normalizarMatricula } from "./validacao";
+import { pinConfere } from "./pin";
+import { cpfValido } from "./validacao";
 
-// Identificação do funcionário no aparelho de ponto (matrícula + PIN), usada
-// para bater o ponto, pedir marcação esquecida, assinar o espelho e criar o
-// PIN pessoal.
+// Identificação do funcionário no aparelho de ponto: no aparelho da loja, CPF +
+// PIN de 4 números (definido pelo gestor); no celular pessoal, só o PIN (o
+// aparelho já identifica o dono). Usada para bater o ponto, com ou sem internet.
 //
 // Proteção contra adivinhação de PIN:
-//  - por funcionário: 5 erros seguidos bloqueiam a matrícula por 15 minutos;
-//    cada novo bloqueio sem um acerto no meio dobra o tempo (até 1 hora);
+//  - por funcionário: 5 erros seguidos bloqueiam o PIN por 15 minutos; cada novo
+//    bloqueio sem um acerto no meio dobra o tempo (até 1 hora);
 //  - por aparelho: 25 erros em 15 minutos bloqueiam o aparelho até a janela passar;
 //  - cada tentativa é RESERVADA numa transação antes de o PIN ser conferido:
 //    pedidos disparados em paralelo não testam mais PINs do que o limite;
 //  - todo bloqueio vai para a auditoria da empresa, com a foto da tentativa;
-//  - matrícula inexistente gasta o mesmo tempo de um PIN errado, então o tempo
-//    de resposta não revela quais matrículas existem.
+//  - CPF que não é de funcionário ativo e PIN errado dão a mesma resposta.
 export const MAX_FALHAS_PIN = 5;
 export const MAX_FALHAS_APARELHO = 25;
 const JANELA_FALHAS_APARELHO_MS = 15 * 60_000;
@@ -28,27 +27,24 @@ const BLOQUEIO_MAXIMO_MIN = 60;
 
 export const MAX_MINIATURA_BYTES = 16 * 1024;
 
-/** Duração do n-ésimo bloqueio seguido de uma matrícula: 15, 30, 60, 60... minutos. */
+/** Duração do n-ésimo bloqueio seguido de um funcionário: 15, 30, 60, 60... minutos. */
 export function minutosDeBloqueio(bloqueiosSeguidos: number): number {
   return Math.min(BLOQUEIO_INICIAL_MIN * 2 ** Math.max(0, bloqueiosSeguidos - 1), BLOQUEIO_MAXIMO_MIN);
 }
 
 export function credenciaisInvalidas(): HttpsError {
-  return new HttpsError("permission-denied", "Matrícula ou PIN inválidos.", { motivo: "credenciais-invalidas" });
+  return new HttpsError("permission-denied", "CPF ou PIN incorretos.", { motivo: "credenciais-invalidas" });
 }
 
-/** O PIN usado é o provisório definido pelo gestor: o funcionário precisa criar o dele. */
-export function erroPinProvisorio(): HttpsError {
-  return new HttpsError("failed-precondition", "Primeiro acesso: crie o seu PIN pessoal para continuar.", {
-    motivo: "pin-provisorio",
-  });
-}
-
-/** Matrícula e PIN no formato do teclado do aparelho; formato errado conta como credencial inválida. */
-export function lerMatriculaPin(dados: Record<string, unknown>): { matricula: string; pin: string } {
-  if (typeof dados.matricula !== "string" || !/^\d{1,10}$/.test(dados.matricula)) throw credenciaisInvalidas();
-  if (typeof dados.pin !== "string" || !/^\d{4,6}$/.test(dados.pin)) throw credenciaisInvalidas();
-  return { matricula: normalizarMatricula(dados.matricula), pin: dados.pin };
+/**
+ * CPF (só os números, válido) e PIN de 4 números, do teclado do aparelho. No
+ * celular pessoal o CPF não vem. Formato errado conta como credencial inválida.
+ */
+export function lerCpfPin(dados: Record<string, unknown>): { cpf: string | null; pin: string } {
+  if (typeof dados.pin !== "string" || !/^\d{4}$/.test(dados.pin)) throw credenciaisInvalidas();
+  if (dados.cpf === undefined || dados.cpf === null || dados.cpf === "") return { cpf: null, pin: dados.pin };
+  if (typeof dados.cpf !== "string" || !/^\d{11}$/.test(dados.cpf) || !cpfValido(dados.cpf)) throw credenciaisInvalidas();
+  return { cpf: dados.cpf, pin: dados.pin };
 }
 
 export function decodificarJpeg(valor: unknown, campo: string, maxBytes: number): Buffer {
@@ -77,14 +73,14 @@ function janelaVigente(valor: unknown, agora: number): JanelaFalhas | null {
 }
 
 function erroAparelhoBloqueado(): HttpsError {
-  return new HttpsError("resource-exhausted", "Muitas tentativas inválidas neste aparelho. Aguarde alguns minutos.");
+  return new HttpsError("resource-exhausted", "Muitas tentativas erradas neste aparelho. Aguarde alguns minutos.");
 }
 
-function erroMatriculaBloqueada(ate: number): HttpsError {
+function erroPinBloqueado(ate: number): HttpsError {
   const minutos = Math.max(1, Math.ceil((ate - Date.now()) / 60_000));
   return new HttpsError(
     "resource-exhausted",
-    `Muitas tentativas incorretas. Tente novamente em ${minutos} min ou peça ao gestor para redefinir seu PIN.`,
+    `Muitas tentativas erradas. Tente de novo em ${minutos} min ou peça ao gestor para trocar o seu PIN.`,
   );
 }
 
@@ -103,8 +99,8 @@ interface Reserva {
   credenciais: DocumentData | null;
   /** Início da janela de erros do aparelho em que esta tentativa foi contada. */
   janelaAparelho: number;
-  /** Minutos de bloqueio que esta tentativa aplica à matrícula, se errar. */
-  bloqueioMatriculaMin: number | null;
+  /** Minutos de bloqueio que esta tentativa aplica ao PIN do funcionário, se errar. */
+  bloqueioPinMin: number | null;
   /** Esta tentativa, se errar, completa o limite de erros do aparelho. */
   bloqueiaAparelho: boolean;
 }
@@ -126,19 +122,15 @@ function reservarTentativa(dispositivoRef: DocumentReference, credenciaisRef: Do
     if (janela && janela.quantidade >= MAX_FALHAS_APARELHO) throw erroAparelhoBloqueado();
 
     const credenciais = credenciaisSnap?.data() ?? null;
-    let bloqueioMatriculaMin: number | null = null;
+    let bloqueioPinMin: number | null = null;
     if (credenciaisRef && credenciais) {
       const bloqueadoAte = (credenciais.bloqueadoAte as Timestamp | null | undefined)?.toMillis() ?? 0;
-      if (bloqueadoAte > agora) throw erroMatriculaBloqueada(bloqueadoAte);
+      if (bloqueadoAte > agora) throw erroPinBloqueado(bloqueadoAte);
       const falhas = ((credenciais.falhas as number | undefined) ?? 0) + 1;
       if (falhas >= MAX_FALHAS_PIN) {
         const bloqueios = ((credenciais.bloqueios as number | undefined) ?? 0) + 1;
-        bloqueioMatriculaMin = minutosDeBloqueio(bloqueios);
-        tx.update(credenciaisRef, {
-          falhas: 0,
-          bloqueios,
-          bloqueadoAte: Timestamp.fromMillis(agora + bloqueioMatriculaMin * 60_000),
-        });
+        bloqueioPinMin = minutosDeBloqueio(bloqueios);
+        tx.update(credenciaisRef, { falhas: 0, bloqueios, bloqueadoAte: Timestamp.fromMillis(agora + bloqueioPinMin * 60_000) });
       } else {
         tx.update(credenciaisRef, { falhas });
       }
@@ -148,11 +140,11 @@ function reservarTentativa(dispositivoRef: DocumentReference, credenciaisRef: Do
     const quantidade = (janela?.quantidade ?? 0) + 1;
     tx.update(dispositivoRef, { falhas: { inicio, quantidade } });
 
-    return { credenciais, janelaAparelho: inicio.toMillis(), bloqueioMatriculaMin, bloqueiaAparelho: quantidade >= MAX_FALHAS_APARELHO };
+    return { credenciais, janelaAparelho: inicio.toMillis(), bloqueioPinMin, bloqueiaAparelho: quantidade >= MAX_FALHAS_APARELHO };
   });
 }
 
-/** PIN certo: zera os erros da matrícula e devolve a tentativa reservada no aparelho. */
+/** PIN certo: zera os erros do funcionário e devolve a tentativa reservada no aparelho. */
 async function confirmarAcerto(dispositivoRef: DocumentReference, credenciaisRef: DocumentReference, janelaAparelho: number) {
   await db.runTransaction(async (tx) => {
     const janela = (await tx.get(dispositivoRef)).get("falhas") as JanelaFalhas | undefined;
@@ -168,23 +160,22 @@ async function auditarBloqueios(params: {
   empresaId: string;
   dispositivoId: string;
   dispositivoNome: string;
-  matricula: string;
   funcionarioId: string | null;
   funcionarioNome: string | null;
   miniatura: Buffer | null;
 }) {
-  const { reserva, empresaId, dispositivoId, dispositivoNome, matricula, funcionarioId, funcionarioNome, miniatura } = params;
+  const { reserva, empresaId, dispositivoId, dispositivoNome, funcionarioId, funcionarioNome, miniatura } = params;
   const autor = { uid: dispositivoId, nome: `Aparelho "${dispositivoNome}"` };
   const foto = miniatura ? `data:image/jpeg;base64,${miniatura.toString("base64")}` : null;
-  if (reserva.bloqueioMatriculaMin && funcionarioId) {
+  if (reserva.bloqueioPinMin && funcionarioId) {
     await registrarAuditoria({
       empresaId,
       autor,
       acao: "pin.bloqueado",
       descricao:
-        `Matrícula ${matricula} (${funcionarioNome}) bloqueada por ${reserva.bloqueioMatriculaMin} min depois de ` +
-        `${MAX_FALHAS_PIN} PINs errados seguidos no aparelho "${dispositivoNome}".`,
-      detalhes: { funcionarioId, dispositivoId, minutos: reserva.bloqueioMatriculaMin, foto },
+        `PIN de ${funcionarioNome} bloqueado por ${reserva.bloqueioPinMin} min depois de ` +
+        `${MAX_FALHAS_PIN} tentativas erradas seguidas no aparelho "${dispositivoNome}".`,
+      detalhes: { funcionarioId, dispositivoId, minutos: reserva.bloqueioPinMin, foto },
     });
   }
   if (reserva.bloqueiaAparelho) {
@@ -192,8 +183,8 @@ async function auditarBloqueios(params: {
       empresaId,
       autor,
       acao: "aparelho.bloqueado",
-      descricao: `Aparelho "${dispositivoNome}" bloqueado por 15 min depois de ${MAX_FALHAS_APARELHO} tentativas inválidas (a última com a matrícula ${matricula}).`,
-      detalhes: { dispositivoId, matricula, foto },
+      descricao: `Aparelho "${dispositivoNome}" bloqueado por 15 min depois de ${MAX_FALHAS_APARELHO} tentativas erradas.`,
+      detalhes: { dispositivoId, foto },
     });
   }
 }
@@ -205,70 +196,51 @@ export interface Identificacao {
   dispositivo: DocumentData;
   funcionarioId: string;
   funcionario: DocumentData;
+  /** Dados do servidor sobre o funcionário (chave do PIN, erros, última marcação). */
   credenciaisRef: DocumentReference;
-  /** O PIN usado é o provisório definido pelo gestor. */
-  provisorio: boolean;
 }
 
 /**
- * Matrícula digitada, para o log: ajuda o suporte (ex.: a pessoa digitou o CPF
- * em vez da matrícula) sem gravar um CPF ou telefone inteiro.
- */
-export function matriculaParaLog(matricula: string): string {
-  return matricula.length <= 6 ? matricula : `${matricula.slice(0, 2)}… (${matricula.length} dígitos)`;
-}
-
-/**
- * Identificação completa no aparelho: aparelho ativo, funcionário ativo com a
- * matrícula informada e PIN certo. O PIN provisório só é aceito para criar o
- * PIN pessoal (aceitarProvisorio).
+ * Identificação no aparelho: aparelho ativo, funcionário ativo e PIN certo. No
+ * aparelho da loja, o funcionário é o dono do CPF; no celular pessoal, é o dono
+ * do aparelho (o CPF, se vier, é ignorado).
  */
 export async function identificarNoAparelho(params: {
   empresaId: string;
   dispositivoId: string;
-  matricula: string;
+  cpf: string | null;
   pin: string;
   /** Foto pequena da tentativa: vai para a auditoria se a tentativa causar bloqueio. */
   miniatura?: Buffer | null;
-  aceitarProvisorio?: boolean;
 }): Promise<Identificacao> {
-  const { empresaId, dispositivoId, matricula, pin, miniatura = null, aceitarProvisorio = false } = params;
+  const { empresaId, dispositivoId, cpf, pin, miniatura = null } = params;
   const empresaRef = db.doc(`empresas/${empresaId}`);
   const dispositivoRef = empresaRef.collection("dispositivos").doc(dispositivoId);
-  const [empresa, dispositivoSnap, encontrados] = await Promise.all([
-    carregarEmpresa(empresaId),
-    dispositivoRef.get(),
-    empresaRef.collection("funcionarios").where("matricula", "==", matricula).limit(1).get(),
-  ]);
+  const [empresa, dispositivoSnap] = await Promise.all([carregarEmpresa(empresaId), dispositivoRef.get()]);
   const dispositivo = exigirAparelhoAtivo(dispositivoSnap.data(), empresa);
 
-  const funcionarioDoc = encontrados.docs[0];
-  // Celular pessoal: só o dono bate ponto nele. Outra matrícula é tratada como
-  // inexistente (mesma resposta e mesmo tempo, e conta nos erros do aparelho).
-  const doDono = !dispositivo.funcionarioId || funcionarioDoc?.id === dispositivo.funcionarioId;
-  const funcionario = doDono && funcionarioDoc?.get("ativo") === true ? funcionarioDoc.data() : null;
-  const funcionarioId = funcionario ? funcionarioDoc.id : null;
+  const funcionarios = empresaRef.collection("funcionarios");
+  const funcionarioDoc = dispositivo.funcionarioId
+    ? await funcionarios.doc(String(dispositivo.funcionarioId)).get()
+    : cpf
+      ? (await funcionarios.where("cpf", "==", cpf).limit(1).get()).docs[0]
+      : undefined;
+  const funcionario = funcionarioDoc?.get("ativo") === true ? funcionarioDoc.data() : undefined;
+  const funcionarioId = funcionario && funcionarioDoc ? funcionarioDoc.id : null;
   const credenciaisRef = funcionarioId ? empresaRef.collection("credenciais").doc(funcionarioId) : null;
 
   const reserva = await reservarTentativa(dispositivoRef, credenciaisRef);
-  const credenciais = reserva.credenciais;
+  // Sem funcionário, confere um PIN fictício: a resposta não revela se o CPF é de alguém.
+  const acertou = await pinConfere(reserva.credenciais?.pinChave, empresaId, funcionarioId ?? "-", pin);
 
-  let acertou = false;
-  if (funcionario && credenciais?.pinHash) {
-    acertou = await verificarPin(pin, credenciais.pinHash, credenciais.pinSal);
-  } else {
-    await simularConferenciaPin(pin);
-  }
-
-  if (!acertou || !funcionario || !funcionarioId || !credenciaisRef || !credenciais) {
-    // O PIN nunca vai para o log.
-    logger.warn("Matrícula ou PIN inválidos no aparelho", { empresaId, dispositivoId, funcionarioId, matricula: matriculaParaLog(matricula) });
+  if (!acertou || !funcionario || !funcionarioId || !credenciaisRef) {
+    // O CPF e o PIN nunca vão para o log.
+    logger.warn("CPF ou PIN incorretos no aparelho", { empresaId, dispositivoId, funcionarioId });
     await auditarBloqueios({
       reserva,
       empresaId,
       dispositivoId,
       dispositivoNome: String(dispositivo.nome ?? ""),
-      matricula,
       funcionarioId,
       funcionarioNome: funcionario ? String(funcionario.nome) : null,
       miniatura,
@@ -277,7 +249,5 @@ export async function identificarNoAparelho(params: {
   }
 
   await confirmarAcerto(dispositivoRef, credenciaisRef, reserva.janelaAparelho);
-  const provisorio = credenciais.provisorio === true;
-  if (provisorio && !aceitarProvisorio) throw erroPinProvisorio();
-  return { empresa, empresaRef, dispositivoRef, dispositivo, funcionarioId, funcionario, credenciaisRef, provisorio };
+  return { empresa, empresaRef, dispositivoRef, dispositivo, funcionarioId, funcionario, credenciaisRef };
 }

@@ -5,7 +5,7 @@ import * as logger from "firebase-functions/logger";
 import { db } from "./admin";
 import { carregarEmpresa, exigirDispositivo } from "./acesso";
 import { registrarAuditoria } from "./auditoria";
-import { decodificarJpeg, identificarNoAparelho, lerMatriculaPin, MAX_MINIATURA_BYTES, type Identificacao } from "./identificacao";
+import { decodificarJpeg, identificarNoAparelho, lerCpfPin, MAX_MINIATURA_BYTES, type Identificacao } from "./identificacao";
 import { comprovante, guardarFoto, MAX_FOTO_BYTES, montarMarcacao, ordinalNoDia, type SemInternetRegistro } from "./marcacao";
 import { dataLocal, horaLocal } from "./tempo";
 import { objeto } from "./validacao";
@@ -218,18 +218,16 @@ export const registrarPontoGuardado = onCall({ memory: "512MiB", maxInstances: 2
   const dispositivoNome = String(dispositivo.nome ?? "");
   const fuso = empresa.fusoHorario;
 
-  const recusar = async (motivo: string, extra: { matricula?: string; horario?: number; miniatura?: Buffer | null } = {}): Promise<ResultadoEnvio> => {
+  const recusar = async (motivo: string, extra: { horario?: number; miniatura?: Buffer | null } = {}): Promise<ResultadoEnvio> => {
     const quando = extra.horario ? ` de ${dataHoraBR(new Date(extra.horario), fuso)}` : "";
-    const quem = extra.matricula ? ` (matrícula ${extra.matricula})` : "";
     logger.warn("Batida sem internet recusada", { empresaId, dispositivoId, motivo });
     await registrarAuditoria({
       empresaId,
       autor: { uid: dispositivoId, nome: `Aparelho "${dispositivoNome}"` },
       acao: "ponto.semInternetRecusado",
-      descricao: `Batida feita sem internet${quando}${quem} no aparelho "${dispositivoNome}" recusada: ${motivo}`,
+      descricao: `Batida feita sem internet${quando} no aparelho "${dispositivoNome}" recusada: ${motivo}`,
       detalhes: {
         dispositivoId,
-        matricula: extra.matricula ?? null,
         horario: extra.horario ? Timestamp.fromMillis(extra.horario) : null,
         motivo,
         foto: extra.miniatura ? `data:image/jpeg;base64,${extra.miniatura.toString("base64")}` : null,
@@ -256,30 +254,29 @@ export const registrarPontoGuardado = onCall({ memory: "512MiB", maxInstances: 2
 
   const idRequisicao = typeof conteudo.idRequisicao === "string" ? conteudo.idRequisicao : "";
   if (!/^[A-Za-z0-9-]{16,64}$/.test(idRequisicao)) return recusar("a identificação da batida é inválida.");
-  let matricula: string, pin: string, foto: Buffer, miniatura: Buffer;
+  let cpf: string | null, pin: string, foto: Buffer, miniatura: Buffer;
   try {
-    ({ matricula, pin } = lerMatriculaPin(conteudo));
+    ({ cpf, pin } = lerCpfPin(conteudo));
     miniatura = decodificarJpeg(conteudo.miniatura, "Miniatura da foto", MAX_MINIATURA_BYTES);
     foto = decodificarJpeg(conteudo.foto, "Foto", MAX_FOTO_BYTES);
   } catch {
-    return recusar("a matrícula, o PIN ou a foto vieram em formato inválido.");
+    return recusar("o CPF, o PIN ou a foto vieram em formato inválido.");
   }
 
   const avaliacao = avaliarHorario({ ancoraEm: ancora.em, relogioNaAncora, relogioAgora, decorrido, recebidoEm });
   if (!avaliacao.aceito) {
-    return recusar(avaliacao.motivo, { matricula, miniatura, horario: ancora.em + (relogioAgora - relogioNaAncora) });
+    return recusar(avaliacao.motivo, { miniatura, horario: ancora.em + (relogioAgora - relogioNaAncora) });
   }
-  const extra = { matricula, miniatura, horario: avaliacao.horario };
+  const extra = { miniatura, horario: avaliacao.horario };
   if (!empresa.ativo) return recusar("a empresa está desativada.", extra);
 
   // PIN conferido como numa batida online, com os mesmos bloqueios.
   let identificacao: Identificacao;
   try {
-    identificacao = await identificarNoAparelho({ empresaId, dispositivoId, matricula, pin, miniatura });
+    identificacao = await identificarNoAparelho({ empresaId, dispositivoId, cpf, pin, miniatura });
   } catch (erro) {
     const motivo = (erro as { details?: { motivo?: string } }).details?.motivo;
-    if (motivo === "credenciais-invalidas") return recusar("matrícula ou PIN inválidos.", extra);
-    if (motivo === "pin-provisorio") return recusar("o funcionário ainda usava o PIN provisório, sem ter criado o PIN pessoal.", extra);
+    if (motivo === "credenciais-invalidas") return recusar("CPF ou PIN incorretos.", extra);
     // Bloqueio temporário ou falha: a batida continua guardada e vai de novo depois.
     throw erro;
   }

@@ -1,9 +1,9 @@
 import { ordenarPorNome, type Funcionario } from '../tipos'
 import { Campo } from './Basicos'
 
-// Uso do aparelho, na ativação e no painel: aparelho da loja (cada um digita a
-// sua matrícula) ou celular pessoal de um funcionário (só ele bate ponto e
-// digita só o PIN). O valor é o id do dono; '' = aparelho da loja.
+// Uso do aparelho, na ativação e no painel: aparelho da loja (cada um digita o
+// CPF e o PIN) ou celular pessoal de um funcionário (só ele bate ponto e digita
+// só o PIN). O valor é o id do dono; '' = aparelho da loja.
 export default function UsoDoAparelho({
   funcionarios,
   valor,
@@ -22,7 +22,7 @@ export default function UsoDoAparelho({
         <label className="caixa-marcar">
           <input type="radio" name="uso-aparelho" checked={!pessoal} onChange={() => aoMudar('')} />
           <span>
-            <strong>Aparelho da loja</strong> · todos batem ponto nele, cada um com a sua matrícula e PIN
+            <strong>Aparelho da loja</strong> · todos batem ponto nele, cada um com o seu CPF e PIN
           </span>
         </label>
         <label className="caixa-marcar">

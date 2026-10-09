@@ -124,10 +124,7 @@ Dados de exemplo criados (${incluidas} marcações de histórico em ${mesAnterio
     admin@teste.com    administrador, vê todas as empresas
     gestora@teste.com  gestora, vê só a Loja Centro
 
-  Funcionários (PIN provisório: no primeiro uso o aparelho pede para criar o PIN pessoal):
-    Loja Centro          matrícula 1 / PIN 2580 (Maria)
-                         matrícula 2 / PIN 1357 (João)
-                         matrícula 3 / PIN 2468 (Ana)
-    Loja Shopping Norte  matrícula 1 / PIN 4826 (Pedro)
+  Funcionários (no aparelho da loja: CPF + PIN; no celular pessoal, só o PIN):
+${equipe.map((f) => `    ${f.nome.padEnd(12)} CPF ${f.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')}  PIN ${f.pin}`).join('\n')}
 `)
 process.exit(0)

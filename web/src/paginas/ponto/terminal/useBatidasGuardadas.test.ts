@@ -8,11 +8,13 @@ describe('aviso depois de enviar as batidas guardadas', () => {
     expect(avisoDoEnvio({ enviadas: 0, recusadas: [], restantes: 2 })).toBeNull()
   })
 
-  it('recusadas viram alerta com a matrícula e o motivo', () => {
-    const aviso = avisoDoEnvio({ enviadas: 2, recusadas: [{ matricula: '7', motivo: 'matrícula ou PIN inválidos.' }], restantes: 0 })
-    expect(aviso).toEqual({
+  it('recusadas viram alerta com o motivo (sem repetir o mesmo motivo)', () => {
+    expect(avisoDoEnvio({ enviadas: 2, recusadas: ['PIN incorreto.'], restantes: 0 })).toEqual({
       tipo: 'alerta',
-      texto: '1 batida feita sem internet foi recusada (matrícula 7: matrícula ou PIN inválidos). O gestor foi avisado no painel.',
+      texto: '1 batida feita sem internet foi recusada (PIN incorreto). O gestor foi avisado no painel.',
     })
+    expect(avisoDoEnvio({ enviadas: 0, recusadas: ['PIN incorreto.', 'PIN incorreto.'], restantes: 0 })?.texto).toBe(
+      '2 batidas feitas sem internet foram recusadas (PIN incorreto). O gestor foi avisado no painel.',
+    )
   })
 })

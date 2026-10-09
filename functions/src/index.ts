@@ -8,7 +8,6 @@ export { salvarFuncionario } from "./funcionarios";
 export { ativarDispositivo, desativarDispositivo, salvarDispositivo, sincronizarDispositivo } from "./dispositivos";
 export { registrarPonto } from "./ponto";
 export { registrarPontoGuardado } from "./semInternet";
-export { definirPin } from "./pinPessoal";
 export { obterFoto } from "./fotos";
 export { incluirMarcacao, desconsiderarMarcacao } from "./ajustes";
 export { incluirAbono, removerAbono } from "./abonos";
