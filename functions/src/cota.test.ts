@@ -32,7 +32,7 @@ function cpuPorCopia({ availableMemoryMb, cpu }: Endpoint): number {
 
 describe("cota de CPU do Cloud Run", () => {
   it("toda função tem um máximo de cópias", () => {
-    expect(endpoints.length).toBeGreaterThan(20);
+    expect(endpoints.length).toBeGreaterThan(5);
     for (const { nome, maxInstances } of endpoints) expect(maxInstances, nome).toBeGreaterThan(0);
   });
 

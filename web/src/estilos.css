@@ -2521,6 +2521,20 @@ html.modo-ponto body {
   padding-left: 18px;
 }
 
+/* Versão nova do sistema publicada (painel) */
+
+.faixa-versao {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 10px 16px;
+  border-radius: var(--raio);
+  background: var(--primaria-clara);
+  border: 1px solid var(--primaria);
+}
+
 /* Alertas de segurança (faixa no topo e cartão na página Hoje) */
 
 .faixa-alerta {

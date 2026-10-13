@@ -1,4 +1,4 @@
-import { deleteApp, FirebaseError, initializeApp, type FirebaseOptions } from 'firebase/app'
+import { deleteApp, FirebaseError, initializeApp, type FirebaseApp, type FirebaseOptions } from 'firebase/app'
 import {
   browserLocalPersistence,
   browserPopupRedirectResolver,
@@ -15,7 +15,6 @@ import {
   type Auth,
   type UserCredential,
 } from 'firebase/auth'
-import { connectFirestoreEmulator, getFirestore, type Firestore } from 'firebase/firestore'
 import { connectFunctionsEmulator, getFunctions, type Functions } from 'firebase/functions'
 
 const env = import.meta.env
@@ -38,11 +37,13 @@ export const configuracaoOk = Boolean(env.VITE_FIREBASE_API_KEY && env.VITE_FIRE
 const usarEmuladores = env.VITE_USAR_EMULADORES === 'true'
 const hostEmulador = env.VITE_HOST_EMULADOR || '127.0.0.1'
 
-function conectarEmuladores(servicos: { auth: Auth; db?: Firestore; functions: Functions }) {
+/** Endereço dos emuladores, quando o site foi gerado para eles (o Firestore conecta em banco.ts). */
+export const hostDoEmulador = usarEmuladores ? hostEmulador : null
+
+function conectarEmuladores(servicos: { auth: Auth; functions: Functions }) {
   if (!usarEmuladores) return
   connectAuthEmulator(servicos.auth, `http://${hostEmulador}:9099`, { disableWarnings: true })
   connectFunctionsEmulator(servicos.functions, hostEmulador, 5001)
-  if (servicos.db) connectFirestoreEmulator(servicos.db, hostEmulador, 8080)
 }
 
 export const app = initializeApp(configuracao)
@@ -52,10 +53,9 @@ export const app = initializeApp(configuracao)
 // A sessão "só desta janela" (login sem "Manter conectado") fica no
 // sessionStorage: ele precisa estar na lista para a sessão sobreviver a um F5.
 export const auth = initializeAuth(app, { persistence: [indexedDBLocalPersistence, browserLocalPersistence, browserSessionPersistence] })
-export const db = getFirestore(app)
 export const functions = getFunctions(app, REGIAO_FUNCOES)
 
-conectarEmuladores({ auth, db, functions })
+conectarEmuladores({ auth, functions })
 
 /**
  * Login com a conta Google numa janela (popup), na sessão informada: a do painel
@@ -75,8 +75,9 @@ export async function entrarComGoogle(alvo: Auth = auth): Promise<UserCredential
 }
 
 export interface SessaoTemporaria {
+  /** Para ler o banco na ativação: bancoDe(app), em banco.ts. */
+  app: FirebaseApp
   auth: Auth
-  db: Firestore
   functions: Functions
   encerrar: () => Promise<void>
 }
@@ -86,8 +87,8 @@ export interface SessaoTemporaria {
 export function criarSessaoTemporaria(): SessaoTemporaria {
   const appTemporario = initializeApp(configuracao, `temporario-${Date.now()}`)
   const sessao = {
+    app: appTemporario,
     auth: initializeAuth(appTemporario, { persistence: inMemoryPersistence }),
-    db: getFirestore(appTemporario),
     functions: getFunctions(appTemporario, REGIAO_FUNCOES),
   }
   conectarEmuladores(sessao)

@@ -19,7 +19,8 @@ const MENSAGENS: Record<string, string> = {
   'functions/unavailable': 'Servidor indisponível ou sem internet. Tente novamente.',
   'functions/deadline-exceeded': 'O servidor demorou para responder. Tente novamente.',
   'functions/internal': 'Erro interno no servidor. Tente novamente em instantes.',
-  'functions/not-found': 'Função não encontrada no servidor. As Cloud Functions foram publicadas?',
+  // Quase sempre: a página foi aberta antes de uma atualização do sistema.
+  'functions/not-found': 'O sistema foi atualizado. Recarregue a página (F5) e tente de novo.',
   'permission-denied': 'Você não tem permissão para ver estes dados.',
   unavailable: 'Sem conexão com o servidor. Verificando novamente...',
 }

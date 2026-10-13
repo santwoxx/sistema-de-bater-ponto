@@ -1,5 +1,5 @@
 import { FieldValue, type DocumentData, type QuerySnapshot, type Transaction } from "firebase-admin/firestore";
-import { HttpsError, onCall } from "firebase-functions/https";
+import { HttpsError, type CallableRequest } from "firebase-functions/https";
 import { db } from "./admin";
 import { autor, exigirAcessoEmpresa, type Autor } from "./acesso";
 import { consultaDoDia, existeNoMesmoMinuto, marcacaoManual } from "./ajustes";
@@ -97,7 +97,7 @@ function gravarMarcacaoAprovada(params: {
   };
 }
 
-export const criarSolicitacao = onCall(async (request) => {
+export async function criarSolicitacao(request: CallableRequest) {
   const dados = objeto(request.data);
   const empresaId = idDocumento(dados.empresaId, "Empresa");
   const { usuario, empresa } = await exigirAcessoEmpresa(request, empresaId);
@@ -157,9 +157,9 @@ export const criarSolicitacao = onCall(async (request) => {
   });
 
   return { id: solicitacaoRef.id, registroId };
-});
+}
 
-export const decidirSolicitacao = onCall(async (request) => {
+export async function decidirSolicitacao(request: CallableRequest) {
   const dados = objeto(request.data);
   const empresaId = idDocumento(dados.empresaId, "Empresa");
   const solicitacaoId = idDocumento(dados.solicitacaoId, "Solicitação");
@@ -219,4 +219,4 @@ export const decidirSolicitacao = onCall(async (request) => {
   });
 
   return { ok: true, registroId };
-});
+}

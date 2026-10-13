@@ -15,6 +15,15 @@ function funcao<Entrada, Saida>(nome: string, timeout?: number) {
   }
 }
 
+/**
+ * Ação rápida do painel: todas passam pela mesma função do servidor ("painel"),
+ * que fica aberta depois da primeira chamada (ver functions/src/painel.ts).
+ */
+function acaoDoPainel<Entrada, Saida>(acao: string) {
+  const painel = funcao<{ acao: string; dados?: Entrada }, Saida>('painel')
+  return (dados: Entrada, conexao?: Functions) => painel({ acao, dados }, conexao)
+}
+
 export interface DadosEmpresa {
   id?: string
   nome: string
@@ -76,15 +85,17 @@ export type Sincronizacao =
 
 export const api = {
   configurarPrimeiroAdmin: funcao<{ nome: string; email: string; senha?: string; codigo: string }, { ok: true }>('configurarPrimeiroAdmin'),
-  salvarEmpresa: funcao<DadosEmpresa, { id: string }>('salvarEmpresa'),
-  salvarUsuario: funcao<DadosUsuario, { uid: string }>('salvarUsuario'),
-  salvarFuncionario: funcao<DadosFuncionario, { id: string }>('salvarFuncionario'),
-  ativarDispositivo: funcao<{ empresaId: string; nome: string; funcionarioId?: string | null }, { email: string; senha: string; empresaNome: string }>(
+  // Abre a função do painel antes da primeira ação (sem espera de partida a frio).
+  aquecerPainel: () => funcao<{ acao: 'aquecer' }, { aquecido: true }>('painel')({ acao: 'aquecer' }),
+  salvarEmpresa: acaoDoPainel<DadosEmpresa, { id: string }>('salvarEmpresa'),
+  salvarUsuario: acaoDoPainel<DadosUsuario, { uid: string }>('salvarUsuario'),
+  salvarFuncionario: acaoDoPainel<DadosFuncionario, { id: string }>('salvarFuncionario'),
+  ativarDispositivo: acaoDoPainel<{ empresaId: string; nome: string; funcionarioId?: string | null }, { email: string; senha: string; empresaNome: string }>(
     'ativarDispositivo',
   ),
-  desativarDispositivo: funcao<{ empresaId: string; dispositivoId: string }, { ok: true }>('desativarDispositivo'),
+  desativarDispositivo: acaoDoPainel<{ empresaId: string; dispositivoId: string }, { ok: true }>('desativarDispositivo'),
   // Uso do aparelho: celular pessoal de um funcionário (funcionarioId) ou aparelho da loja (null).
-  salvarDispositivo: funcao<{ empresaId: string; dispositivoId: string; funcionarioId: string | null }, { ok: true }>('salvarDispositivo'),
+  salvarDispositivo: acaoDoPainel<{ empresaId: string; dispositivoId: string; funcionarioId: string | null }, { ok: true }>('salvarDispositivo'),
   // O aparelho informa o estado da câmera, que o gestor vê em "Aparelhos de ponto".
   sincronizarDispositivo: funcao<{ camera?: DiagnosticoCamera }, Sincronizacao>('sincronizarDispositivo', 15_000),
   // Aparelho da loja: CPF + PIN de 4 números. Celular pessoal: só o PIN (o aparelho já é do funcionário).
@@ -92,19 +103,21 @@ export const api = {
     'registrarPonto',
     25_000,
   ),
+  // O aparelho chama quando alguém começa a digitar: a função já está aberta quando a foto chega.
+  aquecerPonto: () => funcao<{ aquecer: true }, { aquecido: true }>('registrarPonto', 15_000)({ aquecer: true }),
   // Batida feita sem internet, guardada cifrada no aparelho e enviada quando a conexão volta.
   registrarPontoGuardado: funcao<{ pacote: PacoteSelado }, ResultadoEnvio>('registrarPontoGuardado', 60_000),
   // Foto completa de uma marcação, conferida com o hash gravado no registro.
-  obterFoto: funcao<{ empresaId: string; registroId: string }, { foto: string; confere: boolean }>('obterFoto', 30_000),
-  incluirMarcacao: funcao<
+  obterFoto: acaoDoPainel<{ empresaId: string; registroId: string }, { foto: string; confere: boolean }>('obterFoto'),
+  incluirMarcacao: acaoDoPainel<
     { empresaId: string; funcionarioId: string; data: string; hora: string; justificativa: string },
     { id: string }
   >('incluirMarcacao'),
-  desconsiderarMarcacao: funcao<
+  desconsiderarMarcacao: acaoDoPainel<
     { empresaId: string; registroId: string; motivo?: string; restaurar?: boolean },
     { ok: true }
   >('desconsiderarMarcacao'),
-  incluirAbono: funcao<
+  incluirAbono: acaoDoPainel<
     {
       empresaId: string
       funcionarioId: string | null
@@ -116,12 +129,12 @@ export const api = {
     },
     { criados: number }
   >('incluirAbono'),
-  removerAbono: funcao<{ empresaId: string; abonoId: string }, { ok: true }>('removerAbono'),
-  criarSolicitacao: funcao<
+  removerAbono: acaoDoPainel<{ empresaId: string; abonoId: string }, { ok: true }>('removerAbono'),
+  criarSolicitacao: acaoDoPainel<
     { empresaId: string; funcionarioId: string; data: string; hora: string; motivo: string; aprovarAgora: boolean },
     { id: string; registroId: string | null }
   >('criarSolicitacao'),
-  decidirSolicitacao: funcao<
+  decidirSolicitacao: acaoDoPainel<
     { empresaId: string; solicitacaoId: string; aprovar: boolean; motivoRecusa?: string },
     { ok: true; registroId: string | null }
   >('decidirSolicitacao'),

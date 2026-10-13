@@ -34,7 +34,7 @@ function validarMes(valor: unknown, fuso: string): string {
   return valor;
 }
 
-export const fecharEspelhos = onCall({ timeoutSeconds: 120, memory: "512MiB", maxInstances: 2 }, async (request) => {
+export const fecharEspelhos = onCall({ timeoutSeconds: 120, memory: "1GiB", maxInstances: 2 }, async (request) => {
   const dados = objeto(request.data);
   const empresaId = idDocumento(dados.empresaId, "Empresa");
   const { usuario, empresa } = await exigirAcessoEmpresa(request, empresaId);

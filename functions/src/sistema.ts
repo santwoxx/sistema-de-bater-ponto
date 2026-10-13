@@ -13,7 +13,8 @@ import { email, objeto, senha, texto } from "./validacao";
 // functions/.env.<id-do-projeto>, fora do git), a configuração exige esse código,
 // que só quem publicou o sistema conhece. Assim um estranho que abra o site
 // logo após a publicação não consegue se tornar o administrador.
-export const configurarPrimeiroAdmin = onCall(async (request) => {
+// Usada uma vez só, na instalação: uma cópia basta.
+export const configurarPrimeiroAdmin = onCall({ maxInstances: 1 }, async (request) => {
   const dados = objeto(request.data);
   const nome = texto(dados.nome, "Nome", { min: 3, max: 120 });
   const emailAdmin = email(dados.email);

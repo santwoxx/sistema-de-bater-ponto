@@ -1,5 +1,5 @@
 import { FieldValue } from "firebase-admin/firestore";
-import { HttpsError, onCall } from "firebase-functions/https";
+import { HttpsError, type CallableRequest } from "firebase-functions/https";
 import { db } from "./admin";
 import { autor, exigirAcessoEmpresa } from "./acesso";
 import { auditarNa } from "./auditoria";
@@ -18,7 +18,7 @@ import {
   textoOpcional,
 } from "./validacao";
 
-export const salvarFuncionario = onCall(async (request) => {
+export async function salvarFuncionario(request: CallableRequest) {
   const dados = objeto(request.data);
   const empresaId = idDocumento(dados.empresaId, "Empresa");
   const { usuario } = await exigirAcessoEmpresa(request, empresaId);
@@ -104,4 +104,4 @@ export const salvarFuncionario = onCall(async (request) => {
   });
 
   return { id: ref.id };
-});
+}

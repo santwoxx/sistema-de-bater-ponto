@@ -351,7 +351,8 @@ export function useCamera() {
       if (estadoRef.current === 'pronta') religarSozinhaRef.current('SemImagem')
       return null
     }
-    return { foto: quadro(video, 720, 0.8), miniatura: quadroQuadrado(video, 96, 0.7) }
+    // 640 px no lado maior: o rosto continua nítido, e a foto (uns 40 a 70 KB) sobe rápido no 4G.
+    return { foto: quadro(video, 640, 0.75), miniatura: quadroQuadrado(video, 96, 0.7) }
   }, [])
 
   const mensagem = estado === 'erro' || estado === 'toque' ? mensagemDaCamera(codigo ?? '', ambiente.plataforma, ambiente.interno) : ''

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, type ComprovantePonto } from '../../api'
 import { useCamera, useTelaSempreAcesa } from '../../hooks/useCamera'
-import { useAgora } from '../../hooks/useColecao'
+import { useAgora } from '../../hooks/useAgora'
 import { credenciaisInvalidas, erroDeRede, mensagemErro } from '../../lib/erros'
 import { cpfValido, mascararCpf } from '../../lib/formatos'
 import { TAMANHO_PIN } from '../../lib/pin'
@@ -28,6 +28,8 @@ import { useSincronizacao } from './terminal/useSincronizacao'
 /** Volta ao início depois de tanto tempo parado em cada situação. */
 const INATIVIDADE_MS = 20_000
 const RESULTADO_MS = 6_000
+/** Uma cópia aberta da função de ponto fica disponível por alguns minutos sem uso. */
+const AQUECER_A_CADA_MS = 4 * 60_000
 
 function esperar(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
@@ -200,9 +202,19 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
 
   // --- Teclado ----------------------------------------------------------------
 
+  // Alguém começou a digitar: abre a função de ponto no servidor enquanto a pessoa
+  // digita o CPF e o PIN, para a batida não esperar a partida a frio (~1 s).
+  const ultimoAquecimento = useRef(0)
+  const aquecer = useCallback(() => {
+    if (!conectado || Date.now() - ultimoAquecimento.current < AQUECER_A_CADA_MS) return
+    ultimoAquecimento.current = Date.now()
+    api.aquecerPonto().catch(() => undefined)
+  }, [conectado])
+
   const teclar = useCallback(
     (tecla: string) => {
       if (configuracoes) return
+      if (/^\d$/.test(tecla) && cpf === '' && pin === '') aquecer()
       if (ETAPAS_DE_RESULTADO.includes(etapa)) {
         reiniciar()
         return
@@ -230,7 +242,7 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
         } else if (pin.length < TAMANHO_PIN) setPin((p) => p + tecla)
       }
     },
-    [configuracoes, etapa, cpf, pin, pessoal, estadoCamera, erroCamera, reiniciar, falhar],
+    [configuracoes, etapa, cpf, pin, pessoal, estadoCamera, erroCamera, reiniciar, falhar, aquecer],
   )
 
   // Também aceita teclado físico (computador com webcam).

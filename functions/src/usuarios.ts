@@ -1,11 +1,11 @@
 import { FieldValue } from "firebase-admin/firestore";
-import { HttpsError, onCall } from "firebase-functions/https";
+import { HttpsError, type CallableRequest } from "firebase-functions/https";
 import { auth, db } from "./admin";
 import { autor, erroAuth, exigirAdmin } from "./acesso";
 import { auditarNa } from "./auditoria";
 import { booleano, email, idOpcional, listaIds, objeto, opcao, senha, texto } from "./validacao";
 
-export const salvarUsuario = onCall(async (request) => {
+export async function salvarUsuario(request: CallableRequest) {
   const admin = await exigirAdmin(request);
   const dados = objeto(request.data);
 
@@ -84,4 +84,4 @@ export const salvarUsuario = onCall(async (request) => {
     throw erro;
   }
   return { uid };
-});
+}

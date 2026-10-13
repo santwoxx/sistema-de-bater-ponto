@@ -3,6 +3,7 @@ import { collection, doc, getDoc, getDocs } from 'firebase/firestore'
 import { Fingerprint, Tablet } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { api } from '../../api'
+import { bancoDe } from '../../banco'
 import { Aviso, BotaoGoogle, Campo } from '../../componentes/Basicos'
 import UsoDoAparelho from '../../componentes/UsoDoAparelho'
 import { CHAVE_APARELHO, useSessao } from '../../contexto/Sessao'
@@ -48,7 +49,7 @@ export default function Ativacao() {
     const sessaoGestor = temporaria.current
     if (etapa !== 'empresa' || !empresaId || !sessaoGestor) return
     let cancelado = false
-    getDocs(collection(sessaoGestor.db, 'empresas', empresaId, 'funcionarios'))
+    getDocs(collection(bancoDe(sessaoGestor.app), 'empresas', empresaId, 'funcionarios'))
       .then((snap) => {
         if (!cancelado) setCarregados({ empresaId, funcionarios: snap.docs.map(paraFuncionario), erro: '' })
       })
@@ -88,15 +89,15 @@ export default function Ativacao() {
       const sessaoGestor = criarSessaoTemporaria()
       temporaria.current = sessaoGestor
       const { user } = await fazerLogin(sessaoGestor.auth)
-      const perfil = (await getDoc(doc(sessaoGestor.db, 'usuarios', user.uid))).data()
+      const perfil = (await getDoc(doc(bancoDe(sessaoGestor.app), 'usuarios', user.uid))).data()
       if (!perfil || perfil.ativo !== true) throw new ErroAcesso('Este usuário não tem acesso ao painel.')
 
       let lista: Empresa[]
       if (perfil.papel === 'admin') {
-        lista = (await getDocs(collection(sessaoGestor.db, 'empresas'))).docs.map(paraEmpresa)
+        lista = (await getDocs(collection(bancoDe(sessaoGestor.app), 'empresas'))).docs.map(paraEmpresa)
       } else {
         const ids: string[] = Array.isArray(perfil.empresas) ? perfil.empresas : []
-        const snaps = await Promise.all(ids.map((id) => getDoc(doc(sessaoGestor.db, 'empresas', id))))
+        const snaps = await Promise.all(ids.map((id) => getDoc(doc(bancoDe(sessaoGestor.app), 'empresas', id))))
         lista = snaps.filter((s) => s.exists()).map(paraEmpresa)
       }
       lista = ordenarPorNome(lista.filter((empresa) => empresa.ativo))

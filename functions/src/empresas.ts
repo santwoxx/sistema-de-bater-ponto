@@ -1,12 +1,12 @@
 import { FieldValue } from "firebase-admin/firestore";
-import { HttpsError, onCall } from "firebase-functions/https";
+import { HttpsError, type CallableRequest } from "firebase-functions/https";
 import { db } from "./admin";
 import { PADROES_EMPRESA, autor, exigirAdmin } from "./acesso";
 import { auditarNa } from "./auditoria";
 import { dataLocal } from "./tempo";
 import { booleano, cnpjOpcional, dataISO, fusoHorario, idOpcional, inteiro, objeto, texto } from "./validacao";
 
-export const salvarEmpresa = onCall(async (request) => {
+export async function salvarEmpresa(request: CallableRequest) {
   const usuario = await exigirAdmin(request);
   const dados = objeto(request.data);
 
@@ -76,4 +76,4 @@ export const salvarEmpresa = onCall(async (request) => {
   await lote.commit();
 
   return { id: ref.id };
-});
+}

@@ -1,5 +1,5 @@
 import { FieldValue } from "firebase-admin/firestore";
-import { HttpsError, onCall } from "firebase-functions/https";
+import { HttpsError, onCall, type CallableRequest } from "firebase-functions/https";
 import * as logger from "firebase-functions/logger";
 import { auth, db } from "./admin";
 import { autor, carregarEmpresa, exigirAcessoEmpresa, exigirDispositivo } from "./acesso";
@@ -28,7 +28,7 @@ async function donoDoAparelho(empresaId: string, valor: unknown): Promise<{ id: 
   return { id: snap.id, nome: String(snap.get("nome")) };
 }
 
-export const ativarDispositivo = onCall(async (request) => {
+export async function ativarDispositivo(request: CallableRequest) {
   const dados = objeto(request.data);
   const empresaId = idDocumento(dados.empresaId, "Empresa");
   const { usuario, empresa } = await exigirAcessoEmpresa(request, empresaId);
@@ -76,11 +76,11 @@ export const ativarDispositivo = onCall(async (request) => {
   }
 
   return { email, senha, empresaNome: empresa.nome };
-});
+}
 
 // Muda o uso de um aparelho já ativado: celular pessoal de um funcionário ou
 // aparelho da loja (sem dono). Vale na próxima sincronização do aparelho.
-export const salvarDispositivo = onCall(async (request) => {
+export async function salvarDispositivo(request: CallableRequest) {
   const dados = objeto(request.data);
   const empresaId = idDocumento(dados.empresaId, "Empresa");
   const dispositivoId = idDocumento(dados.dispositivoId, "Aparelho");
@@ -103,9 +103,9 @@ export const salvarDispositivo = onCall(async (request) => {
   });
   await lote.commit();
   return { ok: true };
-});
+}
 
-export const desativarDispositivo = onCall(async (request) => {
+export async function desativarDispositivo(request: CallableRequest) {
   const dados = objeto(request.data);
   const empresaId = idDocumento(dados.empresaId, "Empresa");
   const dispositivoId = idDocumento(dados.dispositivoId, "Aparelho");
@@ -136,11 +136,13 @@ export const desativarDispositivo = onCall(async (request) => {
   }
 
   return { ok: true };
-});
+}
 
 // Chamada periodicamente pelo aparelho: devolve a hora oficial do servidor
 // (o relógio do aparelho pode estar errado) e registra que ele está online.
-export const sincronizarDispositivo = onCall(async (request) => {
+// 1 vCPU: o aparelho sincroniza ao abrir e a cada 5 minutos; com pouca CPU, a
+// primeira chamada do dia levava vários segundos só para carregar o código.
+export const sincronizarDispositivo = onCall({ cpu: 1, maxInstances: 2 }, async (request) => {
   const { dispositivoId, empresaId } = exigirDispositivo(request);
   const ref = db.doc(`empresas/${empresaId}/dispositivos/${dispositivoId}`);
   const [snap, empresa] = await Promise.all([ref.get(), carregarEmpresa(empresaId)]);

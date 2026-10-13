@@ -1,5 +1,5 @@
 import { FieldValue, Timestamp, type DocumentData, type QuerySnapshot } from "firebase-admin/firestore";
-import { HttpsError, onCall } from "firebase-functions/https";
+import { HttpsError, type CallableRequest } from "firebase-functions/https";
 import { db } from "./admin";
 import { autor, exigirAcessoEmpresa, type Autor } from "./acesso";
 import { auditarNa } from "./auditoria";
@@ -46,7 +46,7 @@ export function marcacaoManual(params: {
   };
 }
 
-export const incluirMarcacao = onCall(async (request) => {
+export async function incluirMarcacao(request: CallableRequest) {
   const dados = objeto(request.data);
   const empresaId = idDocumento(dados.empresaId, "Empresa");
   const { usuario, empresa } = await exigirAcessoEmpresa(request, empresaId);
@@ -85,9 +85,9 @@ export const incluirMarcacao = onCall(async (request) => {
   await lote.commit();
 
   return { id: ref.id };
-});
+}
 
-export const desconsiderarMarcacao = onCall(async (request) => {
+export async function desconsiderarMarcacao(request: CallableRequest) {
   const dados = objeto(request.data);
   const empresaId = idDocumento(dados.empresaId, "Empresa");
   const registroId = idDocumento(dados.registroId, "Marcação");
@@ -116,4 +116,4 @@ export const desconsiderarMarcacao = onCall(async (request) => {
   });
 
   return { ok: true };
-});
+}

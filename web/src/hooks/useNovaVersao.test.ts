@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { scriptPrincipal } from './useAtualizacaoAutomatica'
+import { scriptPrincipal } from './useNovaVersao'
 
 describe('versão do site no aparelho', () => {
   it('reconhece o script principal publicado (o nome muda a cada versão)', () => {

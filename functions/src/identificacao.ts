@@ -228,18 +228,23 @@ export async function identificarNoAparelho(params: {
   pin: string;
   /** Foto pequena da tentativa: vai para a auditoria se a tentativa causar bloqueio. */
   miniatura?: Buffer | null;
+  /** Empresa já sendo carregada por quem chamou (evita ler duas vezes). */
+  empresa?: Promise<Empresa>;
 }): Promise<Identificacao> {
   const { empresaId, dispositivoId, cpf, pin, miniatura = null } = params;
   const empresaRef = db.doc(`empresas/${empresaId}`);
   const dispositivoRef = empresaRef.collection("dispositivos").doc(dispositivoId);
-  const [empresa, dispositivoSnap] = await Promise.all([carregarEmpresa(empresaId), dispositivoRef.get()]);
+  const funcionarios = empresaRef.collection("funcionarios");
+  // O dono do CPF é procurado junto com o aparelho; no celular pessoal, vale o dono do aparelho.
+  const doCpf = cpf ? funcionarios.where("cpf", "==", cpf).limit(1).get() : null;
+  doCpf?.catch(() => undefined);
+  const [empresa, dispositivoSnap] = await Promise.all([params.empresa ?? carregarEmpresa(empresaId), dispositivoRef.get()]);
   const dispositivo = exigirAparelhoAtivo(dispositivoSnap.data(), empresa);
 
-  const funcionarios = empresaRef.collection("funcionarios");
   const funcionarioDoc = dispositivo.funcionarioId
     ? await funcionarios.doc(String(dispositivo.funcionarioId)).get()
-    : cpf
-      ? (await funcionarios.where("cpf", "==", cpf).limit(1).get()).docs[0]
+    : doCpf
+      ? (await doCpf).docs[0]
       : undefined;
   const funcionario = funcionarioDoc?.get("ativo") === true ? funcionarioDoc.data() : undefined;
   const funcionarioId = funcionario && funcionarioDoc ? funcionarioDoc.id : null;

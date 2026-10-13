@@ -1,6 +1,6 @@
 import { collection, doc, onSnapshot } from 'firebase/firestore'
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { db } from '../firebase'
+import { db } from '../banco'
 import { gravarLocal, lerLocal } from '../lib/util'
 import { ordenarPorNome, paraEmpresa, type Empresa } from '../tipos'
 import { usePerfil } from './Sessao'

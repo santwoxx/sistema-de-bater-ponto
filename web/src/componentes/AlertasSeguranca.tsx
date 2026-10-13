@@ -2,7 +2,7 @@ import { collection, limit, orderBy, query, Timestamp, where } from 'firebase/fi
 import { ShieldAlert } from 'lucide-react'
 import { useState } from 'react'
 import { Link } from 'react-router'
-import { db } from '../firebase'
+import { db } from '../banco'
 import { useColecao } from '../hooks/useColecao'
 import { formatarDataHora } from '../lib/tempo'
 import { paraAuditoria, type Empresa } from '../tipos'

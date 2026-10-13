@@ -1,7 +1,6 @@
 import { onAuthStateChanged, type User } from 'firebase/auth'
-import { doc, onSnapshot } from 'firebase/firestore'
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
-import { auth, db } from '../firebase'
+import { auth } from '../firebase'
 import { lerLocal } from '../lib/util'
 import type { Perfil } from '../tipos'
 
@@ -51,10 +50,12 @@ export function SessaoProvider({ children }: { children: ReactNode }) {
         return
       }
 
-      pararPerfil = onSnapshot(
-        doc(db, 'usuarios', usuario.uid),
-        (snap) => {
-          const dados = snap.data()
+      // O banco só é carregado aqui, para quem usa o painel: o aparelho de ponto nunca o baixa.
+      const { acompanharPerfil } = await import('./perfil')
+      if (atual !== geracao) return
+      pararPerfil = acompanharPerfil(
+        usuario.uid,
+        (dados) => {
           if (!dados || dados.ativo !== true) {
             setSessao({ tipo: 'sem-acesso', usuario })
             return

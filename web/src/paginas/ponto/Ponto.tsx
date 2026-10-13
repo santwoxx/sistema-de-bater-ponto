@@ -1,8 +1,10 @@
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { Carregando } from '../../componentes/Basicos'
 import { useSessao } from '../../contexto/Sessao'
-import Ativacao from './Ativacao'
 import Terminal from './Terminal'
+
+// A ativação lê o banco (empresas e funcionários do gestor): só quem vai ativar baixa isso.
+const Ativacao = lazy(() => import('./Ativacao'))
 
 export default function Ponto() {
   const sessao = useSessao()
@@ -14,5 +16,9 @@ export default function Ponto() {
 
   if (sessao.tipo === 'carregando') return <Carregando tela texto="Abrindo o ponto..." />
   if (sessao.tipo === 'dispositivo') return <Terminal empresaId={sessao.empresaId} />
-  return <Ativacao />
+  return (
+    <Suspense fallback={<Carregando tela texto="Abrindo o ponto..." />}>
+      <Ativacao />
+    </Suspense>
+  )
 }

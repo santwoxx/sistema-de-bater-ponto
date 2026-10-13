@@ -34,6 +34,7 @@ Sistema de controle de ponto para lojas e pequenas empresas. **Tudo roda no Fire
 - Funciona em tablet, computador e **celular** (em pé ou deitado): a moldura do rosto sempre cabe inteira na câmera e, no celular em pé, na hora da foto a câmera ocupa a tela toda.
 - **Câmera feita para celular de todo tipo:** se a câmera frontal não abre em HD, usa uma resolução menor; se o pedido de permissão não aparece, mostra o botão **"Ligar a câmera"**; religa sozinha quando cai ou quando a tela volta; e, se estiver bloqueada, mostra o passo a passo para liberar no Android ou no iPhone (e liga sozinha quando liberada). O gestor vê o estado da câmera de cada aparelho no painel.
 - **Atualização automática:** quando sai uma versão nova do sistema, o aparelho recarrega sozinho num momento sem ninguém usando.
+- **Batida rápida:** quando a pessoa começa a digitar o CPF, o aparelho já acorda o servidor; a foto sobe enquanto o CPF e o PIN são conferidos; e a tela do ponto carrega só o que usa (metade do tamanho do painel).
 - Ativado uma única vez por um gestor e desativável pelo painel a qualquer momento.
 - **Celular pessoal:** o aparelho pode ser o celular de um funcionário. Aí só ele bate ponto nesse celular, digitando só o PIN (sem CPF), e a tela o cumprimenta: "Olá, Maria! Digite seu PIN". Outra pessoa é recusada, mesmo com o próprio CPF e PIN. O gestor escolhe o uso na ativação e pode mudar depois, no painel.
 
@@ -54,6 +55,8 @@ Sistema de controle de ponto para lojas e pequenas empresas. **Tudo roda no Fire
 | **Usuários** *(admin)* | Administradores e gestores, com as empresas que cada gestor acessa |
 
 **Abonos** (no espelho) cobrem feriado, atestado, férias e folga. Valem para um funcionário ou para a empresa toda, por um dia ou por um período, inteiro ou parcial (ex.: 2 horas de consulta). Dia abonado não conta como falta.
+
+**Versão nova:** quando o sistema é atualizado, o painel aberto mostra a faixa "Saiu uma versão nova do sistema" com o botão **Recarregar**.
 
 ---
 
@@ -100,6 +103,7 @@ Sistema bater ponto/
 │       ├── pin.ts           chave do PIN (HMAC com segredo do servidor)
 │       ├── cadeia.ts        cálculo e verificação da cadeia de hashes
 │       ├── integridade.ts   verificação de integridade (no painel e toda segunda-feira)
+│       ├── painel.ts        ações rápidas do painel (cadastros, fotos, ajustes, abonos, solicitações) numa função só
 │       ├── fotos.ts         entrega da foto ao painel, com conferência do hash
 │       ├── limites.ts       limite de uso por usuário nas funções pesadas
 │       ├── solicitacoes.ts  marcação esquecida, lançada pelo gestor (registrar, aprovar, recusar)
@@ -113,6 +117,7 @@ Sistema bater ponto/
 └── web/                     site (React + Vite, TypeScript)
     ├── src/paginas/ponto/   tela do aparelho de ponto (Terminal.tsx + componentes em terminal/)
     ├── src/paginas/admin/   painel do gestor
+    ├── src/banco.ts         conexão com o Firestore (só o painel e a ativação carregam; o aparelho não)
     └── testes/e2e.mjs       teste de ponta a ponta com os emuladores
 ```
 
@@ -197,9 +202,9 @@ O `firebase login` é feito uma vez por computador (entre com a conta Google don
 
 A publicação não faz perguntas: cria o site do Hosting se faltar e aceita a limpeza automática das imagens antigas das funções. O índice do banco termina de ser criado alguns minutos depois; até lá, o filtro por funcionário pode avisar que o índice "está sendo criado".
 
-**Cota de CPU.** Projetos novos têm 20 vCPU por região no Cloud Run, e cada cópia de função em execução reserva a sua parte (o deploy sobe uma cópia de cada função para testar). Por isso as funções usam CPU proporcional à memória (`gcf_gen1`, como as de 1ª geração) e poucas cópias (`maxInstances`); o teste `functions/src/cota.test.ts` garante que, mesmo com todas no máximo ao mesmo tempo, a soma cabe na cota. Para crescer além disso, peça mais "Total CPU allocation" do Cloud Run em Google Cloud > IAM e administrador > Cotas e só então aumente os `maxInstances`.
+**Funções e cota de CPU.** Projetos novos têm 20 vCPU por região no Cloud Run, e cada cópia de função em execução reserva a sua parte (o deploy sobe uma cópia de cada função para testar). Por isso são só 9 funções: as ações rápidas do painel ficam todas numa, `painel`. As que alguém espera na tela (`painel`, `registrarPonto`, `registrarPontoGuardado` e `sincronizarDispositivo`) têm 1 vCPU inteira: a partida a frio leva cerca de 1 segundo, em vez de 4 a 10 com uma fração de CPU, e uma cópia atende várias chamadas ao mesmo tempo. As pesadas e raras (fechamento, exportação e integridade) usam CPU proporcional à memória (`gcf_gen1`, como as de 1ª geração). Todas têm poucas cópias (`maxInstances`), e o teste `functions/src/cota.test.ts` garante que, mesmo com todas no máximo ao mesmo tempo, a soma cabe na cota (hoje, cerca de 11 vCPU). Para crescer além disso, peça mais "Total CPU allocation" do Cloud Run em Google Cloud > IAM e administrador > Cotas e só então aumente os `maxInstances`.
 
-**Para atualizar o sistema depois de qualquer mudança, é o mesmo comando:** `npm run publicar`. Sem `--project`, os comandos do Firebase usam o projeto de testes `demo-ponto`, que só existe nos emuladores: nada vai para a nuvem por engano.
+**Para atualizar o sistema depois de qualquer mudança, é o mesmo comando:** `npm run publicar`. Os aparelhos recarregam sozinhos; quem estiver com o painel aberto vê a faixa de versão nova e clica em **Recarregar**. Sem `--project`, os comandos do Firebase usam o projeto de testes `demo-ponto`, que só existe nos emuladores: nada vai para a nuvem por engano.
 
 ### 5. Primeiro acesso
 
@@ -299,7 +304,7 @@ Abra <http://localhost:5173>. Os dados somem quando os emuladores são fechados.
 | Comando | O que faz |
 |---|---|
 | `npm run verificar` | Build das funções e do site, lint (sem nenhum aviso permitido) e testes unitários: CPF, CNPJ, PIN, senhas, limpeza de textos, fusos, limites de uso, cadeia de hashes, cálculo do espelho e textos do aparelho. O `npm run publicar` roda isto antes de publicar |
-| `npm run testar:e2e` | 29 etapas de ponta a ponta com os emuladores: permissões de cada papel, código de instalação, login com Google (mesma conta do e-mail, ligação com senha, conta sem cadastro), batida sem internet (cifrada, horário conferido, recusas e cadeia íntegra), CPF + PIN de 4 números (sem matrícula, troca só pelo gestor), registro com foto, NSR e cadeia de hashes, bloqueios do PIN e do aparelho (inclusive com tentativas em paralelo), fotos só pelo servidor, ajustes, abonos, solicitações só pelo gestor, fechamento e reabertura com motivo, exportação, adulteração detectada, limites de uso, auditoria, celular pessoal e desativação de aparelho |
+| `npm run testar:e2e` | 30 etapas de ponta a ponta com os emuladores: permissões de cada papel, ações do painel numa função só (ação desconhecida recusada) e aquecimento das funções, código de instalação, login com Google (mesma conta do e-mail, ligação com senha, conta sem cadastro), batida sem internet (cifrada, horário conferido, recusas e cadeia íntegra), CPF + PIN de 4 números (sem matrícula, troca só pelo gestor), registro com foto, NSR e cadeia de hashes, bloqueios do PIN e do aparelho (inclusive com tentativas em paralelo), fotos só pelo servidor, ajustes, abonos, solicitações só pelo gestor, fechamento e reabertura com motivo, exportação, adulteração detectada, limites de uso, auditoria, celular pessoal e desativação de aparelho |
 | `npm run dados:exemplo` | Com os emuladores ligados, cria administrador, gestora, empresas, funcionários e o histórico do mês anterior, pronto para fechar (senha `ponto-teste-2026`; o resumo no fim mostra o CPF e o PIN de cada funcionário) |
 | `npm run logs` | Últimos registros das funções em produção |
 
@@ -314,7 +319,7 @@ No GitHub, cada envio roda o `npm run verificar`, a auditoria das dependências 
 - **O navegador nunca grava direto no banco.** Toda escrita passa pelas Cloud Functions, que validam cada campo, conferem a permissão e gravam a auditoria **na mesma transação** da alteração: não existe mudança sem rastro.
 - **Leitura só para quem tem acesso à empresa.** Gestores veem apenas as empresas liberadas; o administrador vê todas e não consegue remover o próprio acesso. Usuário desativado perde o acesso na hora.
 - **Aparelhos de ponto não leem nada do banco:** falam só com as funções, e cada um fica preso a uma empresa (no máximo 50 ativos por empresa).
-- **Fotos sem link público.** O Storage não libera leitura para nenhum navegador; o painel recebe a foto pela função `obterFoto`, que confere o acesso e se o arquivo é o mesmo gravado na batida (aviso se tiver sido trocado).
+- **Fotos sem link público.** O Storage não libera leitura para nenhum navegador; o painel recebe a foto pelo servidor (ação `obterFoto` da função `painel`), que confere o acesso e se o arquivo é o mesmo gravado na batida (aviso se tiver sido trocado).
 - **Textos limpos:** caracteres invisíveis (que poderiam disfarçar nomes e motivos) são removidos, e o CSV neutraliza fórmulas do Excel.
 - **Limites de uso por usuário** nas funções pesadas ou sensíveis (por hora: 30 exportações, 30 fechamentos, 10 verificações de integridade e 300 fotos abertas). Se uma conta for invadida, o estrago e o custo ficam contidos. Ajustáveis por projeto com `LIMITE_<AÇÃO>` no `functions/.env.SEU-PROJETO`.
 

@@ -1,5 +1,5 @@
 import { FieldValue } from "firebase-admin/firestore";
-import { HttpsError, onCall } from "firebase-functions/https";
+import { HttpsError, type CallableRequest } from "firebase-functions/https";
 import { db } from "./admin";
 import { autor, exigirAcessoEmpresa } from "./acesso";
 import { auditarNa } from "./auditoria";
@@ -35,7 +35,7 @@ function diasDoPeriodo(de: string, ate: string): string[] {
 
 const formatar = (data: string) => data.split("-").reverse().join("/");
 
-export const incluirAbono = onCall(async (request) => {
+export async function incluirAbono(request: CallableRequest) {
   const dados = objeto(request.data);
   const empresaId = idDocumento(dados.empresaId, "Empresa");
   const { usuario } = await exigirAcessoEmpresa(request, empresaId);
@@ -80,9 +80,9 @@ export const incluirAbono = onCall(async (request) => {
   await lote.commit();
 
   return { criados: novos.length };
-});
+}
 
-export const removerAbono = onCall(async (request) => {
+export async function removerAbono(request: CallableRequest) {
   const dados = objeto(request.data);
   const empresaId = idDocumento(dados.empresaId, "Empresa");
   const abonoId = idDocumento(dados.abonoId, "Abono");
@@ -110,4 +110,4 @@ export const removerAbono = onCall(async (request) => {
   });
 
   return { ok: true };
-});
+}

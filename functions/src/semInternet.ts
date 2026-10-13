@@ -204,7 +204,7 @@ type ResultadoEnvio =
  * fila; erros temporários (bloqueio, falha de rede) voltam como erro, e o
  * aparelho tenta de novo depois.
  */
-export const registrarPontoGuardado = onCall({ memory: "512MiB", maxInstances: 2 }, async (request): Promise<ResultadoEnvio> => {
+export const registrarPontoGuardado = onCall({ memory: "512MiB", cpu: 1, maxInstances: 1 }, async (request): Promise<ResultadoEnvio> => {
   const { dispositivoId, empresaId } = exigirDispositivo(request);
   const recebidoEm = Date.now();
   const empresaRef = db.doc(`empresas/${empresaId}`);

@@ -2,15 +2,15 @@ import { lazy, Suspense, type ReactNode } from 'react'
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from 'react-router'
 import { Aviso, Carregando } from './componentes/Basicos'
 import { NotificacoesProvider } from './componentes/Notificacoes'
-import { EmpresaProvider } from './contexto/Empresa'
 import { SessaoProvider, useSessao } from './contexto/Sessao'
 import { configuracaoOk } from './firebase'
-import ConfiguracaoInicial from './paginas/ConfiguracaoInicial'
-import Login from './paginas/Login'
 
-// Cada área é carregada sob demanda: o aparelho de ponto não baixa o painel e vice-versa.
+// Cada área é carregada sob demanda: o aparelho de ponto não baixa o painel (nem o
+// banco, que só o painel lê) e vice-versa.
 const Ponto = lazy(() => import('./paginas/ponto/Ponto'))
-const LayoutAdmin = lazy(() => import('./paginas/admin/LayoutAdmin'))
+const Login = lazy(() => import('./paginas/Login'))
+const ConfiguracaoInicial = lazy(() => import('./paginas/ConfiguracaoInicial'))
+const AreaAdmin = lazy(() => import('./paginas/admin/AreaAdmin'))
 const Hoje = lazy(() => import('./paginas/admin/Hoje'))
 const Registros = lazy(() => import('./paginas/admin/Registros'))
 const Solicitacoes = lazy(() => import('./paginas/admin/Solicitacoes'))
@@ -77,9 +77,7 @@ export default function App() {
                 path="/admin"
                 element={
                   <ExigirUsuario>
-                    <EmpresaProvider>
-                      <LayoutAdmin />
-                    </EmpresaProvider>
+                    <AreaAdmin />
                   </ExigirUsuario>
                 }
               >

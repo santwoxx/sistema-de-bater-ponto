@@ -1,4 +1,4 @@
-import { HttpsError, onCall } from "firebase-functions/https";
+import { HttpsError, type CallableRequest } from "firebase-functions/https";
 import * as logger from "firebase-functions/logger";
 import { bucket, db } from "./admin";
 import { exigirAcessoEmpresa } from "./acesso";
@@ -10,7 +10,7 @@ import { idDocumento, objeto } from "./validacao";
 // download): só saem por aqui, para quem tem acesso à empresa. Cada consulta
 // fica no log, e a foto é conferida com o hash gravado no momento do registro.
 
-export const obterFoto = onCall({ memory: "512MiB", maxInstances: 2 }, async (request) => {
+export async function obterFoto(request: CallableRequest) {
   const dados = objeto(request.data);
   const empresaId = idDocumento(dados.empresaId, "Empresa");
   const registroId = idDocumento(dados.registroId, "Marcação");
@@ -38,4 +38,4 @@ export const obterFoto = onCall({ memory: "512MiB", maxInstances: 2 }, async (re
     // false se o arquivo foi trocado ou alterado depois do registro.
     confere: sha256(bytes) === registro?.fotoSha256,
   };
-});
+}

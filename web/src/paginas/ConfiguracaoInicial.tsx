@@ -5,7 +5,8 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router'
 import { api } from '../api'
 import { Aviso, BotaoGoogle, Campo, Carregando } from '../componentes/Basicos'
-import { auth, db, entrarComGoogle, NOME_SISTEMA } from '../firebase'
+import { db } from '../banco'
+import { auth, entrarComGoogle, NOME_SISTEMA } from '../firebase'
 import { cancelouJanela, codigoErro, mensagemErro } from '../lib/erros'
 
 // Primeiro acesso: cria o administrador principal, com senha ou para entrar com

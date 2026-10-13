@@ -41,6 +41,23 @@ const PIN_JOAO_INICIAL = '1357'
 // O gestor troca o PIN do João no meio do teste ("esqueceu o PIN").
 const PIN_JOAO = '8642'
 
+// Ações rápidas do painel: passam pela função "painel" (functions/src/painel.ts).
+const ACOES_DO_PAINEL = new Set([
+  'salvarEmpresa',
+  'salvarUsuario',
+  'salvarFuncionario',
+  'ativarDispositivo',
+  'salvarDispositivo',
+  'desativarDispositivo',
+  'obterFoto',
+  'incluirMarcacao',
+  'desconsiderarMarcacao',
+  'incluirAbono',
+  'removerAbono',
+  'criarSolicitacao',
+  'decidirSolicitacao',
+])
+
 let total = 0
 async function etapa(nome, fn) {
   total++
@@ -59,9 +76,10 @@ function cliente(nome) {
   connectFunctionsEmulator(functions, '127.0.0.1', 5001)
   const storage = getStorage(app)
   connectStorageEmulator(storage, '127.0.0.1', 9199)
-  const chamar = async (funcao, dados = {}) => (await httpsCallable(functions, funcao)(dados)).data
+  const chamarFuncao = async (funcao, dados = {}) => (await httpsCallable(functions, funcao)(dados)).data
+  const chamar = (funcao, dados = {}) => (ACOES_DO_PAINEL.has(funcao) ? chamarFuncao('painel', { acao: funcao, dados }) : chamarFuncao(funcao, dados))
   const entrar = (email, senha) => signInWithEmailAndPassword(auth, email, senha)
-  return { auth, db, storage, chamar, entrar }
+  return { auth, db, storage, chamar, chamarFuncao, entrar }
 }
 
 // Altera um documento direto no emulador, sem passar pelas regras (simula alguém
@@ -322,6 +340,20 @@ await etapa('gestora ativa um aparelho; ele não lê nada do banco, só fala com
   assert.equal(pronta.codigo, null)
   assert.equal(pronta.permissao, 'desconhecida')
   assert.equal(pronta.resolucao, '1280x720')
+})
+
+await etapa('ações do painel numa função só, com aquecimento (painel e aparelho); as antigas, uma por ação, não existem', async () => {
+  assert.deepEqual(await gestora.chamarFuncao('painel', { acao: 'aquecer' }), { aquecido: true })
+  await falha(anonimo.chamarFuncao('painel', { acao: 'aquecer' }), 'functions/unauthenticated')
+  await falha(aparelho.chamarFuncao('painel', { acao: 'aquecer' }), 'functions/permission-denied', /aparelhos de ponto/)
+  await falha(aparelho.chamar('salvarFuncionario', { empresaId: empresaA }), 'functions/permission-denied')
+  for (const acao of ['apagarTudo', 'constructor', '__proto__']) {
+    await falha(gestora.chamarFuncao('painel', { acao, dados: {} }), 'functions/invalid-argument', /Ação desconhecida/)
+  }
+  // O aparelho aquece a função de ponto quando alguém começa a digitar; só aparelho pode.
+  assert.deepEqual(await aparelho.chamar('registrarPonto', { aquecer: true }), { aquecido: true })
+  await falha(gestora.chamar('registrarPonto', { aquecer: true }), 'functions/permission-denied')
+  for (const antiga of ['salvarFuncionario', 'obterFoto', 'incluirMarcacao', 'decidirSolicitacao']) await naoExiste(gestora.chamarFuncao(antiga, {}))
 })
 
 await etapa('no aparelho da loja, CPF + PIN de 4 números; o aparelho não cria nem troca PIN', async () => {

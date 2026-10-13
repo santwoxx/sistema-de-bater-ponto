@@ -16,15 +16,18 @@ import {
   UserCog,
   Users,
 } from 'lucide-react'
-import { Suspense, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router'
+import { api } from '../../api'
 import { FaixaIntegridade } from '../../componentes/AlertasSeguranca'
 import { Carregando, Vazio } from '../../componentes/Basicos'
 import SeletorEmpresa from '../../componentes/SeletorEmpresa'
 import { useEmpresas } from '../../contexto/Empresa'
 import { usePerfil } from '../../contexto/Sessao'
-import { auth, db, NOME_SISTEMA } from '../../firebase'
+import { db } from '../../banco'
+import { auth, NOME_SISTEMA } from '../../firebase'
 import { useColecao } from '../../hooks/useColecao'
+import { useNovaVersao } from '../../hooks/useNovaVersao'
 
 const ITENS = [
   { para: '/admin', rotulo: 'Hoje', icone: LayoutDashboard, fim: true },
@@ -48,6 +51,11 @@ export default function LayoutAdmin() {
   const { empresas, carregando, empresa } = useEmpresas()
   const location = useLocation()
   const [menuAberto, setMenuAberto] = useState(false)
+  const novaVersao = useNovaVersao()
+  // Abre a função do painel no servidor já agora: a primeira ação não espera a partida a frio.
+  useEffect(() => {
+    api.aquecerPainel().catch(() => undefined)
+  }, [])
   // Contador de solicitações pendentes da empresa selecionada, ao lado do menu.
   const pendentes = useColecao(
     () => (empresa ? query(collection(db, 'empresas', empresa.id, 'solicitacoes'), where('status', '==', 'pendente')) : null),
@@ -133,6 +141,14 @@ export default function LayoutAdmin() {
           {empresas.length > 0 && <SeletorEmpresa />}
         </header>
         <main className="admin-conteudo">
+          {novaVersao && (
+            <div className="faixa-versao" role="status">
+              <span>Saiu uma versão nova do sistema.</span>
+              <button type="button" className="botao pequeno" onClick={() => window.location.reload()}>
+                Recarregar
+              </button>
+            </div>
+          )}
           {empresa && !paginaGlobal && <FaixaIntegridade empresa={empresa} />}
           {conteudo}
         </main>

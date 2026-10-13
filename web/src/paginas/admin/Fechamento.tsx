@@ -7,7 +7,7 @@ import { Aviso, CabecalhoPagina, Campo, Carregando, Vazio } from '../../componen
 import { ModalReabrir, SeloEspelho } from '../../componentes/EspelhoFechado'
 import { useNotificar } from '../../componentes/Notificacoes'
 import { useEmpresaAtual } from '../../contexto/Empresa'
-import { db } from '../../firebase'
+import { db } from '../../banco'
 import { useColecao } from '../../hooks/useColecao'
 import { baixarCsv } from '../../lib/csv'
 import { mensagemErro } from '../../lib/erros'

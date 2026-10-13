@@ -28,17 +28,18 @@ export async function guardarFoto(params: {
   registroId: string;
   dataLocal: string;
   foto: Buffer;
-  funcionarioId: string;
+  /** Pode faltar quando a foto sobe antes de o funcionário ser identificado. */
+  funcionarioId?: string;
   dispositivoId: string;
 }): Promise<{ fotoPath: string; fotoSha256: string; apagar: () => Promise<void> }> {
   const { empresaId, registroId, foto, funcionarioId, dispositivoId } = params;
   const fotoPath = `empresas/${empresaId}/registros/${params.dataLocal.slice(0, 7)}/${registroId}-${randomUUID().slice(0, 8)}.jpg`;
   const arquivo = bucket().file(fotoPath);
-  // Sem token de download: a foto só sai pelo servidor (função obterFoto), para quem tem acesso à empresa.
+  // Sem token de download: a foto só sai pelo servidor (ação obterFoto do painel), para quem tem acesso à empresa.
   await arquivo.save(foto, {
     resumable: false,
     contentType: "image/jpeg",
-    metadata: { cacheControl: "private, max-age=31536000", metadata: { empresaId, funcionarioId, dispositivoId } },
+    metadata: { cacheControl: "private, max-age=31536000", metadata: { empresaId, dispositivoId, ...(funcionarioId ? { funcionarioId } : {}) } },
   });
   return {
     fotoPath,

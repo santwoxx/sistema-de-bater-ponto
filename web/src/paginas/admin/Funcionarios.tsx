@@ -6,7 +6,7 @@ import { Aviso, CabecalhoPagina, Campo, Carregando, Selo, Vazio } from '../../co
 import Modal from '../../componentes/Modal'
 import { useNotificar } from '../../componentes/Notificacoes'
 import { useEmpresaAtual } from '../../contexto/Empresa'
-import { db } from '../../firebase'
+import { db } from '../../banco'
 import { useColecao } from '../../hooks/useColecao'
 import { mensagemErro } from '../../lib/erros'
 import { cpfValido, formatarCpf, normalizarBusca, somenteDigitos } from '../../lib/formatos'

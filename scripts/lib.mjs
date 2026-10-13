@@ -115,26 +115,43 @@ async function listagemGoogle(projeto, regiao) {
  * só dá essa liberação ao CRIAR a função; uma que falhou na criação (ex.: cota
  * de CPU) e foi publicada de novo fica sem ela, e toda chamada vira "Erro
  * interno". Confere todas e libera as que faltarem (aplicar=false só lista).
+ * Devolve as que estavam bloqueadas; se alguma não puder ser liberada (mesmo
+ * tentando de novo), segue com as outras e falha no fim, dizendo quais.
  */
 export async function liberarFuncoesDoSite(projeto, regiao, { aplicar = true } = {}) {
   const listar = await listagemGoogle(projeto, regiao)
   const run = await clienteGoogle('run')
   const doSite = (await listar('cloudfunctions', 'functions')).filter((f) => f.labels?.['deployment-callable'] === 'true')
   const bloqueadas = []
+  const falhas = []
   for (const funcao of doSite) {
+    const nome = ultimo(funcao.name)
     const servico = `projects/${projeto}/locations/${regiao}/services/${ultimo(funcao.serviceConfig?.service)}`
-    const politica = (await run.get(`/${servico}:getIamPolicy`)).body
-    const bindings = politica.bindings ?? []
-    if (bindings.some((b) => b.role === 'roles/run.invoker' && b.members?.includes('allUsers'))) continue
-    bloqueadas.push(ultimo(funcao.name))
-    if (!aplicar) continue
-    const invocador = bindings.find((b) => b.role === 'roles/run.invoker' && !b.condition)
-    const novas = invocador
-      ? bindings.map((b) => (b === invocador ? { ...b, members: [...b.members, 'allUsers'] } : b))
-      : [...bindings, { role: 'roles/run.invoker', members: ['allUsers'] }]
-    // Com o etag lido: se a política mudou no meio do caminho, o Google recusa em vez de sobrescrever.
-    await run.post(`/${servico}:setIamPolicy`, { policy: { ...politica, bindings: novas } })
+    for (let tentativa = 1; ; tentativa++) {
+      try {
+        const politica = (await run.get(`/${servico}:getIamPolicy`)).body
+        const bindings = politica.bindings ?? []
+        if (bindings.some((b) => b.role === 'roles/run.invoker' && b.members?.includes('allUsers'))) break
+        if (tentativa === 1) bloqueadas.push(nome)
+        if (!aplicar) break
+        const invocador = bindings.find((b) => b.role === 'roles/run.invoker' && !b.condition)
+        const novas = invocador
+          ? bindings.map((b) => (b === invocador ? { ...b, members: [...b.members, 'allUsers'] } : b))
+          : [...bindings, { role: 'roles/run.invoker', members: ['allUsers'] }]
+        // Com o etag lido: se a política mudou no meio do caminho, o Google recusa em vez de
+        // sobrescrever, e a próxima tentativa lê de novo.
+        await run.post(`/${servico}:setIamPolicy`, { policy: { ...politica, bindings: novas } })
+      } catch (erro) {
+        // Serviço ainda sendo atualizado pelo deploy, ou política mudada no meio: espera e tenta de novo.
+        if (tentativa >= 4) {
+          falhas.push(`${nome} (${erro.message})`)
+          break
+        }
+        await new Promise((resolve) => setTimeout(resolve, 5_000 * tentativa))
+      }
+    }
   }
+  if (falhas.length > 0) throw new Error(`não consegui liberar: ${falhas.join('; ')}`)
   return bloqueadas
 }
 

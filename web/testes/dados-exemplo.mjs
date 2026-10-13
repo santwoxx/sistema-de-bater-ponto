@@ -13,7 +13,9 @@ const db = getFirestore(app)
 connectFirestoreEmulator(db, '127.0.0.1', 8080)
 const functions = getFunctions(app, 'southamerica-east1')
 connectFunctionsEmulator(functions, '127.0.0.1', 5001)
-const chamar = async (nome, dados) => (await httpsCallable(functions, nome)(dados)).data
+const chamarFuncao = async (nome, dados) => (await httpsCallable(functions, nome)(dados)).data
+// As ações do painel (cadastros, marcações, abonos...) passam todas pela função "painel".
+const chamar = (acao, dados) => chamarFuncao('painel', { acao, dados })
 
 // Gera um CPF válido a partir de 9 dígitos.
 function cpf(base) {
@@ -36,7 +38,7 @@ if ((await getDoc(doc(db, 'sistema', 'estado'))).exists()) {
 
 const SENHA = 'ponto-teste-2026'
 // Código de instalação dos emuladores (functions/.env.demo-ponto).
-await chamar('configurarPrimeiroAdmin', { nome: 'Administrador', email: 'admin@teste.com', senha: SENHA, codigo: 'TESTE-LOCAL' })
+await chamarFuncao('configurarPrimeiroAdmin', { nome: 'Administrador', email: 'admin@teste.com', senha: SENHA, codigo: 'TESTE-LOCAL' })
 await signInWithEmailAndPassword(auth, 'admin@teste.com', SENHA)
 
 // O histórico de exemplo começa no mês anterior, para dar o que fechar e imprimir.

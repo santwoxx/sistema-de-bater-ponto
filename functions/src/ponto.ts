@@ -2,8 +2,8 @@ import { FieldValue, Timestamp, type DocumentData } from "firebase-admin/firesto
 import { HttpsError, onCall } from "firebase-functions/https";
 import * as logger from "firebase-functions/logger";
 import { db } from "./admin";
-import { exigirDispositivo } from "./acesso";
-import { decodificarJpeg, identificarNoAparelho, lerCpfPin, MAX_MINIATURA_BYTES } from "./identificacao";
+import { carregarEmpresa, exigirDispositivo } from "./acesso";
+import { decodificarJpeg, identificarNoAparelho, lerCpfPin, MAX_MINIATURA_BYTES, type Identificacao } from "./identificacao";
 import { comprovante, guardarFoto, MAX_FOTO_BYTES, montarMarcacao, ordinalNoDia } from "./marcacao";
 import { dataLocal, horaLocal } from "./tempo";
 import { objeto } from "./validacao";
@@ -13,10 +13,14 @@ function erroRequisicaoDeOutro(): HttpsError {
 }
 
 // 1 vCPU (as outras usam "gcf_gen1", ver admin.ts): quem está no aparelho espera
-// por esta função, que começa mais rápido e atende várias marcações na mesma cópia.
-export const registrarPonto = onCall({ memory: "512MiB", cpu: 1, timeoutSeconds: 30, maxInstances: 5 }, async (request) => {
+// por esta função, que começa mais rápido e atende várias marcações ao mesmo
+// tempo na mesma cópia (por isso bastam 2).
+export const registrarPonto = onCall({ memory: "512MiB", cpu: 1, timeoutSeconds: 30, maxInstances: 2 }, async (request) => {
   const { dispositivoId, empresaId } = exigirDispositivo(request);
   const dados = objeto(request.data);
+  // Aquecimento: o aparelho chama quando alguém começa a digitar. Assim a cópia
+  // da função já está aberta quando a foto chega (sem partida a frio na batida).
+  if (dados.aquecer === true) return { aquecido: true };
 
   // O id da requisição é gerado pelo aparelho e vira o id do registro:
   // se a internet cair e o aparelho reenviar, não nasce um registro duplicado.
@@ -26,9 +30,25 @@ export const registrarPonto = onCall({ memory: "512MiB", cpu: 1, timeoutSeconds:
   const foto = decodificarJpeg(dados.foto, "Foto", MAX_FOTO_BYTES);
   const miniatura = decodificarJpeg(dados.miniatura, "Miniatura da foto", MAX_MINIATURA_BYTES);
 
-  // CPF e PIN são conferidos antes de qualquer outra coisa, inclusive do reenvio.
-  const { empresa, empresaRef, dispositivoRef, dispositivo, funcionarioId, funcionario, credenciaisRef } =
-    await identificarNoAparelho({ empresaId, dispositivoId, cpf, pin, miniatura });
+  // A foto sobe enquanto CPF e PIN são conferidos (é a etapa mais demorada da
+  // batida). Se a identificação falhar, ou se for o reenvio de uma batida já
+  // gravada, ela é apagada; o registro só é gravado depois da identificação.
+  const empresaCarregada = carregarEmpresa(empresaId);
+  const fotoGuardada = empresaCarregada.then((e) =>
+    guardarFoto({ empresaId, registroId: idRequisicao, dataLocal: dataLocal(new Date(), e.fusoHorario), foto, dispositivoId }),
+  );
+  fotoGuardada.catch(() => undefined); // um erro no envio aparece no await, mais abaixo
+  const descartarFoto = () => fotoGuardada.then((f) => f.apagar(), () => undefined);
+
+  // CPF e PIN são conferidos antes de gravar qualquer coisa, inclusive no reenvio.
+  let identificacao: Identificacao;
+  try {
+    identificacao = await identificarNoAparelho({ empresaId, dispositivoId, cpf, pin, miniatura, empresa: empresaCarregada });
+  } catch (erro) {
+    void descartarFoto();
+    throw erro;
+  }
+  const { empresa, empresaRef, dispositivoRef, dispositivo, funcionarioId, funcionario, credenciaisRef } = identificacao;
 
   const fuso = empresa.fusoHorario;
   const hoje = dataLocal(new Date(), fuso);
@@ -44,12 +64,13 @@ export const registrarPonto = onCall({ memory: "512MiB", cpu: 1, timeoutSeconds:
   // Reenvio de uma requisição que já foi gravada: devolve o mesmo comprovante.
   if (registroSnap.exists) {
     const existente = registroSnap.data()!;
+    void descartarFoto();
     if (existente.dispositivoId !== dispositivoId || existente.funcionarioId !== funcionarioId) throw erroRequisicaoDeOutro();
     return comprovante(registroRef.id, existente, await ordinalDe(existente), empresa.nome);
   }
 
-  // A foto é gravada antes do registro; se o registro não for gravado, ela é apagada.
-  const { fotoPath, fotoSha256, apagar } = await guardarFoto({ empresaId, registroId: registroRef.id, dataLocal: hoje, foto, funcionarioId, dispositivoId });
+  // Se o registro não for gravado, a foto é apagada.
+  const { fotoPath, fotoSha256, apagar } = await fotoGuardada;
 
   let resultado: { registro: DocumentData; duplicado: boolean };
   try {
