@@ -3,7 +3,7 @@ import { HttpsError, onCall } from "firebase-functions/https";
 import * as logger from "firebase-functions/logger";
 import { db } from "./admin";
 import { carregarEmpresa, exigirDispositivo } from "./acesso";
-import { decodificarJpeg, identificarNoAparelho, lerCpfPin, MAX_MINIATURA_BYTES, type Identificacao } from "./identificacao";
+import { decodificarJpeg, identificarNoAparelho, lerPin, MAX_MINIATURA_BYTES, type Identificacao } from "./identificacao";
 import { comprovante, guardarFoto, MAX_FOTO_BYTES, montarMarcacao, ordinalNoDia } from "./marcacao";
 import { dataLocal, horaLocal } from "./tempo";
 import { objeto } from "./validacao";
@@ -26,11 +26,11 @@ export const registrarPonto = onCall({ memory: "512MiB", cpu: 1, timeoutSeconds:
   // se a internet cair e o aparelho reenviar, não nasce um registro duplicado.
   const idRequisicao = typeof dados.idRequisicao === "string" ? dados.idRequisicao : "";
   if (!/^[A-Za-z0-9-]{16,64}$/.test(idRequisicao)) throw new HttpsError("invalid-argument", "Requisição inválida.");
-  const { cpf, pin } = lerCpfPin(dados);
+  const pin = lerPin(dados);
   const foto = decodificarJpeg(dados.foto, "Foto", MAX_FOTO_BYTES);
   const miniatura = decodificarJpeg(dados.miniatura, "Miniatura da foto", MAX_MINIATURA_BYTES);
 
-  // A foto sobe enquanto CPF e PIN são conferidos (é a etapa mais demorada da
+  // A foto sobe enquanto o PIN é conferido (é a etapa mais demorada da
   // batida). Se a identificação falhar, ou se for o reenvio de uma batida já
   // gravada, ela é apagada; o registro só é gravado depois da identificação.
   const empresaCarregada = carregarEmpresa(empresaId);
@@ -40,10 +40,10 @@ export const registrarPonto = onCall({ memory: "512MiB", cpu: 1, timeoutSeconds:
   fotoGuardada.catch(() => undefined); // um erro no envio aparece no await, mais abaixo
   const descartarFoto = () => fotoGuardada.then((f) => f.apagar(), () => undefined);
 
-  // CPF e PIN são conferidos antes de gravar qualquer coisa, inclusive no reenvio.
+  // O PIN é conferido antes de gravar qualquer coisa, inclusive no reenvio.
   let identificacao: Identificacao;
   try {
-    identificacao = await identificarNoAparelho({ empresaId, dispositivoId, cpf, pin, miniatura, empresa: empresaCarregada });
+    identificacao = await identificarNoAparelho({ empresaId, dispositivoId, pin, miniatura, empresa: empresaCarregada });
   } catch (erro) {
     void descartarFoto();
     throw erro;

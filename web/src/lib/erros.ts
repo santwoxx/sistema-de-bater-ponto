@@ -55,7 +55,7 @@ export function erroDeRede(erro: unknown): boolean {
   )
 }
 
-/** O servidor recusou o CPF ou o PIN digitados no aparelho (a resposta é a mesma para os dois). */
+/** O servidor recusou o PIN digitado no aparelho. */
 export function credenciaisInvalidas(erro: unknown): boolean {
   return (erro as { details?: { motivo?: string } } | null)?.details?.motivo === 'credenciais-invalidas'
 }

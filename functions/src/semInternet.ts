@@ -5,12 +5,12 @@ import * as logger from "firebase-functions/logger";
 import { db } from "./admin";
 import { carregarEmpresa, exigirDispositivo } from "./acesso";
 import { registrarAuditoria } from "./auditoria";
-import { decodificarJpeg, identificarNoAparelho, lerCpfPin, MAX_MINIATURA_BYTES, type Identificacao } from "./identificacao";
+import { decodificarJpeg, identificarNoAparelho, lerPin, MAX_MINIATURA_BYTES, type Identificacao } from "./identificacao";
 import { comprovante, guardarFoto, MAX_FOTO_BYTES, montarMarcacao, ordinalNoDia, type SemInternetRegistro } from "./marcacao";
 import { dataLocal, horaLocal } from "./tempo";
 import { objeto } from "./validacao";
 
-// Batida feita sem internet: o aparelho guarda a batida (matrícula, PIN e foto)
+// Batida feita sem internet: o aparelho guarda a batida (PIN e foto)
 // cifrada e a envia sozinho quando a conexão volta. Aqui ela é conferida como
 // qualquer batida (PIN, bloqueios, intervalo mínimo) e entra na cadeia de
 // hashes marcada como "sem internet".
@@ -24,8 +24,8 @@ import { objeto } from "./validacao";
 //    no relógio do aparelho. O horário só é aceito entre a última conexão e a
 //    chegada da batida (até 72 h). Se o relógio do aparelho não bater com o
 //    tempo decorrido, a batida entra marcada "conferir horário" para o gestor.
-//  - O aparelho limita quantas batidas guarda por matrícula, e cada PIN errado
-//    conta nos bloqueios de sempre: não dá para testar PINs sem internet.
+//  - O aparelho limita quantas batidas guarda, e cada PIN errado conta nos
+//    bloqueios de sempre: não dá para testar PINs sem internet.
 
 export const MAX_HORAS_SEM_INTERNET = 72;
 /** Diferença tolerada entre o relógio do aparelho e o tempo decorrido. */
@@ -254,9 +254,9 @@ export const registrarPontoGuardado = onCall({ memory: "512MiB", cpu: 1, maxInst
 
   const idRequisicao = typeof conteudo.idRequisicao === "string" ? conteudo.idRequisicao : "";
   if (!/^[A-Za-z0-9-]{16,64}$/.test(idRequisicao)) return recusar("a identificação da batida é inválida.");
-  let cpf: string | null, pin: string, foto: Buffer, miniatura: Buffer;
+  let pin: string, foto: Buffer, miniatura: Buffer;
   try {
-    ({ cpf, pin } = lerCpfPin(conteudo));
+    pin = lerPin(conteudo);
     miniatura = decodificarJpeg(conteudo.miniatura, "Miniatura da foto", MAX_MINIATURA_BYTES);
     foto = decodificarJpeg(conteudo.foto, "Foto", MAX_FOTO_BYTES);
   } catch (erro) {
@@ -264,7 +264,7 @@ export const registrarPontoGuardado = onCall({ memory: "512MiB", cpu: 1, maxInst
     if ((erro as { details?: { motivo?: string } }).details?.motivo === "versao-antiga") {
       return recusar("foi feita na versão antiga do aparelho (com matrícula), que não vale mais. Se o horário estiver certo, lance a marcação pelo painel.");
     }
-    return recusar("o CPF, o PIN ou a foto vieram em formato inválido.");
+    return recusar("o PIN ou a foto vieram em formato inválido.");
   }
 
   const avaliacao = avaliarHorario({ ancoraEm: ancora.em, relogioNaAncora, relogioAgora, decorrido, recebidoEm });
@@ -277,10 +277,11 @@ export const registrarPontoGuardado = onCall({ memory: "512MiB", cpu: 1, maxInst
   // PIN conferido como numa batida online, com os mesmos bloqueios.
   let identificacao: Identificacao;
   try {
-    identificacao = await identificarNoAparelho({ empresaId, dispositivoId, cpf, pin, miniatura });
+    identificacao = await identificarNoAparelho({ empresaId, dispositivoId, pin, miniatura });
   } catch (erro) {
     const motivo = (erro as { details?: { motivo?: string } }).details?.motivo;
-    if (motivo === "credenciais-invalidas") return recusar("CPF ou PIN incorretos.", extra);
+    if (motivo === "credenciais-invalidas") return recusar("PIN incorreto.", extra);
+    if (motivo === "pin-repetido") return recusar("o PIN é de mais de um funcionário (troque o PIN deles em Funcionários).", extra);
     // Bloqueio temporário ou falha: a batida continua guardada e vai de novo depois.
     throw erro;
   }

@@ -11,11 +11,13 @@ export interface EstadoColecao<T> {
 /**
  * Escuta uma consulta do Firestore em tempo real.
  * `chave` identifica a consulta: quando ela muda, a escuta é refeita.
+ * `manter` (opcional) deixa de fora itens que não devem aparecer.
  */
 export function useColecao<T>(
   criarConsulta: () => Query | null,
   converter: (snap: DocumentSnapshot) => T,
   chave: string,
+  manter?: (item: T) => boolean,
 ): EstadoColecao<T> {
   const [estado, setEstado] = useState<EstadoColecao<T>>({ dados: [], carregando: true, erro: null })
 
@@ -30,7 +32,10 @@ export function useColecao<T>(
     setEstado({ dados: [], carregando: true, erro: null })
     return onSnapshot(
       consulta,
-      (snap) => setEstado({ dados: snap.docs.map(converter), carregando: false, erro: null }),
+      (snap) => {
+        const dados = snap.docs.map(converter)
+        setEstado({ dados: manter ? dados.filter(manter) : dados, carregando: false, erro: null })
+      },
       (erro) => setEstado({ dados: [], carregando: false, erro: mensagemErro(erro) }),
     )
     // A consulta é recriada a cada render; `chave` é o que define quando trocar.

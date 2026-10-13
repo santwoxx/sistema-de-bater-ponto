@@ -1863,18 +1863,6 @@ html.modo-ponto body {
   font-size: 0.95rem;
 }
 
-.visor-numero {
-  font-size: clamp(2rem, 4.4vw, 3rem);
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.visor-dica {
-  color: #34445f;
-}
-
 .pontos-pin {
   display: flex;
   gap: 16px;
@@ -1944,18 +1932,6 @@ html.modo-ponto body {
   margin: 0;
   text-align: center;
   color: #8d9ab0;
-}
-
-.terminal-erro {
-  padding: 10px 14px;
-  border-radius: 10px;
-  background: #4a1d1d;
-  color: #fecaca;
-}
-
-/* O aviso de CPF inválido aparece mesmo onde a instrução fica escondida (celular). */
-.terminal-instrucao.terminal-erro {
-  display: block;
 }
 
 .resultado {
@@ -2313,10 +2289,6 @@ html.modo-ponto body {
     font-size: 0.85rem;
   }
 
-  .visor-numero {
-    font-size: 1.7rem;
-  }
-
   .pontos-pin {
     gap: 12px;
   }
@@ -2376,10 +2348,6 @@ html.modo-ponto body {
   .visor {
     min-height: 0;
     padding: 4px 8px;
-  }
-
-  .visor-numero {
-    font-size: 1.4rem;
   }
 
   .teclado {

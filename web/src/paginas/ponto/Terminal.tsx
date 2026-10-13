@@ -3,7 +3,6 @@ import { api, type ComprovantePonto } from '../../api'
 import { useCamera, useTelaSempreAcesa } from '../../hooks/useCamera'
 import { useAgora } from '../../hooks/useAgora'
 import { credenciaisInvalidas, erroDeRede, mensagemErro } from '../../lib/erros'
-import { cpfValido, mascararCpf } from '../../lib/formatos'
 import { TAMANHO_PIN } from '../../lib/pin'
 import { somErro, somFoto, somSucesso } from '../../lib/sons'
 import { gerarId } from '../../lib/util'
@@ -12,18 +11,19 @@ import { AparelhoDesativado, ConfiguracoesAparelho } from './terminal/CicloDoApa
 import { FalhaNoAparelho, PontoGuardado, PontoRegistrado, type DadosGuardada } from './terminal/Resultados'
 import { podeGuardar } from './terminal/semInternet'
 import TecladoPonto, { type Visor } from './terminal/TecladoPonto'
-import { instrucaoDaTela, mensagemRecusa, TAMANHO_CPF, tituloDaTela } from './terminal/textos'
+import { instrucaoDaTela, PIN_INCORRETO, tituloDaTela } from './terminal/textos'
 import { ETAPAS_DE_RESULTADO, type Etapa } from './terminal/tipos'
 import TopoTerminal from './terminal/TopoTerminal'
 import { useBatidasGuardadas } from './terminal/useBatidasGuardadas'
 import { useAtualizacaoAutomatica } from './terminal/useAtualizacaoAutomatica'
 import { useSincronizacao } from './terminal/useSincronizacao'
 
-// Tela do aparelho de ponto: o funcionário só bate o ponto. No aparelho da
-// loja, digita o CPF e o PIN de 4 números (definido pelo gestor); no celular
-// pessoal, só o PIN. A hora é a do momento da foto. Solicitações, ajustes, PIN
-// e o fechamento do mês ficam com o gestor, no painel. Aqui ficam a máquina de
-// estados e as chamadas ao servidor; a apresentação fica em ./terminal.
+// Tela do aparelho de ponto: o funcionário só bate o ponto, digitando o PIN de
+// 4 números (definido pelo gestor, um para cada funcionário); o servidor sabe
+// quem é pelo PIN. No celular pessoal, só vale o PIN do dono. A hora é a do
+// momento da foto. Solicitações, ajustes, PIN e o fechamento do mês ficam com o
+// gestor, no painel. Aqui ficam a máquina de estados e as chamadas ao servidor;
+// a apresentação fica em ./terminal.
 
 /** Volta ao início depois de tanto tempo parado em cada situação. */
 const INATIVIDADE_MS = 20_000
@@ -52,17 +52,10 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
   useTelaSempreAcesa()
   const agora = new Date(useAgora(1000) + deslocamento)
   const fuso = info?.empresa.fusoHorario ?? 'America/Sao_Paulo'
-  // Celular pessoal: o aparelho já sabe quem é o dono; a tela o cumprimenta e pede só o PIN.
+  // Celular pessoal: o aparelho já sabe quem é o dono, e a tela o cumprimenta.
   const nomeDono = info?.dispositivo.funcionario?.nome ?? null
-  const pessoal = nomeDono !== null
-  const pessoalRef = useRef(pessoal)
-  useEffect(() => {
-    pessoalRef.current = pessoal
-  })
 
-  const [etapa, setEtapa] = useState<Etapa>(() => (pessoal ? 'pin' : 'cpf'))
-  const [cpf, setCpf] = useState('')
-  const [erroCpf, setErroCpf] = useState('')
+  const [etapa, setEtapa] = useState<Etapa>('pin')
   const [pin, setPin] = useState('')
   const [contagem, setContagem] = useState(3)
   const [comprovante, setComprovante] = useState<{ dados: ComprovantePonto; foto: string } | null>(null)
@@ -70,31 +63,18 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
   const [mensagem, setMensagem] = useState('')
   const [configuracoes, setConfiguracoes] = useState(false)
 
-  // Tela parada no início (CPF; no celular pessoal, o PIN), sem nada digitado.
-  const ocioso = etapa === (pessoal ? 'pin' : 'cpf') && cpf === '' && pin === '' && !configuracoes
+  // Tela parada no início, sem nada digitado.
+  const ocioso = etapa === 'pin' && pin === '' && !configuracoes
   // Versão nova do site publicada: recarrega com a tela parada.
   useAtualizacaoAutomatica(ocioso && !guardadas.enviando)
 
   const reiniciar = useCallback(() => {
-    setEtapa(pessoalRef.current ? 'pin' : 'cpf')
-    setCpf('')
-    setErroCpf('')
+    setEtapa('pin')
     setPin('')
     setMensagem('')
     setComprovante(null)
     setGuardada(null)
   }, [])
-
-  // O uso do aparelho mudou na sincronização (virou celular pessoal ou da loja):
-  // se a tela estava parada, volta ao início certo. Este efeito vem antes do que
-  // atualiza ociosoRef, para olhar como a tela estava antes da mudança.
-  const ociosoRef = useRef(ocioso)
-  useEffect(() => {
-    if (ociosoRef.current) reiniciar()
-  }, [pessoal, reiniciar])
-  useEffect(() => {
-    ociosoRef.current = ocioso
-  })
 
   const falhar = useCallback((texto: string) => {
     setMensagem(texto)
@@ -109,7 +89,7 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
       if (!credenciaisInvalidas(e)) return mensagemErro(e)
       // O gestor pode ter mudado o uso do aparelho (celular pessoal ou da loja): confere já.
       conferir()
-      return mensagemRecusa(pessoalRef.current)
+      return PIN_INCORRETO
     },
     [conferir],
   )
@@ -124,8 +104,7 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
     }
     somFoto()
     setEtapa('enviando')
-    // No celular pessoal, o servidor sabe quem é pelo aparelho: vai só o PIN.
-    const dados = { idRequisicao: gerarId(), ...(pessoal ? {} : { cpf }), pin, foto: captura.foto, miniatura: captura.miniatura }
+    const dados = { idRequisicao: gerarId(), pin, foto: captura.foto, miniatura: captura.miniatura }
 
     // Sem internet: a batida fica guardada (cifrada) neste aparelho e vai sozinha
     // quando a conexão voltar. Com o mesmo id: se chegou ao servidor, não duplica.
@@ -133,7 +112,7 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
       try {
         const resultado = await guardarNoAparelho({ ...dados, dispositivoId: info?.dispositivo.id ?? '' })
         if ('erro' in resultado) return falhar(resultado.erro)
-        setGuardada({ quem: nomeDono ?? `CPF ${mascararCpf(cpf)}`, horario: resultado.horario, foto: captura.foto })
+        setGuardada({ quem: nomeDono, horario: resultado.horario, foto: captura.foto })
         setEtapa('guardado')
         setPin('')
         somSucesso()
@@ -167,7 +146,7 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
       }
       falhar(mensagemDaFalha(e))
     }
-  }, [capturar, pessoal, cpf, pin, falhar, setConectado, conectado, info, nomeDono, guardarNoAparelho, mensagemDaFalha])
+  }, [capturar, pin, falhar, setConectado, conectado, info, nomeDono, guardarNoAparelho, mensagemDaFalha])
 
   // --- Tempo ------------------------------------------------------------------
 
@@ -193,17 +172,17 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
 
   // Volta ao início com algo digitado pela metade ou depois de mostrar o resultado.
   useEffect(() => {
-    const digitando = (etapa === 'cpf' || etapa === 'pin') && (cpf !== '' || pin !== '')
+    const digitando = etapa === 'pin' && pin !== ''
     const espera = ETAPAS_DE_RESULTADO.includes(etapa) ? RESULTADO_MS : digitando ? INATIVIDADE_MS : 0
     if (!espera) return
     const id = setTimeout(reiniciar, espera)
     return () => clearTimeout(id)
-  }, [etapa, cpf, pin, reiniciar])
+  }, [etapa, pin, reiniciar])
 
   // --- Teclado ----------------------------------------------------------------
 
   // Alguém começou a digitar: abre a função de ponto no servidor enquanto a pessoa
-  // digita o CPF e o PIN, para a batida não esperar a partida a frio (~1 s).
+  // digita o PIN, para a batida não esperar a partida a frio (~1 s).
   const ultimoAquecimento = useRef(0)
   const aquecer = useCallback(() => {
     if (!conectado || Date.now() - ultimoAquecimento.current < AQUECER_A_CADA_MS) return
@@ -214,25 +193,14 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
   const teclar = useCallback(
     (tecla: string) => {
       if (configuracoes) return
-      if (/^\d$/.test(tecla) && cpf === '' && pin === '') aquecer()
+      if (/^\d$/.test(tecla) && pin === '') aquecer()
       if (ETAPAS_DE_RESULTADO.includes(etapa)) {
         reiniciar()
         return
       }
-      if (etapa === 'cpf') {
-        setErroCpf('')
-        if (tecla === 'apagar') setCpf((c) => c.slice(0, -1))
+      if (etapa === 'pin') {
+        if (tecla === 'apagar') setPin((p) => p.slice(0, -1))
         else if (tecla === 'ok') {
-          if (cpf.length < TAMANHO_CPF) return
-          // Confere os dígitos do CPF aqui mesmo: um erro de digitação não chega ao servidor.
-          if (cpfValido(cpf)) setEtapa('pin')
-          else setErroCpf('CPF inválido. Confira os números e corrija.')
-        } else if (cpf.length < TAMANHO_CPF) setCpf((c) => c + tecla)
-      } else if (etapa === 'pin') {
-        if (tecla === 'apagar') {
-          if (pin) setPin((p) => p.slice(0, -1))
-          else if (!pessoal) setEtapa('cpf')
-        } else if (tecla === 'ok') {
           if (pin.length < TAMANHO_PIN) return
           if (estadoCamera !== 'pronta') falhar(erroCamera || 'A câmera ainda não está pronta. Aguarde e tente de novo.')
           else {
@@ -242,7 +210,7 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
         } else if (pin.length < TAMANHO_PIN) setPin((p) => p + tecla)
       }
     },
-    [configuracoes, etapa, cpf, pin, pessoal, estadoCamera, erroCamera, reiniciar, falhar, aquecer],
+    [configuracoes, etapa, pin, estadoCamera, erroCamera, reiniciar, falhar, aquecer],
   )
 
   // Também aceita teclado físico (computador com webcam).
@@ -268,9 +236,8 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
   // Na hora da foto (e enquanto envia), nada pode ser digitado; com o aparelho
   // em pé, a câmera ocupa a tela toda (ver estilos.css).
   const bloqueado = etapa === 'foto' || etapa === 'enviando'
-  const visor: Visor =
-    etapa === 'cpf' ? { tipo: 'cpf', digitos: cpf } : { tipo: 'pin', legenda: nomeDono ?? (cpf ? `CPF ${mascararCpf(cpf)}` : null), digitos: pin.length }
-  const podeConfirmar = etapa === 'cpf' ? cpf.length === TAMANHO_CPF : etapa === 'pin' && pin.length === TAMANHO_PIN
+  const visor: Visor = { legenda: nomeDono, digitos: pin.length }
+  const podeConfirmar = etapa === 'pin' && pin.length === TAMANHO_PIN
 
   return (
     <div className={bloqueado ? 'terminal terminal-capturando' : 'terminal'}>
@@ -308,7 +275,6 @@ export default function Terminal({ empresaId }: { empresaId: string }) {
             bloqueado={bloqueado}
             aoTeclar={teclar}
             instrucao={instrucaoDaTela(etapa)}
-            erro={etapa === 'cpf' ? erroCpf : ''}
           />
         </section>
       </div>

@@ -55,9 +55,9 @@ export function PontoRegistrado({
   )
 }
 
-/** Batida feita sem internet. quem: o dono do celular pessoal, ou o CPF (mascarado) digitado no aparelho da loja. */
+/** Batida feita sem internet. quem: o dono do celular pessoal (no aparelho da loja, só o servidor sabe, pelo PIN). */
 export interface DadosGuardada {
-  quem: string
+  quem: string | null
   horario: number
   foto: string
 }
@@ -78,10 +78,10 @@ export function PontoGuardado({
       <CloudOff size={64} aria-hidden />
       <h2>Batida guardada</h2>
       <img src={guardada.foto} alt="" className="resultado-foto" />
-      <strong className="resultado-nome">{guardada.quem}</strong>
+      {guardada.quem && <strong className="resultado-nome">{guardada.quem}</strong>}
       <span className="resultado-hora">{horaLocal(horario, fuso)}</span>
       <span>{dataPorExtenso(horario, fuso)}</span>
-      <p>Estamos sem internet. A batida ficou guardada neste aparelho e vai sozinha quando a conexão voltar; o CPF e o PIN são conferidos nessa hora.</p>
+      <p>Estamos sem internet. A batida ficou guardada neste aparelho e vai sozinha quando a conexão voltar; o PIN é conferido nessa hora.</p>
     </Resultado>
   )
 }

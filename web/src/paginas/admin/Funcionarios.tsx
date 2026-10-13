@@ -49,7 +49,7 @@ export default function Funcionarios() {
     <>
       <CabecalhoPagina
         titulo="Funcionários"
-        descricao="Cada funcionário bate o ponto digitando a matrícula e o PIN no aparelho."
+        descricao="Cada funcionário bate o ponto no aparelho digitando só o PIN dele."
         acoes={
           <button type="button" className="botao primario" onClick={() => setEditando('novo')}>
             <UserPlus size={16} aria-hidden /> Novo funcionário
@@ -269,8 +269,8 @@ function FormFuncionario({
       <fieldset className="grupo">
         <legend>PIN do ponto</legend>
         <p className="texto-suave">
-          O funcionário bate o ponto digitando o CPF e este PIN de {TAMANHO_PIN} números (no celular pessoal dele, só o PIN). Passe o
-          PIN para ele; se ele esquecer ou outra pessoa descobrir, troque aqui (trocar também desbloqueia quem errou demais).
+          O funcionário bate o ponto digitando só este PIN de {TAMANHO_PIN} números, por isso cada funcionário tem um PIN diferente.
+          Passe o PIN para ele; se ele esquecer ou outra pessoa descobrir, troque aqui (trocar também desbloqueia quem errou demais).
           {!novo && !funcionario?.pinDefinido && ' Este funcionário ainda não tem o PIN de 4 números: salve um para ele bater o ponto.'}
         </p>
         {!novo && funcionario?.pinDefinido && (

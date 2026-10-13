@@ -2,7 +2,7 @@
 
 Sistema de controle de ponto para lojas e pequenas empresas. **Tudo roda no Firebase** (site, regras de negócio, banco, fotos e login) e é publicado com um comando: `npm run publicar`.
 
-- **Aparelho de ponto na loja** (tablet, celular ou computador com câmera): o funcionário só **bate o ponto**. Digita o **CPF** e o **PIN de 4 números** criado pelo gestor (sem matrícula), a foto é tirada automaticamente e a hora registrada é a do momento da foto, vinda do **servidor** (não dá para adiantar ou atrasar mexendo no relógio do aparelho).
+- **Aparelho de ponto na loja** (tablet, celular ou computador com câmera): o funcionário só **bate o ponto**. Digita só o **PIN de 4 números** criado pelo gestor (sem CPF nem matrícula), a foto é tirada automaticamente e a hora registrada é a do momento da foto, vinda do **servidor** (não dá para adiantar ou atrasar mexendo no relógio do aparelho).
 - **Painel do gestor** (navegador): escolha da empresa com busca por nome ou CNPJ, quem está em expediente agora, marcações com foto, espelho de ponto mensal com horas, saldo e faltas, além de funcionários, aparelhos, abonos e auditoria. **Ajustes, solicitações, faltas, atrasos e o fechamento do mês são só do gestor.**
 - **Várias empresas no mesmo sistema**: o administrador vê todas; cada gestor vê só as empresas liberadas para ele.
 
@@ -28,27 +28,27 @@ Sistema de controle de ponto para lojas e pequenas empresas. **Tudo roda no Fire
 - Teclado numérico grande (aceita também teclado físico), câmera ao vivo com moldura para o rosto e contagem regressiva de 3 segundos antes da foto.
 - Comprovante na tela: nome, **Entrada/Saída**, hora, data, **NSR** (número sequencial do registro) e código de verificação.
 - **Só bater o ponto:** o funcionário não pede inclusão de horário, não justifica atraso nem mexe no espelho. Mesmo quem chega atrasado registra com a foto, na hora em que chegou. Marcação esquecida, faltas, atrasos, abonos e o fechamento do mês ficam com o gestor, no painel.
-- **CPF + PIN, sem matrícula:** o funcionário se identifica pelo CPF (que todo mundo sabe de cor) e confirma com um PIN de 4 números, definido pelo gestor no cadastro (o painel sugere um sorteado). Se o CPF tiver um erro de digitação, o aparelho avisa na hora. Esqueceu o PIN ou alguém descobriu: o gestor troca no painel.
-- **Sem internet, o ponto continua:** a batida (com foto) fica guardada no aparelho, cifrada, e é enviada sozinha quando a conexão volta. O topo da tela mostra quantas estão guardadas; CPF e PIN são conferidos quando a batida chega ao servidor, e as recusadas (PIN errado, por exemplo) aparecem nos alertas do painel. Vale para até 72 horas sem internet.
+- **Só o PIN, sem CPF nem matrícula:** o funcionário digita o PIN de 4 números, e o sistema sabe quem é por ele. O PIN é definido pelo gestor no cadastro (o painel sugere um sorteado) e é diferente para cada funcionário da empresa. Esqueceu o PIN ou alguém descobriu: o gestor troca no painel.
+- **Sem internet, o ponto continua:** a batida (com foto) fica guardada no aparelho, cifrada, e é enviada sozinha quando a conexão volta. O topo da tela mostra quantas estão guardadas; o PIN é conferido quando a batida chega ao servidor, e as recusadas (PIN errado, por exemplo) aparecem nos alertas do painel. Vale para até 72 horas sem internet.
 - Relógio sincronizado com o servidor, aviso de "Sem internet", tela sempre acesa e tela cheia. Pode ser instalado como aplicativo (PWA).
 - Funciona em tablet, computador e **celular** (em pé ou deitado): a moldura do rosto sempre cabe inteira na câmera e, no celular em pé, na hora da foto a câmera ocupa a tela toda.
 - **Câmera feita para celular de todo tipo:** se a câmera frontal não abre em HD, usa uma resolução menor; se o pedido de permissão não aparece, mostra o botão **"Ligar a câmera"**; religa sozinha quando cai ou quando a tela volta; e, se estiver bloqueada, mostra o passo a passo para liberar no Android ou no iPhone (e liga sozinha quando liberada). O gestor vê o estado da câmera de cada aparelho no painel.
 - **Atualização automática:** quando sai uma versão nova do sistema, o aparelho recarrega sozinho num momento sem ninguém usando.
-- **Batida rápida:** quando a pessoa começa a digitar o CPF, o aparelho já acorda o servidor; a foto sobe enquanto o CPF e o PIN são conferidos; e a tela do ponto carrega só o que usa (metade do tamanho do painel).
+- **Batida rápida:** quando a pessoa começa a digitar o PIN, o aparelho já acorda o servidor; o dono do PIN é achado com uma leitura; a foto sobe enquanto o PIN é conferido; e a tela do ponto carrega só o que usa (metade do tamanho do painel).
 - Ativado uma única vez por um gestor e desativável pelo painel a qualquer momento.
-- **Celular pessoal:** o aparelho pode ser o celular de um funcionário. Aí só ele bate ponto nesse celular, digitando só o PIN (sem CPF), e a tela o cumprimenta: "Olá, Maria! Digite seu PIN". Outra pessoa é recusada, mesmo com o próprio CPF e PIN. O gestor escolhe o uso na ativação e pode mudar depois, no painel.
+- **Celular pessoal:** o aparelho pode ser o celular de um funcionário. Aí só ele bate ponto nesse celular, com o PIN dele, e a tela o cumprimenta: "Olá, Maria! Digite seu PIN". Outra pessoa é recusada, mesmo com o próprio PIN. O gestor escolhe o uso na ativação e pode mudar depois, no painel.
 
 ### No painel (`/admin`)
 
 | Página | O que faz |
 |---|---|
 | **Hoje** | Quem está em expediente, quem saiu, quem está de férias ou atestado, marcações do dia em tempo real e aparelhos online |
-| **Marcações** | Filtro por período e funcionário, foto de cada batida, inclusão manual com justificativa, desconsiderar ou restaurar uma batida, exportação CSV |
+| **Marcações** | Filtro por período e funcionário, foto de cada batida, inclusão manual com justificativa, desconsiderar ou restaurar uma batida, apagar uma batida (só o administrador), exportação CSV |
 | **Solicitações** | Inclusão de marcação que faltou, registrada pelo gestor (o funcionário avisa e o gestor lança). Pode ficar pendente para outra pessoa aprovar; recusar exige motivo. Contador de pendentes no menu |
 | **Espelho de ponto** | Qualquer mês, por funcionário: marcações, previsto, trabalhado, saldo, faltas e marcações ímpares. Lançamento de abonos. Mostra se o mês foi fechado e avisa se algo mudou depois. Impressão ou PDF (com linhas para o funcionário e a empresa assinarem) e CSV |
 | **Fechamento mensal** | Congela o espelho de todos os funcionários de um mês (a versão oficial, para imprimir e assinar em papel), com os totais de cada um; CSV do mês para a folha. Mudou algo depois? Reabrir exige motivo e guarda a versão anterior |
 | **Exportar dados** | Baixa os dados de ponto da empresa escolhida, com filtros de período (até 12 meses), funcionários, origem e situação: **marcações** (uma linha por batida), **espelho diário**, **resumo por funcionário** (CSV que abre no Excel) ou **espelhos para imprimir/PDF**, um por folha. Cada exportação fica na auditoria |
-| **Funcionários** | CPF, matrícula, cargo, admissão, jornada de cada dia da semana e o PIN de 4 números (com "Gerar PIN"; mostra quem está sem PIN) |
+| **Funcionários** | CPF, matrícula, cargo, admissão, jornada de cada dia da semana e o PIN de 4 números, um para cada funcionário (com "Gerar PIN"; mostra quem está sem PIN) |
 | **Aparelhos de ponto** | Aparelhos ativados, último sinal, **câmera** (funcionando ou o problema, com o que fazer), último registro e desativação |
 | **Auditoria** | Quem fez o quê e quando, com as justificativas. Bloqueios por PIN errado aparecem com a foto de quem tentou. **Verificação de integridade**: refaz a cadeia de hashes e aponta marcação apagada, inserida ou alterada, mesmo direto no banco |
 | **Empresas** *(admin)* | CNPJ (inclusive o novo CNPJ alfanumérico), fuso horário, intervalo mínimo entre batidas, tolerância e início do controle de ponto |
@@ -99,7 +99,7 @@ Sistema bater ponto/
 ├── functions/               backend (Cloud Functions, TypeScript)
 │   └── src/
 │       ├── ponto.ts         registro do ponto: foto, NSR, cadeia de hashes
-│       ├── identificacao.ts CPF + PIN no aparelho, com bloqueios por erro
+│       ├── identificacao.ts PIN no aparelho (acha o dono pelo PIN), com bloqueios por erro
 │       ├── pin.ts           chave do PIN (HMAC com segredo do servidor)
 │       ├── cadeia.ts        cálculo e verificação da cadeia de hashes
 │       ├── integridade.ts   verificação de integridade (no painel e toda segunda-feira)
@@ -130,7 +130,8 @@ auditoria/{id}                          ações globais (empresas, usuários)
 limites/{uid}_{acao}                    contadores de limite de uso (inacessível pelo navegador)
 empresas/{empresaId}                    nome, CNPJ, fuso, regras e resultado da verificação de integridade
   ├── funcionarios/{id}                 nome, CPF, matrícula, jornada
-  ├── credenciais/{funcionarioId}       chave do PIN, erros e bloqueios, última marcação (inacessível pelo navegador)
+  ├── credenciais/{funcionarioId}       índice do PIN, erros e bloqueios, última marcação (inacessível pelo navegador)
+  ├── pins/{índice}                     dono de cada PIN da empresa: um PIN, um funcionário (inacessível pelo navegador)
   ├── registros/{id}                    marcações (imutáveis)
   ├── abonos/{id}                       feriados, atestados, férias
   ├── solicitacoes/{id}                 marcações esquecidas lançadas pelo gestor (pendente/aprovada/recusada)
@@ -214,12 +215,12 @@ A publicação não faz perguntas: cria o site do Hosting se faltar e aceita a l
 4. Em **Usuários**, crie a conta da gestora e marque as empresas que ela pode acessar. Sem senha inicial, ela entra com a conta Google do e-mail cadastrado ou cria a própria senha no login ("Criar ou redefinir senha"), sem que você a conheça.
 
 **Login com Google.** O botão "Entrar com Google" aparece no login do painel e na ativação/desativação do aparelho. Ele entra na conta já cadastrada com o mesmo e-mail (mesmo papel e mesmas empresas); conta Google sem cadastro é recusada. Se a pessoa tinha senha, o Firebase a desliga no primeiro acesso pelo Google (o Google passa a ser o único jeito de entrar); o administrador pode definir uma senha de novo em Usuários. Em conta Google com e-mail de outro provedor (ex.: Hotmail), o Google não confirma o e-mail: a tela pede a senha uma vez e liga as duas formas de entrar. Em computador compartilhado, lembre que sair do painel não sai da conta Google.
-5. Em **Funcionários**, cadastre a equipe com matrícula e o **PIN de 4 números** de cada um (o painel sugere um; dá para trocar). Entregue o PIN a cada pessoa: no aparelho ela digita o CPF e o PIN.
+5. Em **Funcionários**, cadastre a equipe com matrícula e o **PIN de 4 números** de cada um (o painel sugere um; dá para trocar). Entregue o PIN a cada pessoa: no aparelho ela digita só o PIN.
 
 ### 6. Coloque o aparelho na loja
 
 1. No tablet ou celular, abra `https://SEU-PROJETO.web.app/ponto`.
-2. Entre com o e-mail e a senha de um gestor (ou a conta Google), escolha a empresa, diga se é o **aparelho da loja** (cada um digita o CPF e o PIN) ou o **celular pessoal** de um funcionário (só ele bate ponto, digitando só o PIN) e dê um nome ao aparelho (ex.: "Tablet do caixa" ou "Celular da Maria").
+2. Entre com o e-mail e a senha de um gestor (ou a conta Google), escolha a empresa, diga se é o **aparelho da loja** (cada um digita o próprio PIN) ou o **celular pessoal** de um funcionário (só ele bate ponto, com o PIN dele) e dê um nome ao aparelho (ex.: "Tablet do caixa" ou "Celular da Maria").
 3. **Permita a câmera** quando o navegador pedir.
 4. Deixe o aparelho em modo quiosque:
    - **Android**: no Chrome, menu ⋮ → **Instalar app** (ou "Adicionar à tela inicial") → abra pelo ícone. Depois ative a **Fixação de app** (Configurações → Segurança) para ninguém sair da tela.
@@ -231,7 +232,7 @@ A publicação não faz perguntas: cria o site do Hosting se faltar e aceita a l
 
 ## Uso no dia a dia
 
-**Funcionário (só isto):** digita o CPF → ✓ → digita o PIN de 4 números → ✓ → olha para a câmera → vê o comprovante (no celular pessoal, só o PIN). A 1ª batida do dia é Entrada, a 2ª Saída, a 3ª Entrada, e assim por diante. Esqueceu de bater, chegou atrasado ou faltou? Avisa o gestor: só ele lança ou justifica no painel.
+**Funcionário (só isto):** digita o PIN de 4 números → ✓ → olha para a câmera → vê o comprovante. A 1ª batida do dia é Entrada, a 2ª Saída, a 3ª Entrada, e assim por diante. Esqueceu de bater, chegou atrasado ou faltou? Avisa o gestor: só ele lança ou justifica no painel.
 
 **Gestora:**
 
@@ -240,11 +241,13 @@ A publicação não faz perguntas: cria o site do Hosting se faltar e aceita a l
 - **Solicitações pendentes** (o número ao lado do menu): veja as marcações que já existem no dia e **Aprove** (a marcação é incluída) ou **Recuse** (com motivo).
 - **Faltas e atrasos:** o espelho mostra sozinho (dia útil sem marcação é falta; atraso aparece como saldo negativo do dia). Para justificar, use abono; para corrigir, inclua ou desconsidere a marcação com motivo.
 - **Batida duplicada ou errada:** abra a marcação → **Desconsiderar** (com motivo). A original continua guardada.
+- **Batida que não deveria existir** (teste na implantação, por exemplo): abra a marcação → **Apagar** (só o administrador, com motivo). Ela some de todas as telas, relatórios e exportações, e a foto é apagada. Não tem volta; a auditoria guarda quem apagou e por quê.
 - **Feriado, atestado ou férias:** Espelho de ponto → **Lançar abono** (ou o ícone de calendário no dia).
-- **Esqueceu o PIN, alguém descobriu ou foi bloqueado** (5 erros seguidos bloqueiam o PIN por 15 minutos; se repetir, 30 e depois 60): Funcionários → editar → **Trocar o PIN** (ou "Gerar PIN") → salvar, e passe o novo PIN para ele. O antigo deixa de valer na hora, e o bloqueio acaba.
+- **Esqueceu o PIN, alguém descobriu ou foi bloqueado** (no celular pessoal, 5 erros seguidos bloqueiam o PIN do dono por 15 minutos; se repetir, 30 e depois 60): Funcionários → editar → **Trocar o PIN** (ou "Gerar PIN") → salvar, e passe o novo PIN para ele. O antigo deixa de valer na hora, e o bloqueio acaba. Se o PIN escolhido já for de outro funcionário, o painel avisa: escolha outro.
+- **Aparelho bloqueado** ("Muitas tentativas erradas neste aparelho"): 10 PINs errados em 15 minutos bloqueiam o aparelho por 15 minutos. A página **Hoje** mostra o alerta com a foto de quem tentou.
 - **Alertas de segurança:** a página **Hoje** mostra os bloqueios por PIN errado dos últimos 7 dias, com a foto de quem tentou. Se a verificação de integridade (automática, toda segunda-feira) encontrar marcação alterada ou apagada, uma faixa vermelha aparece no topo de todas as páginas.
 - **Fechamento do mês** (no início do mês seguinte): **Fechamento mensal** → escolha o mês → **Fechar mês**. O espelho de cada um fica congelado (a versão oficial). Depois, **Imprimir espelhos** (Exportar dados → Espelhos para imprimir ou PDF) para cada funcionário assinar em papel. O **CSV do mês** traz os totais de todos para a folha.
-- **Consultar meses anteriores:** todas as telas aceitam qualquer período (Marcações, Espelho, Fechamento, Auditoria e Solicitações, com "carregar mais antigos"). Nada é apagado.
+- **Consultar meses anteriores:** todas as telas aceitam qualquer período (Marcações, Espelho, Fechamento, Auditoria e Solicitações, com "carregar mais antigos"). Nada expira.
 - **Algo mudou depois do fechamento:** o espelho avisa. No Fechamento mensal (ou no Espelho de ponto), use **Reabrir** com motivo: uma nova versão é gerada, a anterior fica guardada, e você imprime de novo para assinatura.
 - **Imprimir um espelho:** Espelho de ponto → **Imprimir / PDF** (sai com as linhas para o funcionário e a empresa assinarem). Para imprimir os de todos de uma vez: **Exportar dados → Espelhos para imprimir ou PDF**.
 - **Arquivo para a contabilidade:** **Exportar dados** → Resumo por funcionário (totais) ou Espelho diário (dia a dia), no período e com os funcionários que quiser.
@@ -269,7 +272,7 @@ A publicação não faz perguntas: cria o site do Hosting se faltar e aceita a l
 **Baixar os dados de uma empresa:** página **Exportar dados** (escolha a empresa no topo, o tipo de arquivo, o período, os funcionários e os filtros). Também há exportações rápidas nas telas de Marcações (o que está filtrado na tela), Espelho de ponto (um funcionário) e Fechamento mensal (totais do mês).
 
 - **Nada expira:** marcações, fotos, espelhos fechados (e suas versões anteriores), solicitações, abonos e auditoria ficam guardados sem prazo. Qualquer mês antigo pode ser consultado, fechado e impresso.
-- **O que já protege os dados:** toda escrita passa pelo servidor com transações (sem registro pela metade ou duplicado), marcações nunca são apagadas, e a cadeia de hashes e a auditoria mostram qualquer alteração.
+- **O que já protege os dados:** toda escrita passa pelo servidor com transações (sem registro pela metade ou duplicado), marcações só são apagadas pelo administrador (com motivo, na auditoria), e a cadeia de hashes e a auditoria mostram qualquer alteração.
 - **Backups do Firestore:** o `npm run publicar` já liga os três itens abaixo (dá para conferir no Console do Google Cloud → Firestore → **Disaster recovery**):
   1. **Proteção contra exclusão**: impede que o banco seja apagado por engano.
   2. **Recuperação pontual (PITR)**: permite voltar o banco a qualquer minuto dos últimos 7 dias.
@@ -304,8 +307,8 @@ Abra <http://localhost:5173>. Os dados somem quando os emuladores são fechados.
 | Comando | O que faz |
 |---|---|
 | `npm run verificar` | Build das funções e do site, lint (sem nenhum aviso permitido) e testes unitários: CPF, CNPJ, PIN, senhas, limpeza de textos, fusos, limites de uso, cadeia de hashes, cálculo do espelho e textos do aparelho. O `npm run publicar` roda isto antes de publicar |
-| `npm run testar:e2e` | 30 etapas de ponta a ponta com os emuladores: permissões de cada papel, ações do painel numa função só (ação desconhecida recusada) e aquecimento das funções, código de instalação, login com Google (mesma conta do e-mail, ligação com senha, conta sem cadastro), batida sem internet (cifrada, horário conferido, recusas e cadeia íntegra), CPF + PIN de 4 números (sem matrícula, troca só pelo gestor), registro com foto, NSR e cadeia de hashes, bloqueios do PIN e do aparelho (inclusive com tentativas em paralelo), fotos só pelo servidor, ajustes, abonos, solicitações só pelo gestor, fechamento e reabertura com motivo, exportação, adulteração detectada, limites de uso, auditoria, celular pessoal e desativação de aparelho |
-| `npm run dados:exemplo` | Com os emuladores ligados, cria administrador, gestora, empresas, funcionários e o histórico do mês anterior, pronto para fechar (senha `ponto-teste-2026`; o resumo no fim mostra o CPF e o PIN de cada funcionário) |
+| `npm run testar:e2e` | 32 etapas de ponta a ponta com os emuladores: permissões de cada papel, ações do painel numa função só (ação desconhecida recusada) e aquecimento das funções, código de instalação, login com Google (mesma conta do e-mail, ligação com senha, conta sem cadastro), batida sem internet (cifrada, horário conferido, recusas e cadeia íntegra), só o PIN de 4 números (único na empresa, troca só pelo gestor, PINs antigos passados ao novo formato e alerta de PIN repetido), registro com foto, NSR e cadeia de hashes, bloqueios do aparelho e do PIN no celular pessoal (inclusive com tentativas em paralelo), fotos só pelo servidor, ajustes, marcação apagada só pelo administrador (some das telas, foto junto, cadeia íntegra), abonos, solicitações só pelo gestor, fechamento e reabertura com motivo, exportação, adulteração detectada, limites de uso, auditoria, celular pessoal e desativação de aparelho |
+| `npm run dados:exemplo` | Com os emuladores ligados, cria administrador, gestora, empresas, funcionários e o histórico do mês anterior, pronto para fechar (senha `ponto-teste-2026`; o resumo no fim mostra o PIN de cada funcionário) |
 | `npm run logs` | Últimos registros das funções em produção |
 
 No GitHub, cada envio roda o `npm run verificar`, a auditoria das dependências do backend e o teste de ponta a ponta (aba **Actions**). Essa verificação não tem acesso ao Firebase de produção.
@@ -325,21 +328,23 @@ No GitHub, cada envio roda o `npm run verificar`, a auditoria das dependências 
 
 **PIN e identificação no aparelho**
 
-- **CPF identifica, PIN confirma:** no aparelho da loja, o funcionário digita o CPF e o PIN de 4 números; no celular pessoal, o aparelho já sabe quem é o dono e o CPF, se vier, é ignorado. Quem define o PIN é o gestor (a empresa conhece o PIN; a foto de cada batida é a prova de quem bateu). PINs óbvios (1234, 1111) são recusados.
+- **O PIN identifica:** o funcionário digita só o PIN de 4 números, diferente para cada funcionário da empresa; no celular pessoal, só vale o PIN do dono. Quem define o PIN é o gestor (a empresa conhece o PIN; a foto de cada batida é a prova de quem bateu). PINs óbvios (1234, 1111) são recusados. O PIN não é gravado: só um índice HMAC com um segredo do servidor, que nenhum navegador lê.
+- **Atenção ao que muda sem o CPF:** um chute de PIN pode acertar o PIN de *qualquer* funcionário, não de um só. Por isso o limite de erros é do aparelho (10 em 15 minutos), e toda batida tem a foto de quem bateu. Se quiser mais segurança, troque o PIN de quem desconfiar e acompanhe os alertas da página Hoje.
 - **O PIN não é gravado:** fica só a chave HMAC-SHA256 do PIN (com um segredo do servidor e o id do funcionário), numa coleção que nenhum navegador lê; o segredo também não. Quem copiar o banco sem o segredo não consegue testar os 10 mil PINs possíveis.
 - **O aparelho só bate o ponto:** as funções de pedir marcação, consultar ou assinar espelho e de trocar o PIN pelo aparelho não existem no servidor. Uma conta de aparelho (ou alguém com o PIN de um colega) não consegue incluir horário nem mexer no espelho.
-- **Bloqueios:** 5 erros seguidos bloqueiam o PIN do funcionário por 15 minutos, depois 30, depois 1 hora; 25 erros em 15 minutos bloqueiam o aparelho. Cada tentativa é reservada numa transação **antes** de o PIN ser conferido, então disparar tentativas em paralelo não burla o limite. Todo bloqueio vai para a auditoria com a foto de quem tentou.
-- **Sem pistas para quem tenta adivinhar:** CPF que não é de funcionário ativo e PIN errado dão a mesma resposta. CPF e PIN nunca vão para o log.
+- **Bloqueios:** 10 PINs errados em 15 minutos bloqueiam o aparelho; no celular pessoal, 5 erros seguidos também bloqueiam o PIN do dono por 15 minutos, depois 30, depois 1 hora. Cada tentativa é reservada numa transação **antes** da resposta, então disparar tentativas em paralelo não burla o limite. Todo bloqueio vai para a auditoria com a foto de quem tentou.
+- **Sem pistas para quem tenta adivinhar:** PIN que não é de ninguém e PIN de funcionário inativo dão a mesma resposta. O PIN nunca vai para o log.
+- **PINs de antes desta versão** (quando o CPF era pedido) continuam valendo: na primeira batida, o PIN passa para o novo formato. Se dois funcionários tiverem o mesmo PIN antigo, nenhum dos dois bate com ele e a página Hoje avisa quem são, para o gestor trocar o PIN deles.
 
 **Marcações**
 
 - **Horário do servidor:** mudar o relógio do tablet não altera a hora da batida.
-- **Marcações imutáveis:** correções viram inclusões ou desconsiderações com justificativa. Nada é apagado.
+- **Marcações imutáveis:** correções viram inclusões ou desconsiderações com justificativa. Só o administrador pode apagar uma marcação, com motivo: ela some do painel, dos relatórios e das exportações, e a foto é apagada (o Storage ainda a guarda por 7 dias). Do registro fica só o que entra no hash (NSR, funcionário, data e hora), para a verificação de integridade continuar valendo, e a auditoria guarda quem apagou e por quê.
 - **NSR sequencial e cadeia de hashes (SHA-256)** por empresa: cada registro inclui o hash do anterior, da foto, da data e da hora. A **verificação de integridade** refaz a conta e aponta qualquer marcação apagada, inserida ou alterada, mesmo direto no banco. Ela roda **sozinha toda segunda-feira de madrugada** e também pode ser pedida na página Auditoria; se achar problema, o painel mostra uma faixa vermelha e a auditoria registra o alerta.
 - **Sem batida duplicada:** intervalo mínimo entre batidas, e o reenvio automático após queda de internet nunca cria dois registros.
 - **Batida sem internet, sem abrir brecha:**
-  - O que fica guardado no aparelho (CPF, PIN e foto) vai cifrado com a chave pública do servidor (RSA-OAEP 3072 + AES-256-GCM): quem mexer no tablet não lê nada. A chave privada fica num documento que nenhum navegador acessa.
-  - CPF e PIN são conferidos quando a batida chega, com os mesmos bloqueios de sempre: testar PINs sem internet não é mais rápido do que com internet. Fora do pacote cifrado, o aparelho guarda só o id e o horário de cada batida (no máximo 300).
+  - O que fica guardado no aparelho (PIN e foto) vai cifrado com a chave pública do servidor (RSA-OAEP 3072 + AES-256-GCM): quem mexer no tablet não lê nada. A chave privada fica num documento que nenhum navegador acessa.
+  - O PIN é conferido quando a batida chega, com os mesmos bloqueios de sempre: testar PINs sem internet não é mais rápido do que com internet. Fora do pacote cifrado, o aparelho guarda só o id e o horário de cada batida (no máximo 300).
   - Horário: a cada sincronização o servidor entrega uma âncora assinada com a hora dele; sem internet, o aparelho conta o tempo decorrido com um relógio que não muda quando alguém mexe no relógio do tablet. O servidor só aceita horários entre a última conexão e a chegada da batida (até 72 h).
   - Se o relógio do tablet não bater com o tempo decorrido (relógio mudado, aparelho reiniciado ou em repouso), a batida entra marcada **"conferir horário"**, com os dois horários, e vai para os alertas.
   - A marca "sem internet" entra na cadeia de hashes: apagá-la direto no banco aparece na verificação de integridade.
@@ -382,12 +387,12 @@ No GitHub, cada envio roda o `npm run verificar`, a auditoria das dependências 
 
 ## Limitações conhecidas e próximos passos
 
-- **Sem internet, a batida é guardada** e enviada depois (até 72 horas). Como o aparelho não confere CPF e PIN sem internet, uma batida com PIN errado só é recusada quando chega, e o gestor vê o alerta.
+- **Sem internet, a batida é guardada** e enviada depois (até 72 horas). Como o aparelho não confere o PIN sem internet, uma batida com PIN errado só é recusada quando chega, e o gestor vê o alerta.
 - **Turnos que atravessam a meia-noite** contam no dia de cada marcação. Para turnos noturnos, o espelho precisaria do conceito de "dia de trabalho".
 - **Escalas (12x36 etc.)** não são calculadas automaticamente: a jornada é por dia da semana. Use folgas e abonos para ajustar.
 - **Horas extras e adicional noturno** aparecem como saldo, sem percentuais (50%, 100%).
 - **Banco de horas** é calculado mês a mês; o saldo de um mês ainda não é levado automaticamente para o seguinte.
 - **A foto não prova que a pessoa estava lá.** Não há detecção de vivacidade: uma foto de foto passaria. A foto serve de evidência para o gestor conferir.
-- **Quem tem acesso físico a um computador usado como ponto** pode copiar a sessão do aparelho. Ainda assim, só consegue bater ponto com CPF e PIN certos (com os bloqueios acima). Prefira tablet em modo quiosque e desative aparelhos perdidos pelo painel.
+- **Quem tem acesso físico a um computador usado como ponto** pode copiar a sessão do aparelho. Ainda assim, só consegue bater ponto com um PIN certo (com os bloqueios acima e a foto de quem bateu). Prefira tablet em modo quiosque e desative aparelhos perdidos pelo painel.
 - **O dono do projeto Firebase** tem acesso total ao banco pelo Console. A cadeia de hashes torna qualquer alteração visível na verificação de integridade, mas não a impede.
 - **Próximos passos sugeridos:** arquivos AFD/AEJ (Portaria 671), banco de horas acumulado, envio do comprovante por e-mail, Firebase App Check, verificação em duas etapas (MFA) para quem entra com senha e alerta de solicitações pendentes por e-mail ou WhatsApp.

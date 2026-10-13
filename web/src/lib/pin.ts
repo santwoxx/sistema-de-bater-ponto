@@ -1,5 +1,5 @@
-// PIN do ponto: 4 números, definido pelo gestor. No aparelho da loja, o
-// funcionário digita o CPF e o PIN; no celular pessoal, só o PIN. Mesma regra
+// PIN do ponto: 4 números, definido pelo gestor e diferente para cada
+// funcionário da empresa (o funcionário se identifica só com ele). Mesma regra
 // do servidor (functions/src/validacao.ts), para avisar na hora, antes de enviar.
 
 export const TAMANHO_PIN = 4

@@ -10,8 +10,8 @@ import { paraAuditoria, type Empresa } from '../tipos'
 // Avisos de segurança da empresa no painel. Os eventos vêm da auditoria (que
 // só o servidor grava) e do resultado da verificação de integridade.
 
-// Bloqueios por PIN errado, adulteração e batidas feitas sem internet recusadas ou com horário a conferir.
-const ACOES_DE_ALERTA = ['pin.bloqueado', 'aparelho.bloqueado', 'integridade.alerta', 'ponto.semInternetRecusado', 'ponto.horarioConferir']
+// Bloqueios por PIN errado, PIN repetido, adulteração e batidas feitas sem internet recusadas ou com horário a conferir.
+const ACOES_DE_ALERTA = ['pin.bloqueado', 'aparelho.bloqueado', 'pin.repetido', 'integridade.alerta', 'ponto.semInternetRecusado', 'ponto.horarioConferir']
 const DIAS = 7
 
 /** Faixa no topo de todas as páginas quando a verificação de integridade achou problema. */

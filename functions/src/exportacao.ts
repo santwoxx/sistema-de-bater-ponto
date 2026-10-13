@@ -49,6 +49,7 @@ const CAMPOS_REGISTRO = [
   "justificativa",
   "incluidoPor",
   "desconsiderado",
+  "apagado",
 ];
 
 type Celula = string | number | null;
@@ -65,6 +66,7 @@ interface Registro extends MarcacaoBruta {
   justificativa?: string;
   incluidoPor?: { nome: string };
   desconsiderado: { motivo: string } | null;
+  apagado?: unknown;
 }
 
 interface Funcionario {
@@ -203,7 +205,7 @@ export const exportarDados = onCall({ timeoutSeconds: 300, memory: "1GiB", maxIn
 
   const registros = registrosSnap.docs
     .map((doc) => ({ id: doc.id, desconsiderado: null, ...doc.data() }) as Registro)
-    .filter((r) => !escolhidos || escolhidos.has(r.funcionarioId));
+    .filter((r) => !r.apagado && (!escolhidos || escolhidos.has(r.funcionarioId)));
   const comMarcacao = new Set(registros.map((r) => r.funcionarioId));
   const funcionarios: Funcionario[] = funcionariosSnap.docs
     .filter((doc) => (escolhidos ? escolhidos.has(doc.id) : doc.get("ativo") === true || comMarcacao.has(doc.id)))

@@ -1,6 +1,7 @@
-import { Ban, ImageOff, LoaderCircle, PencilLine, RotateCcw } from 'lucide-react'
+import { Ban, ImageOff, LoaderCircle, PencilLine, RotateCcw, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { api } from '../api'
+import { usePerfil } from '../contexto/Sessao'
 import { mensagemErro } from '../lib/erros'
 import { formatarNsr, mascararCpf } from '../lib/formatos'
 import { dataLocal, formatarData, formatarDataHora, hhmmParaMinutos } from '../lib/tempo'
@@ -86,26 +87,31 @@ function SemInternet({ dados, fuso }: { dados: NonNullable<Registro['semInternet
 
 export function DetalhesRegistro({ registro, empresa, aoFechar }: { registro: Registro; empresa: Empresa; aoFechar: () => void }) {
   const notificar = useNotificar()
+  const podeApagar = usePerfil().papel === 'admin'
   const [motivo, setMotivo] = useState('')
-  const [desconsiderando, setDesconsiderando] = useState(false)
+  // Pedindo o motivo para desconsiderar ou para apagar.
+  const [pedindo, setPedindo] = useState<'desconsiderar' | 'apagar' | null>(null)
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState('')
   const instante = registro.dataHora.toDate()
 
-  async function alterar(restaurar: boolean) {
+  function pedirMotivo(acao: 'desconsiderar' | 'apagar' | null) {
+    setPedindo(acao)
     setErro('')
-    if (!restaurar && motivo.trim().length < 5) {
+  }
+
+  async function executar(acao: 'desconsiderar' | 'restaurar' | 'apagar') {
+    setErro('')
+    if (acao !== 'restaurar' && motivo.trim().length < 5) {
       setErro('Explique o motivo (mínimo de 5 caracteres).')
       return
     }
     setSalvando(true)
     try {
-      await api.desconsiderarMarcacao({
-        empresaId: empresa.id,
-        registroId: registro.id,
-        ...(restaurar ? { restaurar: true } : { motivo: motivo.trim() }),
-      })
-      notificar(restaurar ? 'Marcação voltou a valer.' : 'Marcação desconsiderada.')
+      const alvo = { empresaId: empresa.id, registroId: registro.id }
+      if (acao === 'apagar') await api.apagarMarcacao({ ...alvo, motivo: motivo.trim() })
+      else await api.desconsiderarMarcacao({ ...alvo, ...(acao === 'restaurar' ? { restaurar: true } : { motivo: motivo.trim() }) })
+      notificar({ apagar: 'Marcação apagada.', restaurar: 'Marcação voltou a valer.', desconsiderar: 'Marcação desconsiderada.' }[acao])
       aoFechar()
     } catch (e) {
       setErro(mensagemErro(e))
@@ -113,6 +119,12 @@ export function DetalhesRegistro({ registro, empresa, aoFechar }: { registro: Re
       setSalvando(false)
     }
   }
+
+  const botaoApagar = podeApagar && (
+    <button type="button" className="botao perigo-suave" onClick={() => pedirMotivo('apagar')}>
+      <Trash2 size={16} aria-hidden /> Apagar
+    </button>
+  )
 
   return (
     <Modal titulo="Detalhes da marcação" aoFechar={aoFechar} largura="grande">
@@ -178,22 +190,41 @@ export function DetalhesRegistro({ registro, empresa, aoFechar }: { registro: Re
 
       {erro && <Aviso tipo="erro">{erro}</Aviso>}
 
-      {registro.desconsiderado ? (
+      {pedindo === 'apagar' ? (
+        <div className="desconsiderar">
+          <Aviso tipo="alerta">
+            <strong>Apagar não tem volta.</strong> A marcação some de todas as telas, relatórios e exportações, e a foto é apagada. A
+            auditoria guarda quem apagou e por quê. Se só quer que ela deixe de contar no espelho, use "Desconsiderar".
+          </Aviso>
+          <Campo rotulo="Motivo para apagar">
+            <textarea rows={2} value={motivo} onChange={(e) => setMotivo(e.target.value)} autoFocus maxLength={500} />
+          </Campo>
+          <div className="acoes-detalhe">
+            <button type="button" className="botao fantasma" onClick={() => pedirMotivo(null)} disabled={salvando}>
+              Cancelar
+            </button>
+            <button type="button" className="botao perigo" onClick={() => executar('apagar')} disabled={salvando}>
+              <Trash2 size={16} aria-hidden /> Apagar de vez
+            </button>
+          </div>
+        </div>
+      ) : registro.desconsiderado ? (
         <div className="acoes-detalhe">
-          <button type="button" className="botao" disabled={salvando} onClick={() => alterar(true)}>
+          {botaoApagar}
+          <button type="button" className="botao" disabled={salvando} onClick={() => executar('restaurar')}>
             <RotateCcw size={16} aria-hidden /> Voltar a considerar
           </button>
         </div>
-      ) : desconsiderando ? (
+      ) : pedindo === 'desconsiderar' ? (
         <div className="desconsiderar">
           <Campo rotulo="Motivo para desconsiderar" ajuda="A marcação original continua guardada; ela só deixa de contar no espelho.">
             <textarea rows={2} value={motivo} onChange={(e) => setMotivo(e.target.value)} autoFocus maxLength={500} />
           </Campo>
           <div className="acoes-detalhe">
-            <button type="button" className="botao fantasma" onClick={() => setDesconsiderando(false)} disabled={salvando}>
+            <button type="button" className="botao fantasma" onClick={() => pedirMotivo(null)} disabled={salvando}>
               Cancelar
             </button>
-            <button type="button" className="botao perigo" onClick={() => alterar(false)} disabled={salvando}>
+            <button type="button" className="botao perigo" onClick={() => executar('desconsiderar')} disabled={salvando}>
               <Ban size={16} aria-hidden /> Confirmar
             </button>
           </div>
@@ -201,7 +232,8 @@ export function DetalhesRegistro({ registro, empresa, aoFechar }: { registro: Re
       ) : (
         <div className="acoes-detalhe">
           <span className="texto-suave">Registrada em {formatarDataHora(instante, empresa.fusoHorario)}</span>
-          <button type="button" className="botao perigo-suave" onClick={() => setDesconsiderando(true)}>
+          {botaoApagar}
+          <button type="button" className="botao perigo-suave" onClick={() => pedirMotivo('desconsiderar')}>
             <Ban size={16} aria-hidden /> Desconsiderar
           </button>
         </div>

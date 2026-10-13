@@ -126,7 +126,7 @@ Dados de exemplo criados (${incluidas} marcações de histórico em ${mesAnterio
     admin@teste.com    administrador, vê todas as empresas
     gestora@teste.com  gestora, vê só a Loja Centro
 
-  Funcionários (no aparelho da loja: CPF + PIN; no celular pessoal, só o PIN):
-${equipe.map((f) => `    ${f.nome.padEnd(12)} CPF ${f.cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')}  PIN ${f.pin}`).join('\n')}
+  Funcionários (no aparelho, cada um digita só o PIN):
+${equipe.map((f) => `    ${f.nome.padEnd(12)} PIN ${f.pin}`).join('\n')}
 `)
 process.exit(0)

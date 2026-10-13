@@ -15,6 +15,7 @@ import {
   ordenarPorNome,
   paraFuncionario,
   paraRegistro,
+  naoApagada,
   paraSolicitacao,
   type Empresa,
   type Funcionario,
@@ -63,6 +64,7 @@ export default function Solicitacoes() {
         : null,
     paraRegistro,
     `${empresa.id}:contexto:${de}:${ate}`,
+    naoApagada,
   )
   const doDia = (s: Solicitacao) =>
     classificar(

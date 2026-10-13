@@ -2,7 +2,7 @@
 // Exige Java 21+ e o Firebase CLI. Na pasta "web":  npm run test:e2e
 
 import assert from 'node:assert/strict'
-import { createHash, randomBytes } from 'node:crypto'
+import { createHash, createHmac, randomBytes } from 'node:crypto'
 import { initializeApp } from 'firebase/app'
 import {
   connectAuthEmulator,
@@ -33,7 +33,7 @@ const PROJETO = process.env.GCLOUD_PROJECT || 'demo-ponto'
 const config = { apiKey: 'demo-chave', projectId: PROJETO, storageBucket: `${PROJETO}.appspot.com`, appId: 'demo-app' }
 // Código de instalação dos emuladores (functions/.env.demo-ponto).
 const CODIGO_INSTALACAO = 'TESTE-LOCAL'
-// No aparelho da loja: CPF + PIN de 4 números (definido pelo gestor). No celular pessoal, só o PIN.
+// No aparelho, só o PIN de 4 números (definido pelo gestor, um diferente para cada funcionário).
 const CPF_MARIA = '52998224725'
 const CPF_JOAO = '11144477735'
 const PIN_MARIA = '2580'
@@ -52,6 +52,7 @@ const ACOES_DO_PAINEL = new Set([
   'obterFoto',
   'incluirMarcacao',
   'desconsiderarMarcacao',
+  'apagarMarcacao',
   'incluirAbono',
   'removerAbono',
   'criarSolicitacao',
@@ -94,6 +95,17 @@ async function adulterar(caminho, campo, valor) {
   assert.equal(resposta.ok, true, `falha ao alterar ${caminho}: ${resposta.status}`)
 }
 
+// Lê ou muda um documento direto no emulador, sem passar pelas regras.
+async function comoDono(metodo, caminho, corpo) {
+  const resposta = await fetch(`http://127.0.0.1:8080/v1/projects/${PROJETO}/databases/(default)/documents/${caminho}`, {
+    method: metodo,
+    headers: { Authorization: 'Bearer owner', 'Content-Type': 'application/json' },
+    body: corpo ? JSON.stringify(corpo) : undefined,
+  })
+  assert.equal(resposta.ok, true, `${metodo} ${caminho}: ${resposta.status}`)
+  return resposta.json()
+}
+
 async function falha(promessa, codigo, trecho) {
   try {
     await promessa
@@ -120,18 +132,6 @@ function jpeg(tamanho) {
   return `data:image/jpeg;base64,${Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), randomBytes(tamanho)]).toString('base64')}`
 }
 const sha256 = (dados) => createHash('sha256').update(dados).digest('hex')
-function cpfValido(base) {
-  const d = [...base].map(Number)
-  const digito = (tamanho) => {
-    let soma = 0
-    for (let i = 0; i < tamanho; i++) soma += d[i] * (tamanho + 1 - i)
-    const resto = (soma * 10) % 11
-    return resto === 10 ? 0 : resto
-  }
-  d.push(digito(9))
-  d.push(digito(10))
-  return d.join('')
-}
 const id = () => randomBytes(16).toString('hex')
 
 function dataSaoPaulo(deslocamentoDias = 0) {
@@ -149,6 +149,24 @@ const gestora = cliente('gestora')
 const outraGestora = cliente('outra')
 const aparelho = cliente('aparelho')
 let empresaA, empresaB, maria, joao, credAparelho, uidAparelho, primeiro
+const cadastroMaria = () => ({ empresaId: empresaA, id: maria, nome: 'Maria Souza', cpf: CPF_MARIA, matricula: '12', cargo: 'Vendedora', admissao: null, jornada: JORNADA, ativo: true })
+const cadastroJoao = () => ({ empresaId: empresaA, id: joao, nome: 'João Lima', cpf: CPF_JOAO, matricula: '7', cargo: '', admissao: null, jornada: JORNADA, ativo: true })
+
+/**
+ * Simula um PIN definido antes de o PIN ser único na empresa: só a chave por
+ * funcionário (pinChave), sem índice. Devolve o índice que ele ganha ao ser usado.
+ */
+async function pinAntigo(funcionarioId, pin) {
+  const segredo = Buffer.from((await comoDono('GET', 'sistema/pin')).fields.segredo.stringValue, 'base64')
+  const hmac = (texto) => createHmac('sha256', segredo).update(texto).digest('hex')
+  const caminho = `empresas/${empresaA}/credenciais/${funcionarioId}`
+  const indice = (await comoDono('GET', caminho)).fields.pinIndice?.stringValue
+  if (indice) await comoDono('DELETE', `empresas/${empresaA}/pins/${indice}`)
+  await comoDono('PATCH', `${caminho}?updateMask.fieldPaths=pinChave&updateMask.fieldPaths=pinIndice`, {
+    fields: { pinChave: { stringValue: hmac(`${empresaA}|${funcionarioId}|${pin}`) } },
+  })
+  return hmac(`pin|${empresaA}|${pin}`)
+}
 
 await etapa('configuração inicial exige o código de instalação e cria o administrador uma única vez', async () => {
   assert.equal((await getDoc(doc(anonimo.db, 'sistema', 'estado'))).exists(), false)
@@ -240,6 +258,14 @@ await etapa('gestora só acessa as empresas liberadas para ela', async () => {
     gestora.chamar('salvarFuncionario', { empresaId: empresaB, nome: 'Fulano', cpf: '529.982.247-25', matricula: '1', jornada: JORNADA, pin: '9137' }),
     'functions/permission-denied',
   )
+  // O PIN sozinho diz quem é: na mesma empresa, dois funcionários não podem ter o mesmo.
+  await falha(
+    gestora.chamar('salvarFuncionario', { ...cadastroJoao(), id: undefined, nome: 'Pedro Alves', cpf: '246.813.579-28', matricula: '8', pin: PIN_MARIA }),
+    'functions/already-exists',
+    /PIN já é de outro funcionário/,
+  )
+  // Em outra empresa, pode (o índice do PIN é por empresa).
+  await admin.chamar('salvarFuncionario', { empresaId: empresaB, nome: 'Fulano de Tal', cpf: '529.982.247-25', matricula: '1', jornada: JORNADA, pin: PIN_MARIA })
 })
 
 await etapa('admin não consegue remover o próprio acesso', async () => {
@@ -356,30 +382,21 @@ await etapa('ações do painel numa função só, com aquecimento (painel e apar
   for (const antiga of ['salvarFuncionario', 'obterFoto', 'incluirMarcacao', 'decidirSolicitacao']) await naoExiste(gestora.chamarFuncao(antiga, {}))
 })
 
-await etapa('no aparelho da loja, CPF + PIN de 4 números; o aparelho não cria nem troca PIN', async () => {
+await etapa('no aparelho, só o PIN de 4 números (sem CPF nem matrícula); o aparelho não cria nem troca PIN', async () => {
   const bater = (dados) => aparelho.chamar('registrarPonto', { idRequisicao: id(), foto: jpeg(900), miniatura: jpeg(200), ...dados })
-  // Formato errado (PIN que não tem 4 números, CPF com dígito verificador errado ou com pontos) nem é procurado.
-  for (const dados of [
-    { cpf: CPF_MARIA, pin: '258' },
-    { cpf: CPF_MARIA, pin: '25801' },
-    { cpf: '52998224726', pin: PIN_MARIA },
-    { cpf: '529.982.247-25', pin: PIN_MARIA },
-  ]) {
-    await falha(bater(dados), 'functions/permission-denied', /CPF ou PIN incorretos/)
-  }
-  // Sem CPF, só no celular pessoal (que já tem dono).
-  await falha(bater({ pin: PIN_MARIA }), 'functions/permission-denied', /CPF ou PIN incorretos/)
+  // Formato errado (PIN que não tem 4 números) nem é procurado.
+  for (const pin of ['258', '25801', '25a0']) await falha(bater({ pin }), 'functions/permission-denied', /PIN incorreto/)
   // Tela antiga (aberta desde antes da atualização) manda a matrícula: pede para recarregar, sem "erro de matrícula".
   const antiga = await falha(bater({ matricula: '12', pin: PIN_MARIA }), 'functions/failed-precondition', /versão antiga do ponto.*Recarregue a página/)
   assert.equal(antiga.details?.motivo, 'versao-antiga')
-  await naoExiste(aparelho.chamar('definirPin', { cpf: CPF_MARIA, pin: PIN_MARIA, novoPin: '4826' }))
+  await naoExiste(aparelho.chamar('definirPin', { pin: PIN_MARIA, novoPin: '4826' }))
   assert.equal((await getDocs(collection(gestora.db, 'empresas', empresaA, 'registros'))).size, 0)
 })
 
 const fotoMaria = jpeg(3000)
 await etapa('registro de ponto com foto gera NSR, hash e comprovante', async () => {
   const idRequisicao = id()
-  primeiro = await aparelho.chamar('registrarPonto', { idRequisicao, cpf: CPF_MARIA, pin: PIN_MARIA, foto: fotoMaria, miniatura: jpeg(500) })
+  primeiro = await aparelho.chamar('registrarPonto', { idRequisicao, pin: PIN_MARIA, foto: fotoMaria, miniatura: jpeg(500) })
   assert.equal(primeiro.nsr, 1)
   assert.equal(primeiro.tipo, 'entrada')
   assert.equal(primeiro.ordinal, 1)
@@ -387,28 +404,23 @@ await etapa('registro de ponto com foto gera NSR, hash e comprovante', async () 
   assert.equal(primeiro.dataLocal, dataSaoPaulo())
   assert.ok(Math.abs(primeiro.dataHora - Date.now()) < 60_000)
 
-  // Reenvio da mesma requisição (ex.: internet caiu na resposta) não duplica.
+  // Reenvio da mesma requisição (ex.: internet caiu na resposta) não duplica. Vindo da tela de
+  // CPF + PIN (aberta desde antes da atualização), o CPF é ignorado: o PIN diz quem é.
   const reenvio = await aparelho.chamar('registrarPonto', { idRequisicao, cpf: CPF_MARIA, pin: PIN_MARIA, foto: fotoMaria, miniatura: jpeg(500) })
   assert.equal(reenvio.nsr, 1)
   assert.equal(reenvio.registroId, primeiro.registroId)
   // O reenvio também exige o PIN certo: sem ele, não devolve nem o comprovante.
   await falha(
-    aparelho.chamar('registrarPonto', { idRequisicao, cpf: CPF_MARIA, pin: '9998', foto: fotoMaria, miniatura: jpeg(500) }),
+    aparelho.chamar('registrarPonto', { idRequisicao, pin: '9998', foto: fotoMaria, miniatura: jpeg(500) }),
     'functions/permission-denied',
   )
 })
 
-await etapa('batida repetida em seguida é bloqueada; PIN errado e CPF de quem não é funcionário dão a mesma recusa', async () => {
-  const novo = () => ({ idRequisicao: id(), cpf: CPF_MARIA, pin: PIN_MARIA, foto: jpeg(1000), miniatura: jpeg(300) })
+await etapa('batida repetida em seguida é bloqueada; PIN que não é de ninguém é recusado', async () => {
+  const novo = () => ({ idRequisicao: id(), pin: PIN_MARIA, foto: jpeg(1000), miniatura: jpeg(300) })
   await falha(aparelho.chamar('registrarPonto', novo()), 'functions/failed-precondition', /já registrado/)
-  const pinErrado = await falha(aparelho.chamar('registrarPonto', { ...novo(), pin: '9999' }), 'functions/permission-denied', /CPF ou PIN incorretos/)
-  const cpfDeNinguem = await falha(
-    aparelho.chamar('registrarPonto', { ...novo(), cpf: cpfValido('123456789') }),
-    'functions/permission-denied',
-    /CPF ou PIN incorretos/,
-  )
+  const pinErrado = await falha(aparelho.chamar('registrarPonto', { ...novo(), pin: '9999' }), 'functions/permission-denied', /PIN incorreto/)
   assert.equal(pinErrado.details?.motivo, 'credenciais-invalidas')
-  assert.deepEqual(cpfDeNinguem.details, pinErrado.details)
   await falha(aparelho.chamar('registrarPonto', { ...novo(), foto: 'data:image/jpeg;base64,AAAA' }), 'functions/invalid-argument')
 })
 
@@ -476,7 +488,7 @@ await etapa('segunda batida vira saída e encadeia com o hash anterior', async (
   })
   // Editar sem enviar o início do controle não o apaga.
   assert.equal((await getDoc(doc(admin.db, 'empresas', empresaA))).get('inicioControle'), dataSaoPaulo())
-  const segundo = await aparelho.chamar('registrarPonto', { idRequisicao: id(), cpf: CPF_MARIA, pin: PIN_MARIA, foto: jpeg(1200), miniatura: jpeg(300) })
+  const segundo = await aparelho.chamar('registrarPonto', { idRequisicao: id(), pin: PIN_MARIA, foto: jpeg(1200), miniatura: jpeg(300) })
   assert.equal(segundo.nsr, 2)
   assert.equal(segundo.tipo, 'saida')
   assert.equal(segundo.ordinal, 2)
@@ -484,49 +496,22 @@ await etapa('segunda batida vira saída e encadeia com o hash anterior', async (
   assert.equal(regs[1].hashAnterior, regs[0].hash)
 })
 
-await etapa('PIN errado: 5 erros bloqueiam o PIN (com foto na auditoria), mesmo em paralelo; o gestor troca o PIN', async () => {
-  const tentativa = (pin) => aparelho.chamar('registrarPonto', { idRequisicao: id(), cpf: CPF_JOAO, pin, foto: jpeg(800), miniatura: jpeg(200) })
-  for (let i = 0; i < 5; i++) await falha(tentativa('0001'), 'functions/permission-denied')
-  await falha(tentativa(PIN_JOAO_INICIAL), 'functions/resource-exhausted', /Muitas tentativas/)
-  const bloqueios = (await getDocs(query(collection(gestora.db, 'empresas', empresaA, 'auditoria'), where('acao', '==', 'pin.bloqueado')))).docs
-  assert.equal(bloqueios.length, 1)
-  assert.match(bloqueios[0].get('descricao'), /PIN de João Lima bloqueado por 15 min/)
-  assert.ok(bloqueios[0].get('detalhes').foto.startsWith('data:image/jpeg;base64,'))
-
-  // O gestor troca o PIN (o que também desbloqueia).
-  const trocarPin = (pin) =>
-    gestora.chamar('salvarFuncionario', {
-      empresaId: empresaA,
-      id: joao,
-      nome: 'João Lima',
-      cpf: CPF_JOAO,
-      matricula: '7',
-      cargo: '',
-      admissao: null,
-      jornada: JORNADA,
-      ativo: true,
-      pin,
-    })
+await etapa('o gestor troca o PIN: só aceita PIN que não seja de outro funcionário, e o antigo deixa de valer na hora', async () => {
+  const trocarPin = (pin) => gestora.chamar('salvarFuncionario', { ...cadastroJoao(), pin })
+  const tentativa = (pin) => aparelho.chamar('registrarPonto', { idRequisicao: id(), pin, foto: jpeg(800), miniatura: jpeg(200) })
   await falha(trocarPin('1111'), 'functions/invalid-argument', /adivinhar/)
+  await falha(trocarPin(PIN_MARIA), 'functions/already-exists', /PIN já é de outro funcionário/)
   await trocarPin(PIN_JOAO)
-
-  // Ataque em paralelo: 12 PINs errados disparados juntos. Cada tentativa é
-  // reservada antes da conferência, então no máximo 5 PINs chegam a ser testados.
-  const resultados = await Promise.allSettled(Array.from({ length: 12 }, (_, i) => tentativa(String(4000 + i * 7))))
-  assert.equal(resultados.filter((r) => r.status === 'fulfilled').length, 0)
-  const testados = resultados.filter((r) => r.reason?.code === 'functions/permission-denied').length
-  assert.ok(testados <= 5, testados + ' PINs foram testados em paralelo (o máximo é 5)')
-  for (let i = testados; i < 5; i++) await falha(tentativa('0002'), 'functions/permission-denied')
-  await falha(tentativa(PIN_JOAO), 'functions/resource-exhausted', /Muitas tentativas/)
-
-  // Trocado de novo pelo gestor: o PIN antigo deixa de valer e o novo bate o ponto.
-  await trocarPin(PIN_JOAO)
-  await falha(tentativa(PIN_JOAO_INICIAL), 'functions/permission-denied')
+  await falha(tentativa(PIN_JOAO_INICIAL), 'functions/permission-denied', /PIN incorreto/)
   const ok = await tentativa(PIN_JOAO)
   assert.equal(ok.nsr, 3)
   assert.equal(ok.funcionarioNome, 'João Lima')
+  // Salvar de novo o mesmo PIN não conflita com ele mesmo.
+  await trocarPin(PIN_JOAO)
   const auditoria = (await getDocs(query(collection(gestora.db, 'empresas', empresaA, 'auditoria'), where('acao', '==', 'funcionario.atualizado')))).docs
   assert.ok(auditoria.some((d) => /João Lima \(matrícula 7\) atualizado; PIN redefinido/.test(d.get('descricao'))))
+  // O índice do PIN, como as credenciais, é só do servidor.
+  await falha(getDocs(collection(gestora.db, 'empresas', empresaA, 'pins')), 'permission-denied')
 })
 
 let manual
@@ -814,26 +799,31 @@ await etapa('verificação de integridade aponta marcação adulterada direto no
   await falha(gestora.chamar('verificarIntegridade', { empresaId: empresaA }), 'functions/resource-exhausted', /Limite de 4/)
 })
 
-await etapa('aparelho bloqueia depois de 25 tentativas erradas (CPFs diferentes, nenhum chega a 5 erros); os outros seguem', async () => {
+await etapa('aparelho bloqueia depois de 10 PINs errados (com foto na auditoria), mesmo em paralelo; os outros seguem', async () => {
   const celular = cliente('celular')
   const cred = await gestora.chamar('ativarDispositivo', { empresaId: empresaA, nome: 'Celular de teste' })
   await celular.entrar(cred.email, cred.senha)
-  const tentativa = (cpf, pin) => celular.chamar('registrarPonto', { idRequisicao: id(), cpf, pin, foto: jpeg(800), miniatura: jpeg(200) })
-  for (let i = 0; i < 25; i++) await falha(tentativa(cpfValido(String(300000000 + i)), '2468'), 'functions/permission-denied')
-  await falha(tentativa(CPF_MARIA, PIN_MARIA), 'functions/resource-exhausted', /neste aparelho/)
+  const tentativa = (pin) => celular.chamar('registrarPonto', { idRequisicao: id(), pin, foto: jpeg(800), miniatura: jpeg(200) })
+  // Ataque em paralelo: 15 PINs errados disparados juntos. Cada tentativa é
+  // reservada antes da resposta, então no máximo 10 PINs chegam a ser testados.
+  const resultados = await Promise.allSettled(Array.from({ length: 15 }, (_, i) => tentativa(String(4000 + i * 7))))
+  assert.equal(resultados.filter((r) => r.status === 'fulfilled').length, 0)
+  const testados = resultados.filter((r) => r.reason?.code === 'functions/permission-denied').length
+  assert.ok(testados <= 10, testados + ' PINs foram testados em paralelo (o máximo é 10)')
+  for (let i = testados; i < 10; i++) await falha(tentativa('0002'), 'functions/permission-denied')
+  await falha(tentativa(PIN_MARIA), 'functions/resource-exhausted', /neste aparelho/)
   const bloqueios = (await getDocs(query(collection(gestora.db, 'empresas', empresaA, 'auditoria'), where('acao', '==', 'aparelho.bloqueado')))).docs
   assert.equal(bloqueios.length, 1)
-  assert.match(bloqueios[0].get('descricao'), /Celular de teste" bloqueado por 15 min depois de 25 tentativas erradas/)
+  assert.match(bloqueios[0].get('descricao'), /Celular de teste" bloqueado por 15 min depois de 10 tentativas erradas/)
   assert.ok(bloqueios[0].get('detalhes').foto.startsWith('data:image/jpeg;base64,'))
   // O outro aparelho da loja continua funcionando.
-  const ok = await aparelho.chamar('registrarPonto', { idRequisicao: id(), cpf: CPF_MARIA, pin: PIN_MARIA, foto: jpeg(900), miniatura: jpeg(200) })
+  const ok = await aparelho.chamar('registrarPonto', { idRequisicao: id(), pin: PIN_MARIA, foto: jpeg(900), miniatura: jpeg(200) })
   assert.equal(ok.nsr, 4)
 })
 
 await etapa('auditoria registra as ações; a do sistema é só do admin', async () => {
   const acoes = (await getDocs(collection(gestora.db, 'empresas', empresaA, 'auditoria'))).docs.map((d) => d.get('acao'))
   for (const acao of [
-    'pin.bloqueado',
     'aparelho.bloqueado',
     'integridade.verificada',
     'integridade.alerta',
@@ -853,17 +843,17 @@ await etapa('auditoria registra as ações; a do sistema é só do admin', async
   ]) {
     assert.ok(acoes.includes(acao), `faltou ${acao} na auditoria`)
   }
-  // Consulta do cartão "Alertas de segurança" (página Hoje): bloqueios e integridade dos últimos 7 dias.
+  // Consulta do cartão "Alertas de segurança" (página Hoje): bloqueios, PIN repetido e integridade dos últimos 7 dias.
   const alertas = await getDocs(
     query(
       collection(gestora.db, 'empresas', empresaA, 'auditoria'),
-      where('acao', 'in', ['pin.bloqueado', 'aparelho.bloqueado', 'integridade.alerta']),
+      where('acao', 'in', ['pin.bloqueado', 'aparelho.bloqueado', 'pin.repetido', 'integridade.alerta']),
       where('em', '>=', Timestamp.fromMillis(Date.now() - 7 * 86_400_000)),
       orderBy('em', 'desc'),
       limit(10),
     ),
   )
-  assert.deepEqual(new Set(alertas.docs.map((d) => d.get('acao'))), new Set(['pin.bloqueado', 'aparelho.bloqueado', 'integridade.alerta']))
+  assert.deepEqual(new Set(alertas.docs.map((d) => d.get('acao'))), new Set(['aparelho.bloqueado', 'integridade.alerta']))
   await falha(getDocs(collection(gestora.db, 'auditoria')), 'permission-denied')
   const sistema = (await getDocs(collection(admin.db, 'auditoria'))).docs.map((d) => d.get('acao'))
   assert.ok(sistema.includes('empresa.criada') && sistema.includes('usuario.criado') && sistema.includes('sistema.configurado'))
@@ -886,12 +876,11 @@ await etapa('batida sem internet: guardada cifrada, conferida quando chega e mar
   const relogioNaAncora = Date.now()
   assert.ok(semInternet.chavePublica && semInternet.ancora.assinatura)
   // O aparelho guarda a batida com o tempo decorrido desde a âncora (e o relógio dele, que pode ter sido mudado).
-  const guardar = async ({ cpf = CPF_MARIA, pin = PIN_MARIA, decorrido = 2_000, desvio = 0, idRequisicao = id(), ...outros } = {}) => ({
+  const guardar = async ({ pin = PIN_MARIA, decorrido = 2_000, desvio = 0, idRequisicao = id(), ...outros } = {}) => ({
     idRequisicao,
     pacote: await selar(semInternet.chavePublica, {
       dispositivoId: outros.dispositivoId ?? uidAparelho,
       idRequisicao,
-      cpf,
       matricula: outros.matricula,
       pin,
       foto: jpeg(1100),
@@ -917,7 +906,7 @@ await etapa('batida sem internet: guardada cifrada, conferida quando chega e mar
   assert.equal(r.hash, sha256([...base, 'sem-internet', r.semInternet.recebidoEm.toDate().toISOString(), 'ok'].join('|')))
 
   // Relógio do aparelho atrasado 10 min para fingir chegada mais cedo: vale o tempo decorrido, e o gestor confere.
-  const atrasado = await guardar({ cpf: CPF_JOAO, pin: PIN_JOAO, decorrido: 3_000, desvio: -10 * 60_000 })
+  const atrasado = await guardar({ pin: PIN_JOAO, decorrido: 3_000, desvio: -10 * 60_000 })
   const conferir = await enviar(atrasado.pacote)
   assert.equal(conferir.resultado, 'registrada')
   assert.equal(conferir.conferir, true)
@@ -932,11 +921,11 @@ await etapa('batida sem internet: guardada cifrada, conferida quando chega e mar
     assert.equal(r.resultado, 'recusada')
     assert.match(r.motivo, motivo)
   }
-  await recusa({ pin: '9999' }, /CPF ou PIN incorretos/)
+  await recusa({ pin: '9999' }, /PIN incorreto/)
   await recusa({ ancora: { ...semInternet.ancora, em: semInternet.ancora.em - 3_600_000 } }, /confirmação do servidor/)
   await recusa({ dispositivoId: 'disp_outro' }, /outro aparelho/)
-  // Guardada pela tela antiga (matrícula, sem CPF): sai da fila com um aviso claro para o gestor.
-  await recusa({ cpf: null, matricula: '12' }, /versão antiga do aparelho/)
+  // Guardada pela tela antiga (com matrícula): sai da fila com um aviso claro para o gestor.
+  await recusa({ matricula: '12' }, /versão antiga do aparelho/)
   const recusadas = await getDocs(query(collection(gestora.db, 'empresas', empresaA, 'auditoria'), where('acao', '==', 'ponto.semInternetRecusado')))
   assert.equal(recusadas.size, 4)
   assert.ok(recusadas.docs.some((d) => String(d.get('detalhes').foto).startsWith('data:image/jpeg;base64,')))
@@ -958,7 +947,7 @@ await etapa('batida sem internet: guardada cifrada, conferida quando chega e mar
   await falha(getDoc(doc(admin.db, 'sistema', 'semInternet')), 'permission-denied')
 })
 
-await etapa('celular pessoal: só o dono bate ponto nele (digitando só o PIN), e a gestora muda o uso pelo painel', async () => {
+await etapa('celular pessoal: só o dono bate ponto nele, o PIN dele bloqueia com 5 erros, e a gestora muda o uso pelo painel', async () => {
   const pessoal = cliente('pessoal')
   const ativar = (funcionarioId) => gestora.chamar('ativarDispositivo', { empresaId: empresaA, nome: 'Celular da Maria', funcionarioId })
   await falha(ativar('nao-existe'), 'functions/invalid-argument', /Dono do aparelho/)
@@ -971,13 +960,20 @@ await etapa('celular pessoal: só o dono bate ponto nele (digitando só o PIN), 
   assert.equal((await aparelho.chamar('sincronizarDispositivo')).dispositivo.funcionario, null)
 
   const bater = (pin) => pessoal.chamar('registrarPonto', { idRequisicao: id(), pin, foto: jpeg(900), miniatura: jpeg(200) })
-  // Outro funcionário, mesmo com o PIN certo dele (e até mandando o CPF dele), é recusado no celular da Maria.
-  const recusa = await falha(bater(PIN_JOAO), 'functions/permission-denied', /CPF ou PIN incorretos/)
+  // Outro funcionário, mesmo com o PIN certo dele, é recusado no celular da Maria.
+  const recusa = await falha(bater(PIN_JOAO), 'functions/permission-denied', /PIN incorreto/)
   assert.equal(recusa.details?.motivo, 'credenciais-invalidas')
-  await falha(
-    pessoal.chamar('registrarPonto', { idRequisicao: id(), cpf: CPF_JOAO, pin: PIN_JOAO, foto: jpeg(900), miniatura: jpeg(200) }),
-    'functions/permission-denied',
-  )
+  assert.equal((await bater(PIN_MARIA)).funcionarioNome, 'Maria Souza')
+
+  // No celular pessoal, o PIN do dono também tem limite: 5 erros seguidos bloqueiam (com foto na auditoria).
+  for (let i = 0; i < 5; i++) await falha(bater('0001'), 'functions/permission-denied')
+  await falha(bater(PIN_MARIA), 'functions/resource-exhausted', /Muitas tentativas/)
+  const bloqueios = (await getDocs(query(collection(gestora.db, 'empresas', empresaA, 'auditoria'), where('acao', '==', 'pin.bloqueado')))).docs
+  assert.equal(bloqueios.length, 1)
+  assert.match(bloqueios[0].get('descricao'), /PIN de Maria Souza bloqueado por 15 min/)
+  assert.ok(bloqueios[0].get('detalhes').foto.startsWith('data:image/jpeg;base64,'))
+  // Salvar o PIN de novo (mesmo que igual) desbloqueia.
+  await gestora.chamar('salvarFuncionario', { ...cadastroMaria(), pin: PIN_MARIA })
   assert.equal((await bater(PIN_MARIA)).funcionarioNome, 'Maria Souza')
 
   // Só quem gerencia a empresa muda o uso; vale na hora no servidor e na próxima sincronização da tela.
@@ -987,13 +983,11 @@ await etapa('celular pessoal: só o dono bate ponto nele (digitando só o PIN), 
   await falha(mudar(gestora, 'nao-existe'), 'functions/invalid-argument', /Dono do aparelho/)
   await mudar(gestora, null)
   assert.equal((await pessoal.chamar('sincronizarDispositivo')).dispositivo.funcionario, null)
-  // Virou aparelho da loja: o PIN sozinho não basta, precisa do CPF.
-  await falha(bater(PIN_JOAO), 'functions/permission-denied')
-  const peloCpf = await pessoal.chamar('registrarPonto', { idRequisicao: id(), cpf: CPF_JOAO, pin: PIN_JOAO, foto: jpeg(900), miniatura: jpeg(200) })
-  assert.equal(peloCpf.funcionarioNome, 'João Lima')
+  // Virou aparelho da loja: cada um bate com o próprio PIN.
+  assert.equal((await bater(PIN_JOAO)).funcionarioNome, 'João Lima')
   await mudar(gestora, joao)
   assert.deepEqual((await pessoal.chamar('sincronizarDispositivo')).dispositivo.funcionario, { nome: 'João Lima' })
-  await falha(bater(PIN_MARIA), 'functions/permission-denied', /CPF ou PIN incorretos/)
+  await falha(bater(PIN_MARIA), 'functions/permission-denied', /PIN incorreto/)
   const usos = (await getDocs(query(collection(gestora.db, 'empresas', empresaA, 'auditoria'), where('acao', '==', 'dispositivo.uso')))).docs
   assert.deepEqual(usos.map((d) => d.get('descricao')).sort(), [
     'Aparelho "Celular da Maria" passou a ser o aparelho da loja (todos os funcionários).',
@@ -1003,10 +997,93 @@ await etapa('celular pessoal: só o dono bate ponto nele (digitando só o PIN), 
   await falha(mudar(gestora, maria), 'functions/not-found')
 })
 
+await etapa('PIN de antes do PIN único: vale e passa ao índice na 1ª batida; repetido, vira alerta até o gestor trocar', async () => {
+  const bater = (pin) => aparelho.chamar('registrarPonto', { idRequisicao: id(), pin, foto: jpeg(900), miniatura: jpeg(200) })
+  const trocarPinDoJoao = (pin) => gestora.chamar('salvarFuncionario', { ...cadastroJoao(), pin })
+  const indice = await pinAntigo(joao, PIN_JOAO)
+  assert.equal((await bater(PIN_JOAO)).funcionarioNome, 'João Lima')
+  const credenciais = (await comoDono('GET', `empresas/${empresaA}/credenciais/${joao}`)).fields
+  assert.equal(credenciais.pinIndice.stringValue, indice)
+  assert.equal(credenciais.pinChave, undefined)
+  assert.equal((await comoDono('GET', `empresas/${empresaA}/pins/${indice}`)).fields.funcionarioId.stringValue, joao)
+
+  // Dois funcionários com o mesmo PIN antigo: não dá para saber quem é, e o gestor é avisado.
+  await pinAntigo(maria, '7319')
+  await pinAntigo(joao, '7319')
+  const repetido = await falha(bater('7319'), 'functions/failed-precondition', /igual ao de outro funcionário/)
+  assert.equal(repetido.details?.motivo, 'pin-repetido')
+  const alertas = (await getDocs(query(collection(gestora.db, 'empresas', empresaA, 'auditoria'), where('acao', '==', 'pin.repetido')))).docs
+  assert.equal(alertas.length, 1)
+  assert.match(alertas[0].get('descricao'), /Maria Souza/)
+  assert.match(alertas[0].get('descricao'), /João Lima/)
+  // O gestor troca o PIN do João; o PIN antigo que sobrou (da Maria) não pode ir para outra pessoa.
+  await trocarPinDoJoao(PIN_JOAO)
+  await falha(trocarPinDoJoao('7319'), 'functions/already-exists', /PIN já é de outro funcionário/)
+  assert.equal((await bater('7319')).funcionarioNome, 'Maria Souza')
+  assert.equal((await bater(PIN_JOAO)).funcionarioNome, 'João Lima')
+  await gestora.chamar('salvarFuncionario', { ...cadastroMaria(), pin: PIN_MARIA })
+})
+
+await etapa('só o administrador apaga uma marcação: some das telas e exportações, a foto vai junto e a cadeia continua íntegra', async () => {
+  const registroRef = doc(gestora.db, 'empresas', empresaA, 'registros', primeiro.registroId)
+  const { fotoPath, nsr } = (await getDoc(registroRef)).data()
+  const fotoNoStorage = () =>
+    fetch(`http://127.0.0.1:9199/v0/b/${config.storageBucket}/o/${encodeURIComponent(fotoPath)}`, { headers: { Authorization: 'Bearer owner' } }).then(
+      (r) => r.status,
+    )
+  assert.equal(await fotoNoStorage(), 200)
+  const apagar = (quem, motivo) => quem.chamar('apagarMarcacao', { empresaId: empresaA, registroId: primeiro.registroId, motivo })
+
+  await falha(apagar(gestora, 'Batida de teste'), 'functions/permission-denied', /Só o administrador/)
+  await falha(apagar(outraGestora, 'Batida de teste'), 'functions/permission-denied')
+  await falha(apagar(aparelho, 'Batida de teste'), 'functions/permission-denied')
+  await falha(apagar(admin, ''), 'functions/invalid-argument', /Motivo/)
+  await apagar(admin, 'Batida de teste na implantação')
+
+  // Sem foto nem miniatura; fica só o que entra no hash, marcado como apagado.
+  const apagada = (await getDoc(registroRef)).data()
+  assert.equal(apagada.apagado.motivo, 'Batida de teste na implantação')
+  assert.equal(apagada.apagado.por.nome, 'Ana Admin')
+  assert.ok(apagada.desconsiderado)
+  assert.equal(apagada.fotoPath, undefined)
+  assert.equal(apagada.miniatura, undefined)
+  assert.equal(apagada.nsr, nsr)
+  assert.equal(await fotoNoStorage(), 404)
+  await falha(gestora.chamar('obterFoto', { empresaId: empresaA, registroId: primeiro.registroId }), 'functions/not-found')
+  // Não volta nem é apagada duas vezes.
+  await falha(
+    gestora.chamar('desconsiderarMarcacao', { empresaId: empresaA, registroId: primeiro.registroId, restaurar: true }),
+    'functions/not-found',
+  )
+  await falha(apagar(admin, 'De novo, por engano'), 'functions/not-found')
+
+  // Fora da exportação, mesmo pedindo as desconsideradas.
+  const hoje = dataSaoPaulo()
+  const exportadas = await admin.chamar('exportarDados', {
+    empresaId: empresaA,
+    de: hoje,
+    ate: hoje,
+    funcionarioIds: null,
+    incluirDesconsideradas: true,
+    origem: 'todas',
+    tipo: 'marcacoes',
+  })
+  assert.ok(exportadas.quantidade > 0)
+  assert.ok(!exportadas.linhas.slice(1).some((l) => Number(l[9]) === nsr), 'a marcação apagada saiu na exportação')
+
+  // A cadeia de hashes continua íntegra (o NSR apagado não vira "marcação apagada direto no banco").
+  const integridade = await admin.chamar('verificarIntegridade', { empresaId: empresaA })
+  assert.equal(integridade.totalProblemas, 0)
+  const auditoria = (await getDocs(query(collection(gestora.db, 'empresas', empresaA, 'auditoria'), where('acao', '==', 'marcacao.apagada')))).docs
+  assert.equal(auditoria.length, 1)
+  assert.equal(auditoria[0].get('detalhes').motivo, 'Batida de teste na implantação')
+  assert.match(auditoria[0].get('descricao'), /Marcação de Maria Souza em .* apagada/)
+})
+
 await etapa('aparelho desativado para de registrar na hora', async () => {
   await gestora.chamar('desativarDispositivo', { empresaId: empresaA, dispositivoId: uidAparelho })
   await falha(
-    aparelho.chamar('registrarPonto', { idRequisicao: id(), cpf: CPF_MARIA, pin: PIN_MARIA, foto: jpeg(900), miniatura: jpeg(200) }),
+    aparelho.chamar('registrarPonto', { idRequisicao: id(), pin: PIN_MARIA, foto: jpeg(900), miniatura: jpeg(200) }),
     'functions/permission-denied',
     /desativado/,
   )

@@ -12,8 +12,8 @@ export const CHAVE_REFERENCIA = 'ponto.semInternet'
 const BANCO = 'ponto-sem-internet'
 const FILA = 'batidas'
 /**
- * Cabem alguns dias sem internet. Testar PINs sem internet não adianta: CPF e
- * PIN são conferidos quando a batida chega, com os mesmos bloqueios de sempre.
+ * Cabem alguns dias sem internet. Testar PINs sem internet não adianta: o PIN
+ * é conferido quando a batida chega, com os mesmos bloqueios de sempre.
  */
 export const MAX_GUARDADAS = 300
 
@@ -144,8 +144,6 @@ export function limiteAtingido(guardadas: number): string | null {
 export async function guardarBatida(batida: {
   idRequisicao: string
   dispositivoId: string
-  /** No celular pessoal não vai CPF: o servidor sabe quem é pelo aparelho. */
-  cpf?: string
   pin: string
   foto: string
   miniatura: string

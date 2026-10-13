@@ -1,31 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { lerCpfPin, minutosDeBloqueio } from "./identificacao";
+import { lerPin, minutosDeBloqueio } from "./identificacao";
 
-describe("CPF e PIN digitados no aparelho", () => {
-  it("aceita CPF válido (só números) e PIN de 4 números; no celular pessoal, só o PIN", () => {
-    expect(lerCpfPin({ cpf: "52998224725", pin: "2580" })).toEqual({ cpf: "52998224725", pin: "2580" });
-    expect(lerCpfPin({ pin: "0007" })).toEqual({ cpf: null, pin: "0007" });
+describe("PIN digitado no aparelho", () => {
+  it("aceita só o PIN de 4 números", () => {
+    expect(lerPin({ pin: "2580" })).toBe("2580");
+    expect(lerPin({ pin: "0007" })).toBe("0007");
   });
 
-  it("formato errado conta como CPF ou PIN incorretos (mesma resposta de um PIN errado)", () => {
-    for (const dados of [
-      { cpf: "52998224725", pin: "258" },
-      { cpf: "52998224725", pin: "25801" },
-      { cpf: "52998224726", pin: "2580" },
-      { cpf: "529.982.247-25", pin: "2580" },
-      { cpf: "5299822472", pin: "2580" },
-      { cpf: 52998224725, pin: "2580" },
-    ]) {
-      expect(() => lerCpfPin(dados)).toThrow("CPF ou PIN incorretos.");
+  it("formato errado conta como PIN incorreto (mesma resposta de um PIN errado)", () => {
+    for (const dados of [{ pin: "258" }, { pin: "25801" }, { pin: "25a0" }, { pin: 2580 }, {}]) {
+      expect(() => lerPin(dados)).toThrow("PIN incorreto.");
     }
+  });
+
+  it("tela de 09 a 13/10/2026 (CPF + PIN): o CPF que vier junto é ignorado", () => {
+    expect(lerPin({ cpf: "52998224725", pin: "2580" })).toBe("2580");
+    expect(lerPin({ matricula: "1", cpf: "52998224725", pin: "2580" })).toBe("2580");
   });
 
   it("tela antiga (matrícula, sem CPF): pede para recarregar, em vez de dar erro de matrícula", () => {
     for (const dados of [{ matricula: "1", pin: "2580" }, { matricula: "12", pin: "369147" }, { matricula: "1", cpf: "", pin: "2580" }]) {
-      expect(() => lerCpfPin(dados)).toThrow(/versão antiga do ponto.*Recarregue a página/);
+      expect(() => lerPin(dados)).toThrow(/versão antiga do ponto.*Recarregue a página: agora é só o PIN/);
     }
-    // Com CPF (tela nova), a matrícula que sobrar é ignorada.
-    expect(lerCpfPin({ matricula: "1", cpf: "52998224725", pin: "2580" })).toEqual({ cpf: "52998224725", pin: "2580" });
   });
 
   it("bloqueios seguidos do mesmo PIN dobram de tempo, até 1 hora", () => {

@@ -17,8 +17,8 @@ const MAX_APARELHOS_ATIVOS = 50;
 
 /**
  * Dono do aparelho, quando ele é o celular pessoal de um funcionário: só o dono
- * bate ponto nele, digitando só o PIN (ver identificarNoAparelho). Sem dono, é
- * o aparelho da loja, em que cada um digita o CPF e o PIN.
+ * bate ponto nele, com o PIN dele (ver identificarNoAparelho). Sem dono, é
+ * o aparelho da loja, em que cada um digita o próprio PIN.
  */
 async function donoDoAparelho(empresaId: string, valor: unknown): Promise<{ id: string; nome: string } | null> {
   const funcionarioId = idOpcional(valor, "Dono do aparelho");

@@ -76,7 +76,7 @@ export type Sincronizacao =
   | {
       ativo: true
       agora: number
-      /** funcionario: dono, se for o celular pessoal de alguém (só ele bate ponto, digitando só o PIN). */
+      /** funcionario: dono, se for o celular pessoal de alguém (só ele bate ponto nele, com o PIN dele). */
       dispositivo: { id: string; nome: string; funcionario?: { nome: string } | null }
       empresa: { id: string; nome: string; fusoHorario: string; ativo: boolean }
       /** Para guardar batidas se a internet cair (ver paginas/ponto/terminal/semInternet.ts). */
@@ -98,8 +98,8 @@ export const api = {
   salvarDispositivo: acaoDoPainel<{ empresaId: string; dispositivoId: string; funcionarioId: string | null }, { ok: true }>('salvarDispositivo'),
   // O aparelho informa o estado da câmera, que o gestor vê em "Aparelhos de ponto".
   sincronizarDispositivo: funcao<{ camera?: DiagnosticoCamera }, Sincronizacao>('sincronizarDispositivo', 15_000),
-  // Aparelho da loja: CPF + PIN de 4 números. Celular pessoal: só o PIN (o aparelho já é do funcionário).
-  registrarPonto: funcao<{ idRequisicao: string; cpf?: string; pin: string; foto: string; miniatura: string }, ComprovantePonto>(
+  // Só o PIN de 4 números: o servidor sabe quem é pelo PIN (no celular pessoal, só vale o do dono).
+  registrarPonto: funcao<{ idRequisicao: string; pin: string; foto: string; miniatura: string }, ComprovantePonto>(
     'registrarPonto',
     25_000,
   ),
@@ -117,6 +117,8 @@ export const api = {
     { empresaId: string; registroId: string; motivo?: string; restaurar?: boolean },
     { ok: true }
   >('desconsiderarMarcacao'),
+  // Só o administrador; não tem volta (a foto também é apagada).
+  apagarMarcacao: acaoDoPainel<{ empresaId: string; registroId: string; motivo: string }, { ok: true }>('apagarMarcacao'),
   incluirAbono: acaoDoPainel<
     {
       empresaId: string

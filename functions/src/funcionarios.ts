@@ -3,7 +3,7 @@ import { HttpsError, type CallableRequest } from "firebase-functions/https";
 import { db } from "./admin";
 import { autor, exigirAcessoEmpresa } from "./acesso";
 import { auditarNa } from "./auditoria";
-import { chaveDoPin } from "./pin";
+import { credenciaisComPinAntigo, donosDoPinAntigo, indiceDoPin } from "./pin";
 import {
   booleano,
   cpf,
@@ -35,19 +35,24 @@ export async function salvarFuncionario(request: CallableRequest) {
 
   if (!id && !novoPin) throw new HttpsError("invalid-argument", "PIN: defina o PIN de 4 números do funcionário.");
 
-  const colecao = db.collection(`empresas/${empresaId}/funcionarios`);
+  const empresaRef = db.doc(`empresas/${empresaId}`);
+  const colecao = empresaRef.collection("funcionarios");
   const ref = id ? colecao.doc(id) : colecao.doc();
-  const credenciaisRef = db.doc(`empresas/${empresaId}/credenciais/${ref.id}`);
-  // O PIN não é gravado: só a chave dele (ver pin.ts).
-  const chave = novoPin ? await chaveDoPin(empresaId, ref.id, novoPin) : null;
+  const credenciaisRef = empresaRef.collection("credenciais").doc(ref.id);
+  // O PIN não é gravado: só o índice dele na empresa (ver pin.ts).
+  const indice = novoPin ? await indiceDoPin(empresaId, novoPin) : null;
+  const pinRef = indice ? empresaRef.collection("pins").doc(indice) : null;
 
-  // Transação: garante matrícula e CPF únicos mesmo com dois cadastros simultâneos
-  // (o CPF identifica o funcionário no aparelho da loja).
+  // Transação: garante matrícula, CPF e PIN únicos mesmo com dois cadastros
+  // simultâneos (o PIN sozinho identifica o funcionário no aparelho).
   await db.runTransaction(async (tx) => {
-    const [mesmaMatricula, mesmoCpf, atual] = await Promise.all([
+    const [mesmaMatricula, mesmoCpf, atual, credenciais, donoDoPin, pinsAntigos] = await Promise.all([
       tx.get(colecao.where("matricula", "==", matriculaFuncionario).limit(2)),
       tx.get(colecao.where("cpf", "==", cpfFuncionario).limit(2)),
       id ? tx.get(ref) : Promise.resolve(null),
+      tx.get(credenciaisRef),
+      pinRef ? tx.get(pinRef) : Promise.resolve(null),
+      novoPin ? tx.get(credenciaisComPinAntigo(empresaRef)) : Promise.resolve(null),
     ]);
     if (id && !atual?.exists) throw new HttpsError("not-found", "Funcionário não encontrado.");
     if (mesmaMatricula.docs.some((doc) => doc.id !== ref.id)) {
@@ -55,6 +60,16 @@ export async function salvarFuncionario(request: CallableRequest) {
     }
     if (mesmoCpf.docs.some((doc) => doc.id !== ref.id)) {
       throw new HttpsError("already-exists", "Este CPF já está cadastrado nesta empresa.");
+    }
+    if (novoPin) {
+      const dono: unknown = donoDoPin?.get("funcionarioId");
+      const antigos = await donosDoPinAntigo(pinsAntigos?.docs.filter((doc) => doc.id !== ref.id) ?? [], empresaId, novoPin);
+      if ((typeof dono === "string" && dono !== ref.id) || antigos.length > 0) {
+        throw new HttpsError(
+          "already-exists",
+          "Este PIN já é de outro funcionário desta empresa (cada um precisa de um PIN diferente). Escolha outro ou clique em Gerar PIN.",
+        );
+      }
     }
 
     const agora = FieldValue.serverTimestamp();
@@ -71,16 +86,21 @@ export async function salvarFuncionario(request: CallableRequest) {
         atualizadoEm: agora,
         ...(id ? {} : { criadoEm: agora, pinAtivo: false }),
         // PIN antigo (provisório/pessoal, com matrícula) dá lugar ao de 4 números.
-        ...(chave ? { pinAtivo: true, pinAtualizadoEm: agora, pinDefinido: FieldValue.delete(), pinProvisorio: FieldValue.delete() } : {}),
+        ...(indice ? { pinAtivo: true, pinAtualizadoEm: agora, pinDefinido: FieldValue.delete(), pinProvisorio: FieldValue.delete() } : {}),
       },
       { merge: true },
     );
-    if (chave) {
+    if (indice && pinRef) {
+      // O PIN anterior deixa de valer (e fica livre para outro funcionário).
+      const anterior: unknown = credenciais.get("pinIndice");
+      if (typeof anterior === "string" && anterior !== indice) tx.delete(empresaRef.collection("pins").doc(anterior));
+      tx.set(pinRef, { funcionarioId: ref.id, criadoEm: agora });
       // Trocar o PIN também desbloqueia quem errou demais.
       tx.set(
         credenciaisRef,
         {
-          pinChave: chave,
+          pinIndice: indice,
+          pinChave: FieldValue.delete(),
           pinAtualizadoEm: agora,
           falhas: 0,
           bloqueios: 0,

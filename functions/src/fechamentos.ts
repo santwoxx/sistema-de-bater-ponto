@@ -52,7 +52,7 @@ export const fecharEspelhos = onCall({ timeoutSeconds: 120, memory: "1GiB", maxI
       .collection("registros")
       .where("dataLocal", ">=", `${mes}-01`)
       .where("dataLocal", "<=", `${mes}-31`)
-      .select("funcionarioId", "dataLocal", "horaLocal", "origem", "desconsiderado")
+      .select("funcionarioId", "dataLocal", "horaLocal", "origem", "desconsiderado", "apagado")
       .get(),
     empresaRef.collection("abonos").where("data", ">=", `${mes}-01`).where("data", "<=", `${mes}-31`).get(),
   ]);
@@ -60,6 +60,7 @@ export const fecharEspelhos = onCall({ timeoutSeconds: 120, memory: "1GiB", maxI
   const registrosPorFuncionario = new Map<string, MarcacaoBruta[]>();
   for (const doc of registros.docs) {
     const r = doc.data();
+    if (r.apagado) continue;
     const lista = registrosPorFuncionario.get(r.funcionarioId) ?? [];
     lista.push({ id: doc.id, dataLocal: r.dataLocal, horaLocal: r.horaLocal, origem: r.origem, desconsiderado: r.desconsiderado });
     registrosPorFuncionario.set(r.funcionarioId, lista);

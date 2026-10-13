@@ -25,6 +25,7 @@ import {
   paraEspelhoFechado,
   paraFuncionario,
   paraRegistro,
+  naoApagada,
   paraSolicitacao,
   type Abono,
   type Registro,
@@ -72,6 +73,7 @@ export default function Espelho() {
         : null,
     paraRegistro,
     `${empresa.id}:${funcionario?.id}:${mes}`,
+    naoApagada,
   )
   const abonosDoMes = useColecao(
     () =>

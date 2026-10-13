@@ -79,6 +79,8 @@ export interface Registro {
   justificativa?: string
   incluidoPor?: Autor
   desconsiderado: Desconsideracao | null
+  /** Apagada pelo administrador: não aparece em nenhuma tela (fica só para a cadeia de hashes). */
+  apagado?: Desconsideracao
   /** Batida feita sem internet no aparelho e enviada depois. */
   semInternet?: {
     recebidoEm: Timestamp
@@ -244,6 +246,11 @@ export function paraFuncionario(snap: DocumentSnapshot): Funcionario {
 
 export function paraRegistro(snap: DocumentSnapshot): Registro {
   return { id: snap.id, desconsiderado: null, ...snap.data() } as Registro
+}
+
+/** Para as listas: marcação apagada pelo administrador não aparece em nenhuma tela. */
+export function naoApagada(registro: Registro): boolean {
+  return !registro.apagado
 }
 
 export function paraDispositivo(snap: DocumentSnapshot): Dispositivo {

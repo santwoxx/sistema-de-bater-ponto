@@ -155,7 +155,7 @@ export default function Aparelhos() {
           </li>
         </ol>
         <p className="texto-suave">
-          No aparelho da loja, cada um digita o CPF e o PIN. No celular pessoal, só o dono bate ponto, digitando só o PIN. Dá para mudar o uso depois, na coluna "Uso".
+          No aparelho da loja, cada um digita o próprio PIN. No celular pessoal, só o dono bate ponto, com o PIN dele. Dá para mudar o uso depois, na coluna "Uso".
         </p>
         <p className="texto-suave">
           Dica: no Android, use "Fixar app" (ou um navegador de quiosque); no iPad, use o "Acesso Guiado". Assim ninguém sai da tela do

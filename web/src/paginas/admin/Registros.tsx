@@ -11,7 +11,7 @@ import { baixarCsv } from '../../lib/csv'
 import { classificar, rotuloTipo } from '../../lib/espelho'
 import { formatarNsr, normalizarBusca } from '../../lib/formatos'
 import { dataLocal, diferencaDias, formatarData, nomeDiaCurto, somarDias } from '../../lib/tempo'
-import { ordenarPorNome, paraFuncionario, paraRegistro, type Registro } from '../../tipos'
+import { naoApagada, ordenarPorNome, paraFuncionario, paraRegistro, type Registro } from '../../tipos'
 
 const MAX_DIAS = 92
 // Teto de leitura por consulta: protege o custo e a velocidade em períodos longos.
@@ -43,6 +43,7 @@ export default function Registros() {
     },
     paraRegistro,
     `${empresa.id}:${de}:${ate}:${funcionarioId}:${periodoValido}`,
+    naoApagada,
   )
 
   // Entrada/saída é deduzida pela ordem das marcações válidas de cada pessoa no dia.

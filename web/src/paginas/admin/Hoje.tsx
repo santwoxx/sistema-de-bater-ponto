@@ -11,7 +11,7 @@ import { useAgora } from '../../hooks/useAgora'
 import { useColecao } from '../../hooks/useColecao'
 import { classificar, rotuloTipo } from '../../lib/espelho'
 import { dataLocal, dataPorExtenso, tempoRelativo } from '../../lib/tempo'
-import { ordenarPorNome, paraAbono, paraDispositivo, paraFuncionario, paraRegistro, ROTULOS_ABONO, type Registro } from '../../tipos'
+import { naoApagada, ordenarPorNome, paraAbono, paraDispositivo, paraFuncionario, paraRegistro, ROTULOS_ABONO, type Registro } from '../../tipos'
 
 const ONLINE_MS = 20 * 60_000
 const ORDEM_STATUS = { presente: 0, saiu: 1, abonado: 2, ausente: 3 }
@@ -28,7 +28,12 @@ export default function Hoje() {
     paraFuncionario,
     `${empresa.id}:ativos`,
   )
-  const registros = useColecao(() => query(collection(db, base, 'registros'), where('dataLocal', '==', hoje)), paraRegistro, `${empresa.id}:${hoje}`)
+  const registros = useColecao(
+    () => query(collection(db, base, 'registros'), where('dataLocal', '==', hoje)),
+    paraRegistro,
+    `${empresa.id}:${hoje}`,
+    naoApagada,
+  )
   const aparelhos = useColecao(
     () => query(collection(db, base, 'dispositivos'), where('ativo', '==', true)),
     paraDispositivo,
