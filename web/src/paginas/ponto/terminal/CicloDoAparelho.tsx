@@ -1,11 +1,14 @@
 import { signInWithEmailAndPassword, signOut, type Auth } from 'firebase/auth'
+import { Download } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { api } from '../../../api'
 import { Aviso, BotaoGoogle, Campo } from '../../../componentes/Basicos'
 import Modal from '../../../componentes/Modal'
 import { CHAVE_APARELHO } from '../../../contexto/Sessao'
 import { auth, criarSessaoTemporaria, entrarComGoogle } from '../../../firebase'
+import { useInstalacao } from '../../../hooks/useInstalacao'
 import { cancelouJanela, mensagemErro } from '../../../lib/erros'
+import { comoInstalar } from '../../../lib/instalacao'
 import { gravarLocal } from '../../../lib/util'
 import { CHAVE_REFERENCIA, esvaziarFila } from './semInternet'
 import { CHAVE_INFO, type InfoAparelho } from './useSincronizacao'
@@ -37,6 +40,8 @@ export function ConfiguracoesAparelho({
   const [senha, setSenha] = useState('')
   const [erro, setErro] = useState('')
   const [ocupado, setOcupado] = useState(false)
+  const instalacao = useInstalacao()
+  const empresas = info ? (info.empresas ?? [info.empresa]) : []
 
   // O gestor se identifica (e-mail e senha ou conta Google) numa sessão só em
   // memória: a do aparelho não é afetada.
@@ -66,8 +71,8 @@ export function ConfiguracoesAparelho({
   return (
     <Modal titulo="Configurações do aparelho" aoFechar={aoFechar} largura="pequena">
       <dl className="lista-dados">
-        <dt>Empresa</dt>
-        <dd>{info?.empresa.nome ?? '—'}</dd>
+        <dt>{empresas.length > 1 ? 'Empresas' : 'Empresa'}</dt>
+        <dd>{empresas.map((e) => e.nome).join(', ') || '—'}</dd>
         <dt>Aparelho</dt>
         <dd>{info?.dispositivo.nome ?? '—'}</dd>
         <dt>Uso</dt>
@@ -77,6 +82,24 @@ export function ConfiguracoesAparelho({
         <button type="button" className="botao" onClick={() => window.location.reload()}>
           Recarregar a tela
         </button>
+      </div>
+      <div className="formulario">
+        <h3>App neste aparelho</h3>
+        {instalacao.situacao === 'instalado' ? (
+          <p className="texto-suave">Aberto como app. Cada atualização do sistema chega sozinha.</p>
+        ) : instalacao.situacao === 'disponivel' ? (
+          <>
+            <p className="texto-suave">Cria o ícone "Ponto" na tela inicial: abre em tela cheia e se atualiza sozinho.</p>
+            <button type="button" className="botao primario" onClick={() => void instalacao.instalar()}>
+              <Download size={16} aria-hidden /> Instalar app
+            </button>
+          </>
+        ) : (
+          <p className="texto-suave">
+            Para ter o ícone "Ponto" na tela inicial, {comoInstalar(navigator.userAgent, navigator.maxTouchPoints)} Instale pelo mesmo
+            navegador em que o aparelho foi ativado. O app se atualiza sozinho.
+          </p>
+        )}
       </div>
       <form onSubmit={desativarComSenha} className="formulario">
         <h3>Desativar este aparelho</h3>

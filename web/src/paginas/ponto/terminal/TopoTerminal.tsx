@@ -1,4 +1,5 @@
-import { CloudUpload, Fingerprint, Maximize, Settings, WifiOff } from 'lucide-react'
+import { CloudUpload, Download, Fingerprint, Maximize, Settings, WifiOff } from 'lucide-react'
+import { useInstalacao } from '../../../hooks/useInstalacao'
 import { dataPorExtenso, horaLocal } from '../../../lib/tempo'
 import { nomeCurto } from './textos'
 import type { InfoAparelho } from './useSincronizacao'
@@ -21,6 +22,7 @@ export default function TopoTerminal({
   enviandoGuardadas: boolean
   aoAbrirConfiguracoes: () => void
 }) {
+  const instalacao = useInstalacao()
   // O aparelho da loja pode atender várias empresas: mostra todas, com o nome curto de cada uma.
   const empresas = info ? (info.empresas ?? [info.empresa]) : []
   const nomeDasEmpresas =
@@ -58,6 +60,19 @@ export default function TopoTerminal({
                 </>
               )}
             </span>
+          )}
+          {/* Só quando o navegador permite instalar (some depois de instalado). */}
+          {instalacao.situacao === 'disponivel' && (
+            <button
+              type="button"
+              className="terminal-instalar"
+              onClick={() => void instalacao.instalar()}
+              aria-label="Instalar app"
+              title="Instalar o ponto como app neste aparelho"
+            >
+              <Download size={16} aria-hidden />
+              <span className="terminal-rotulo">Instalar app</span>
+            </button>
           )}
           {document.fullscreenEnabled && !document.fullscreenElement && (
             <button

@@ -163,6 +163,10 @@ export default function Aparelhos() {
             Se aparecer o botão "Ligar a câmera", toque nele, e permita o uso da câmera quando o navegador pedir. Pronto: o aparelho
             fica no modo ponto.
           </li>
+          <li>
+            Para ter o ícone do app, toque em <strong>Instalar app</strong> no topo da tela do ponto (ou na engrenagem, que mostra
+            onde fica no menu do navegador). Instalado, ele abre em tela cheia e se atualiza sozinho a cada atualização do sistema.
+          </li>
         </ol>
         <p className="texto-suave">
           No aparelho da loja, cada um digita o próprio PIN, e a marcação vai para a empresa do funcionário. No celular pessoal, só o

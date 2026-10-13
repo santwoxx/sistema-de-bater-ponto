@@ -1669,6 +1669,26 @@ html.modo-ponto body {
   font-weight: 600;
 }
 
+/* Instalar como app: só aparece quando o navegador permite. */
+.terminal-instalar {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border: 1px solid #2f4a7a;
+  border-radius: 999px;
+  background: transparent;
+  color: #c7dbff;
+  font: inherit;
+  font-size: 0.86rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.terminal-instalar:hover {
+  background: #16315f;
+}
+
 .terminal-guardadas {
   display: inline-flex;
   align-items: center;
@@ -2249,7 +2269,8 @@ html.modo-ponto body {
   }
 
   .terminal-offline,
-  .terminal-guardadas {
+  .terminal-guardadas,
+  .terminal-instalar {
     padding: 5px 7px;
   }
 

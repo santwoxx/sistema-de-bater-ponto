@@ -2,6 +2,10 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
 import './estilos.css'
+import { iniciarInstalacao } from './lib/instalacao'
+
+// O aviso de "dá para instalar como app" pode chegar antes de a tela do ponto abrir.
+iniciarInstalacao()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
