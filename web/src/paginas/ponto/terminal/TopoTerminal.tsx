@@ -1,5 +1,6 @@
 import { CloudUpload, Fingerprint, Maximize, Settings, WifiOff } from 'lucide-react'
 import { dataPorExtenso, horaLocal } from '../../../lib/tempo'
+import { nomeCurto } from './textos'
 import type { InfoAparelho } from './useSincronizacao'
 
 /** Empresa e aparelho, relógio oficial, batidas guardadas sem internet e ações (tela cheia, configurações). */
@@ -20,13 +21,17 @@ export default function TopoTerminal({
   enviandoGuardadas: boolean
   aoAbrirConfiguracoes: () => void
 }) {
+  // O aparelho da loja pode atender várias empresas: mostra todas, com o nome curto de cada uma.
+  const empresas = info ? (info.empresas ?? [info.empresa]) : []
+  const nomeDasEmpresas =
+    empresas.length === 0 ? 'Ponto' : empresas.length === 1 ? empresas[0].nome : empresas.map((e) => nomeCurto(e.nome)).join(' · ')
   return (
     <>
       <header className="terminal-topo">
         <div className="terminal-empresa">
           <Fingerprint size={28} aria-hidden />
           <div>
-            <strong>{info?.empresa.nome ?? 'Ponto'}</strong>
+            <strong title={empresas.map((e) => e.nome).join(' · ')}>{nomeDasEmpresas}</strong>
             <small>{info?.dispositivo.nome ?? ''}</small>
           </div>
         </div>

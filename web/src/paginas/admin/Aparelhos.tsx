@@ -5,15 +5,15 @@ import { api } from '../../api'
 import { Aviso, CabecalhoPagina, Carregando, Selo, Vazio } from '../../componentes/Basicos'
 import Modal from '../../componentes/Modal'
 import { useNotificar } from '../../componentes/Notificacoes'
-import UsoDoAparelho from '../../componentes/UsoDoAparelho'
-import { useEmpresaAtual } from '../../contexto/Empresa'
+import UsoDoAparelho, { EmpresasAtendidas } from '../../componentes/UsoDoAparelho'
+import { useEmpresaAtual, useEmpresas } from '../../contexto/Empresa'
 import { db } from '../../banco'
 import { useAgora } from '../../hooks/useAgora'
 import { useColecao } from '../../hooks/useColecao'
 import { mensagemDaCamera, navegadorInterno, plataformaDe } from '../../lib/camera'
 import { mensagemErro } from '../../lib/erros'
 import { formatarDataHora, tempoRelativo } from '../../lib/tempo'
-import { paraDispositivo, paraFuncionario, type Dispositivo, type Funcionario } from '../../tipos'
+import { ordenarPorNome, paraDispositivo, paraFuncionario, type Dispositivo, type Empresa, type Funcionario } from '../../tipos'
 
 const ONLINE_MS = 20 * 60_000
 
@@ -47,9 +47,17 @@ function SituacaoCamera({ aparelho }: { aparelho: Dispositivo }) {
   )
 }
 
-/** Aparelho da loja ou celular pessoal (com o aviso se o dono foi desativado). */
-function UsoAtual({ aparelho, funcionarios }: { aparelho: Dispositivo; funcionarios: Funcionario[] }) {
-  if (!aparelho.funcionarioId) return <Selo>Loja (todos)</Selo>
+/** Aparelho da loja (e as outras empresas que ele atende) ou celular pessoal (com o aviso se o dono foi desativado). */
+function UsoAtual({ aparelho, funcionarios, empresas }: { aparelho: Dispositivo; funcionarios: Funcionario[]; empresas: Empresa[] }) {
+  if (!aparelho.funcionarioId) {
+    const outras = aparelho.outrasEmpresas.map((id) => empresas.find((e) => e.id === id)?.nome ?? 'outra empresa')
+    return (
+      <>
+        <Selo>Loja (todos)</Selo>
+        {outras.length > 0 && <small className="bloco">também: {outras.join(', ')}</small>}
+      </>
+    )
+  }
   const dono = funcionarios.find((f) => f.id === aparelho.funcionarioId)
   const nome = dono?.nome ?? aparelho.funcionarioNome ?? 'funcionário removido'
   const donoInativo = aparelho.ativo && dono !== undefined && !dono.ativo
@@ -91,6 +99,7 @@ function resumirNavegador(agente?: string): string {
 
 export default function Aparelhos() {
   const empresa = useEmpresaAtual()
+  const { empresas } = useEmpresas()
   const notificar = useNotificar()
   const agora = useAgora(30_000)
   const aparelhos = useColecao(() => collection(db, 'empresas', empresa.id, 'dispositivos'), paraDispositivo, `${empresa.id}:aparelhos`)
@@ -147,7 +156,8 @@ export default function Aparelhos() {
           </li>
           <li>
             Entre com o seu e-mail e senha de gestor (ou a conta Google), escolha a empresa "{empresa.nome}", diga se é o aparelho da
-            loja ou o celular pessoal de um funcionário e dê um nome ao aparelho.
+            loja ou o celular pessoal de um funcionário (no da loja, marque as outras empresas cujos funcionários também batem ponto
+            nele) e dê um nome ao aparelho.
           </li>
           <li>
             Se aparecer o botão "Ligar a câmera", toque nele, e permita o uso da câmera quando o navegador pedir. Pronto: o aparelho
@@ -155,7 +165,8 @@ export default function Aparelhos() {
           </li>
         </ol>
         <p className="texto-suave">
-          No aparelho da loja, cada um digita o próprio PIN. No celular pessoal, só o dono bate ponto, com o PIN dele. Dá para mudar o uso depois, na coluna "Uso".
+          No aparelho da loja, cada um digita o próprio PIN, e a marcação vai para a empresa do funcionário. No celular pessoal, só o
+          dono bate ponto, com o PIN dele. Dá para mudar o uso e as empresas depois, na coluna "Uso".
         </p>
         <p className="texto-suave">
           Dica: no Android, use "Fixar app" (ou um navegador de quiosque); no iPad, use o "Acesso Guiado". Assim ninguém sai da tela do
@@ -220,7 +231,7 @@ export default function Aparelhos() {
                         )}
                       </td>
                       <td>
-                        <UsoAtual aparelho={a} funcionarios={funcionarios.dados} />
+                        <UsoAtual aparelho={a} funcionarios={funcionarios.dados} empresas={empresas} />
                         {a.ativo && (
                           <button type="button" className="link bloco" onClick={() => setMudandoUso(a)}>
                             Mudar
@@ -252,7 +263,13 @@ export default function Aparelhos() {
       </section>
 
       {mudandoUso && (
-        <MudarUso aparelho={mudandoUso} funcionarios={funcionarios.dados} empresaId={empresa.id} aoFechar={() => setMudandoUso(null)} />
+        <MudarUso
+          aparelho={mudandoUso}
+          funcionarios={funcionarios.dados}
+          empresaId={empresa.id}
+          empresas={empresas}
+          aoFechar={() => setMudandoUso(null)}
+        />
       )}
 
       {desativando && (
@@ -282,22 +299,29 @@ export default function Aparelhos() {
   )
 }
 
-// Muda o uso de um aparelho já ativado; o servidor passa a valer na hora, e a
-// tela do aparelho muda na próxima sincronização (em até 5 minutos).
+// Muda o uso de um aparelho já ativado (e as outras empresas que ele atende); o
+// servidor passa a valer na hora, e a tela do aparelho muda na próxima
+// sincronização (em até 5 minutos).
 function MudarUso({
   aparelho,
   funcionarios,
   empresaId,
+  empresas,
   aoFechar,
 }: {
   aparelho: Dispositivo
   funcionarios: Funcionario[]
   empresaId: string
+  empresas: Empresa[]
   aoFechar: () => void
 }) {
   const notificar = useNotificar()
   const donoAtivo = funcionarios.some((f) => f.id === aparelho.funcionarioId && f.ativo)
   const [donoId, setDonoId] = useState(donoAtivo ? (aparelho.funcionarioId ?? '') : '')
+  // Empresas que quem edita gerencia (ativas, ou já atendidas, para poder tirar) e as que ficam como estão.
+  const opcoes = ordenarPorNome(empresas.filter((e) => e.id !== empresaId && (e.ativo || aparelho.outrasEmpresas.includes(e.id))))
+  const fixas = aparelho.outrasEmpresas.filter((id) => !opcoes.some((e) => e.id === id))
+  const [outras, setOutras] = useState(() => aparelho.outrasEmpresas.filter((id) => !fixas.includes(id)))
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState('')
 
@@ -305,7 +329,7 @@ function MudarUso({
     setErro('')
     setSalvando(true)
     try {
-      await api.salvarDispositivo({ empresaId, dispositivoId: aparelho.id, funcionarioId: donoId || null })
+      await api.salvarDispositivo({ empresaId, dispositivoId: aparelho.id, funcionarioId: donoId || null, empresas: donoId ? [] : [...outras, ...fixas] })
       const dono = funcionarios.find((f) => f.id === donoId)
       notificar(dono ? `"${aparelho.nome}" agora é o celular pessoal de ${dono.nome}.` : `"${aparelho.nome}" agora é aparelho da loja.`)
       aoFechar()
@@ -333,6 +357,7 @@ function MudarUso({
       }
     >
       <UsoDoAparelho funcionarios={funcionarios} valor={donoId} aoMudar={setDonoId} />
+      {!donoId && <EmpresasAtendidas opcoes={opcoes} marcadas={outras} aoMudar={setOutras} fixas={fixas.length} />}
       <p className="texto-suave">
         A tela do aparelho muda em até 5 minutos, sem precisar ativá-lo de novo. Para ser na hora, recarregue a tela do aparelho.
       </p>

@@ -40,6 +40,8 @@ const PIN_MARIA = '2580'
 const PIN_JOAO_INICIAL = '1357'
 // O gestor troca o PIN do João no meio do teste ("esqueceu o PIN").
 const PIN_JOAO = '8642'
+// Funcionário da outra empresa (Loja Shopping), para o aparelho que atende as duas.
+const PIN_FULANO = '6173'
 
 // Ações rápidas do painel: passam pela função "painel" (functions/src/painel.ts).
 const ACOES_DO_PAINEL = new Set([
@@ -148,7 +150,7 @@ const admin = cliente('admin')
 const gestora = cliente('gestora')
 const outraGestora = cliente('outra')
 const aparelho = cliente('aparelho')
-let empresaA, empresaB, maria, joao, credAparelho, uidAparelho, primeiro
+let empresaA, empresaB, maria, joao, fulano, credAparelho, uidAparelho, primeiro
 const cadastroMaria = () => ({ empresaId: empresaA, id: maria, nome: 'Maria Souza', cpf: CPF_MARIA, matricula: '12', cargo: 'Vendedora', admissao: null, jornada: JORNADA, ativo: true })
 const cadastroJoao = () => ({ empresaId: empresaA, id: joao, nome: 'João Lima', cpf: CPF_JOAO, matricula: '7', cargo: '', admissao: null, jornada: JORNADA, ativo: true })
 
@@ -161,11 +163,11 @@ async function pinAntigo(funcionarioId, pin) {
   const hmac = (texto) => createHmac('sha256', segredo).update(texto).digest('hex')
   const caminho = `empresas/${empresaA}/credenciais/${funcionarioId}`
   const indice = (await comoDono('GET', caminho)).fields.pinIndice?.stringValue
-  if (indice) await comoDono('DELETE', `empresas/${empresaA}/pins/${indice}`)
+  if (indice) await comoDono('DELETE', `pins/${indice}`)
   await comoDono('PATCH', `${caminho}?updateMask.fieldPaths=pinChave&updateMask.fieldPaths=pinIndice`, {
     fields: { pinChave: { stringValue: hmac(`${empresaA}|${funcionarioId}|${pin}`) } },
   })
-  return hmac(`pin|${empresaA}|${pin}`)
+  return hmac(`pin|${pin}`)
 }
 
 await etapa('configuração inicial exige o código de instalação e cria o administrador uma única vez', async () => {
@@ -264,8 +266,10 @@ await etapa('gestora só acessa as empresas liberadas para ela', async () => {
     'functions/already-exists',
     /PIN já é de outro funcionário/,
   )
-  // Em outra empresa, pode (o índice do PIN é por empresa).
-  await admin.chamar('salvarFuncionario', { empresaId: empresaB, nome: 'Fulano de Tal', cpf: '529.982.247-25', matricula: '1', jornada: JORNADA, pin: PIN_MARIA })
+  // Nem em outra empresa: um aparelho da loja pode atender várias, e o PIN diz de quem é a batida.
+  const cadastroFulano = { empresaId: empresaB, nome: 'Fulano de Tal', cpf: '529.982.247-25', matricula: '1', jornada: JORNADA }
+  await falha(admin.chamar('salvarFuncionario', { ...cadastroFulano, pin: PIN_MARIA }), 'functions/already-exists', /desta ou de outra empresa/)
+  fulano = (await admin.chamar('salvarFuncionario', { ...cadastroFulano, pin: PIN_FULANO })).id
 })
 
 await etapa('admin não consegue remover o próprio acesso', async () => {
@@ -511,7 +515,8 @@ await etapa('o gestor troca o PIN: só aceita PIN que não seja de outro funcion
   const auditoria = (await getDocs(query(collection(gestora.db, 'empresas', empresaA, 'auditoria'), where('acao', '==', 'funcionario.atualizado')))).docs
   assert.ok(auditoria.some((d) => /João Lima \(matrícula 7\) atualizado; PIN redefinido/.test(d.get('descricao'))))
   // O índice do PIN, como as credenciais, é só do servidor.
-  await falha(getDocs(collection(gestora.db, 'empresas', empresaA, 'pins')), 'permission-denied')
+  await falha(getDocs(collection(gestora.db, 'pins')), 'permission-denied')
+  await falha(getDocs(collection(admin.db, 'pins')), 'permission-denied')
 })
 
 let manual
@@ -1005,7 +1010,8 @@ await etapa('PIN de antes do PIN único: vale e passa ao índice na 1ª batida; 
   const credenciais = (await comoDono('GET', `empresas/${empresaA}/credenciais/${joao}`)).fields
   assert.equal(credenciais.pinIndice.stringValue, indice)
   assert.equal(credenciais.pinChave, undefined)
-  assert.equal((await comoDono('GET', `empresas/${empresaA}/pins/${indice}`)).fields.funcionarioId.stringValue, joao)
+  const noIndice = (await comoDono('GET', `pins/${indice}`)).fields
+  assert.deepEqual([noIndice.empresaId.stringValue, noIndice.funcionarioId.stringValue], [empresaA, joao])
 
   // Dois funcionários com o mesmo PIN antigo: não dá para saber quem é, e o gestor é avisado.
   await pinAntigo(maria, '7319')
@@ -1022,6 +1028,61 @@ await etapa('PIN de antes do PIN único: vale e passa ao índice na 1ª batida; 
   assert.equal((await bater('7319')).funcionarioNome, 'Maria Souza')
   assert.equal((await bater(PIN_JOAO)).funcionarioNome, 'João Lima')
   await gestora.chamar('salvarFuncionario', { ...cadastroMaria(), pin: PIN_MARIA })
+})
+
+await etapa('aparelho da loja que atende duas empresas: o PIN diz quem é, e a batida vai para a empresa do funcionário', async () => {
+  const bater = (pin) => aparelho.chamar('registrarPonto', { idRequisicao: id(), pin, foto: jpeg(900), miniatura: jpeg(200) })
+  const empresasDoAparelho = (quem, empresas) =>
+    quem.chamar('salvarDispositivo', { empresaId: empresaA, dispositivoId: uidAparelho, funcionarioId: null, empresas })
+  // O aparelho é da Loja Centro: o funcionário da Loja Shopping ainda não bate ponto nele.
+  await falha(bater(PIN_FULANO), 'functions/permission-denied', /PIN incorreto/)
+  // Só quem gerencia as duas empresas junta as duas no aparelho.
+  await falha(empresasDoAparelho(gestora, [empresaB]), 'functions/permission-denied', /não tem acesso/)
+  await falha(empresasDoAparelho(outraGestora, [empresaB]), 'functions/permission-denied')
+  await empresasDoAparelho(admin, [empresaB])
+  const sincronizado = await aparelho.chamar('sincronizarDispositivo')
+  assert.deepEqual(
+    sincronizado.empresas.map((e) => e.nome),
+    ['Loja Centro', 'Loja Shopping'],
+  )
+
+  // A batida do Fulano vai para a Loja Shopping (NSR e cadeia dela), com a foto na pasta dela.
+  const doFulano = await bater(PIN_FULANO)
+  assert.equal(doFulano.funcionarioNome, 'Fulano de Tal')
+  assert.equal(doFulano.empresaNome, 'Loja Shopping')
+  assert.equal(doFulano.nsr, 1)
+  const registro = (await getDoc(doc(outraGestora.db, 'empresas', empresaB, 'registros', doFulano.registroId))).data()
+  assert.equal(registro.funcionarioId, fulano)
+  assert.equal(registro.dispositivoId, uidAparelho)
+  assert.ok(registro.fotoPath.startsWith(`empresas/${empresaB}/registros/`))
+  assert.equal((await outraGestora.chamar('obterFoto', { empresaId: empresaB, registroId: doFulano.registroId })).confere, true)
+  // A gestora da Loja Centro não vê a batida da outra empresa.
+  await falha(getDoc(doc(gestora.db, 'empresas', empresaB, 'registros', doFulano.registroId)), 'permission-denied')
+  // No mesmo aparelho, a Maria continua batendo na Loja Centro.
+  assert.equal((await bater(PIN_MARIA)).empresaNome, 'Loja Centro')
+  const integridade = await admin.chamar('verificarIntegridade', { empresaId: empresaB })
+  assert.equal(integridade.totalProblemas, 0)
+  assert.equal(integridade.ultimoNsr, 1)
+
+  // Sem a Loja Shopping na lista, o PIN dele volta a não valer aqui.
+  await empresasDoAparelho(admin, [])
+  await falha(bater(PIN_FULANO), 'functions/permission-denied', /PIN incorreto/)
+  assert.deepEqual(
+    (await aparelho.chamar('sincronizarDispositivo')).empresas.map((e) => e.nome),
+    ['Loja Centro'],
+  )
+
+  // Na ativação: só quem gerencia as empresas escolhidas; no celular pessoal, só a empresa do dono.
+  const ativar = (quem, dados) => quem.chamar('ativarDispositivo', { empresaId: empresaA, nome: 'Tablet do grupo', ...dados })
+  await falha(ativar(gestora, { empresas: [empresaB] }), 'functions/permission-denied', /não tem acesso/)
+  const credGrupo = await ativar(admin, { empresas: [empresaB, empresaA] })
+  // A conta do aparelho é o uid dele no e-mail técnico.
+  const uidGrupo = credGrupo.email.split('@')[0]
+  assert.deepEqual((await getDoc(doc(admin.db, 'empresas', empresaA, 'dispositivos', uidGrupo))).get('empresas'), [empresaA, empresaB])
+  const credPessoal = await ativar(admin, { funcionarioId: maria, empresas: [empresaB] })
+  const uidPessoal = credPessoal.email.split('@')[0]
+  assert.deepEqual((await getDoc(doc(admin.db, 'empresas', empresaA, 'dispositivos', uidPessoal))).get('empresas'), [empresaA])
+  for (const uid of [uidGrupo, uidPessoal]) await admin.chamar('desativarDispositivo', { empresaId: empresaA, dispositivoId: uid })
 })
 
 await etapa('só o administrador apaga uma marcação: some das telas e exportações, a foto vai junto e a cadeia continua íntegra', async () => {

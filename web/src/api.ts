@@ -79,6 +79,8 @@ export type Sincronizacao =
       /** funcionario: dono, se for o celular pessoal de alguém (só ele bate ponto nele, com o PIN dele). */
       dispositivo: { id: string; nome: string; funcionario?: { nome: string } | null }
       empresa: { id: string; nome: string; fusoHorario: string; ativo: boolean }
+      /** Empresas cujos funcionários batem ponto no aparelho (a dele primeiro). Falta na informação guardada por versões antigas. */
+      empresas?: { id: string; nome: string }[]
       /** Para guardar batidas se a internet cair (ver paginas/ponto/terminal/semInternet.ts). */
       semInternet?: DadosSemInternet | null
     }
@@ -90,12 +92,19 @@ export const api = {
   salvarEmpresa: acaoDoPainel<DadosEmpresa, { id: string }>('salvarEmpresa'),
   salvarUsuario: acaoDoPainel<DadosUsuario, { uid: string }>('salvarUsuario'),
   salvarFuncionario: acaoDoPainel<DadosFuncionario, { id: string }>('salvarFuncionario'),
-  ativarDispositivo: acaoDoPainel<{ empresaId: string; nome: string; funcionarioId?: string | null }, { email: string; senha: string; empresaNome: string }>(
+  // empresas: outras empresas que o aparelho da loja atende, além da dele.
+  ativarDispositivo: acaoDoPainel<
+    { empresaId: string; nome: string; funcionarioId?: string | null; empresas?: string[] },
+    { email: string; senha: string; empresaNome: string }
+  >(
     'ativarDispositivo',
   ),
   desativarDispositivo: acaoDoPainel<{ empresaId: string; dispositivoId: string }, { ok: true }>('desativarDispositivo'),
-  // Uso do aparelho: celular pessoal de um funcionário (funcionarioId) ou aparelho da loja (null).
-  salvarDispositivo: acaoDoPainel<{ empresaId: string; dispositivoId: string; funcionarioId: string | null }, { ok: true }>('salvarDispositivo'),
+  // Uso do aparelho: celular pessoal de um funcionário (funcionarioId) ou aparelho da loja (null), e as outras empresas que ele atende.
+  salvarDispositivo: acaoDoPainel<
+    { empresaId: string; dispositivoId: string; funcionarioId: string | null; empresas?: string[] },
+    { ok: true }
+  >('salvarDispositivo'),
   // O aparelho informa o estado da câmera, que o gestor vê em "Aparelhos de ponto".
   sincronizarDispositivo: funcao<{ camera?: DiagnosticoCamera }, Sincronizacao>('sincronizarDispositivo', 15_000),
   // Só o PIN de 4 números: o servidor sabe quem é pelo PIN (no celular pessoal, só vale o do dono).

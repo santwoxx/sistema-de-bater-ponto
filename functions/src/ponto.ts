@@ -3,7 +3,7 @@ import { HttpsError, onCall } from "firebase-functions/https";
 import * as logger from "firebase-functions/logger";
 import { db } from "./admin";
 import { carregarEmpresa, exigirDispositivo } from "./acesso";
-import { decodificarJpeg, identificarNoAparelho, lerPin, MAX_MINIATURA_BYTES, type Identificacao } from "./identificacao";
+import { buscarDonoDoPin, decodificarJpeg, identificarNoAparelho, lerPin, MAX_MINIATURA_BYTES, type Identificacao } from "./identificacao";
 import { comprovante, guardarFoto, MAX_FOTO_BYTES, montarMarcacao, ordinalNoDia } from "./marcacao";
 import { dataLocal, horaLocal } from "./tempo";
 import { objeto } from "./validacao";
@@ -16,7 +16,7 @@ function erroRequisicaoDeOutro(): HttpsError {
 // por esta função, que começa mais rápido e atende várias marcações ao mesmo
 // tempo na mesma cópia (por isso bastam 2).
 export const registrarPonto = onCall({ memory: "512MiB", cpu: 1, timeoutSeconds: 30, maxInstances: 2 }, async (request) => {
-  const { dispositivoId, empresaId } = exigirDispositivo(request);
+  const { dispositivoId, empresaId: empresaDoAparelhoId } = exigirDispositivo(request);
   const dados = objeto(request.data);
   // Aquecimento: o aparelho chama quando alguém começa a digitar. Assim a cópia
   // da função já está aberta quando a foto chega (sem partida a frio na batida).
@@ -31,11 +31,13 @@ export const registrarPonto = onCall({ memory: "512MiB", cpu: 1, timeoutSeconds:
   const miniatura = decodificarJpeg(dados.miniatura, "Miniatura da foto", MAX_MINIATURA_BYTES);
 
   // A foto sobe enquanto o PIN é conferido (é a etapa mais demorada da
-  // batida). Se a identificação falhar, ou se for o reenvio de uma batida já
-  // gravada, ela é apagada; o registro só é gravado depois da identificação.
-  const empresaCarregada = carregarEmpresa(empresaId);
-  const fotoGuardada = empresaCarregada.then((e) =>
-    guardarFoto({ empresaId, registroId: idRequisicao, dataLocal: dataLocal(new Date(), e.fusoHorario), foto, dispositivoId }),
+  // batida), na pasta da empresa do dono do PIN. Se a identificação falhar, ou
+  // se for o reenvio de uma batida já gravada, ela é apagada; o registro só é
+  // gravado depois da identificação.
+  const empresaDoAparelho = carregarEmpresa(empresaDoAparelhoId);
+  const donoDoPin = buscarDonoDoPin(pin);
+  const fotoGuardada = Promise.all([empresaDoAparelho, donoDoPin]).then(([e, dono]) =>
+    guardarFoto({ empresaId: dono?.empresaId ?? e.id, registroId: idRequisicao, dataLocal: dataLocal(new Date(), e.fusoHorario), foto, dispositivoId }),
   );
   fotoGuardada.catch(() => undefined); // um erro no envio aparece no await, mais abaixo
   const descartarFoto = () => fotoGuardada.then((f) => f.apagar(), () => undefined);
@@ -43,12 +45,21 @@ export const registrarPonto = onCall({ memory: "512MiB", cpu: 1, timeoutSeconds:
   // O PIN é conferido antes de gravar qualquer coisa, inclusive no reenvio.
   let identificacao: Identificacao;
   try {
-    identificacao = await identificarNoAparelho({ empresaId, dispositivoId, pin, miniatura, empresa: empresaCarregada });
+    identificacao = await identificarNoAparelho({
+      empresaId: empresaDoAparelhoId,
+      dispositivoId,
+      pin,
+      miniatura,
+      empresa: empresaDoAparelho,
+      dono: donoDoPin,
+    });
   } catch (erro) {
     void descartarFoto();
     throw erro;
   }
+  // A batida vai para a empresa do funcionário (o aparelho pode atender várias).
   const { empresa, empresaRef, dispositivoRef, dispositivo, funcionarioId, funcionario, credenciaisRef } = identificacao;
+  const empresaId = empresa.id;
 
   const fuso = empresa.fusoHorario;
   const hoje = dataLocal(new Date(), fuso);
@@ -69,8 +80,14 @@ export const registrarPonto = onCall({ memory: "512MiB", cpu: 1, timeoutSeconds:
     return comprovante(registroRef.id, existente, await ordinalDe(existente), empresa.nome);
   }
 
-  // Se o registro não for gravado, a foto é apagada.
-  const { fotoPath, fotoSha256, apagar } = await fotoGuardada;
+  // Se o registro não for gravado, a foto é apagada. PIN antigo de funcionário de
+  // outra empresa (achado só na identificação): a foto vai para a pasta certa.
+  let fotoDaBatida = await fotoGuardada;
+  if (!fotoDaBatida.fotoPath.startsWith(`empresas/${empresaId}/`)) {
+    await fotoDaBatida.apagar();
+    fotoDaBatida = await guardarFoto({ empresaId, registroId: idRequisicao, dataLocal: hoje, foto, funcionarioId, dispositivoId });
+  }
+  const { fotoPath, fotoSha256, apagar } = fotoDaBatida;
 
   let resultado: { registro: DocumentData; duplicado: boolean };
   try {

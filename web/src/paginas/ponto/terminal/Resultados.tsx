@@ -43,6 +43,7 @@ export function PontoRegistrado({
       <h2>Ponto registrado!</h2>
       <img src={foto} alt="" className="resultado-foto" />
       <strong className="resultado-nome">{comprovante.funcionarioNome}</strong>
+      <small className="resultado-empresa">{comprovante.empresaNome}</small>
       <span className={`resultado-tipo resultado-${comprovante.tipo}`}>
         {comprovante.tipo === 'entrada' ? 'Entrada' : 'Saída'} · {comprovante.ordinal}ª marcação do dia
       </span>

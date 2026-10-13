@@ -1997,6 +1997,13 @@ html.modo-ponto body {
   font-size: clamp(1.5rem, 3.4vw, 2.2rem);
 }
 
+/* Empresa do funcionário (o aparelho da loja pode atender várias). */
+.resultado-empresa {
+  margin-top: -8px;
+  font-size: 0.95rem;
+  opacity: 0.85;
+}
+
 .resultado-tipo {
   padding: 6px 16px;
   border-radius: 999px;

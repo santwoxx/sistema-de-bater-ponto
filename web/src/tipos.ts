@@ -107,6 +107,8 @@ export interface Dispositivo {
   /** Celular pessoal: só este funcionário bate ponto no aparelho. null = aparelho da loja. */
   funcionarioId: string | null
   funcionarioNome: string | null
+  /** Outras empresas que o aparelho da loja atende, além da dele (o PIN diz de quem é a batida). */
+  outrasEmpresas: string[]
   /** Estado da câmera informado pelo aparelho na última sincronização. */
   camera?: {
     estado: 'iniciando' | 'pronta' | 'toque' | 'erro'
@@ -268,6 +270,7 @@ export function paraDispositivo(snap: DocumentSnapshot): Dispositivo {
     desativadoPor: d.desativadoPor,
     funcionarioId: typeof d.funcionarioId === 'string' ? d.funcionarioId : null,
     funcionarioNome: typeof d.funcionarioNome === 'string' ? d.funcionarioNome : null,
+    outrasEmpresas: Array.isArray(d.empresas) ? d.empresas.filter((id: unknown) => typeof id === 'string' && id !== snap.ref.parent.parent?.id) : [],
     camera: d.camera,
   }
 }

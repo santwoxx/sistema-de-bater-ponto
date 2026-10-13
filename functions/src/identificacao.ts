@@ -4,12 +4,13 @@ import * as logger from "firebase-functions/logger";
 import { db } from "./admin";
 import { carregarEmpresa, type Empresa } from "./acesso";
 import { registrarAuditoria } from "./auditoria";
-import { credenciaisComPinAntigo, donosDoPinAntigo, indiceDoPin, mesmaChave } from "./pin";
+import { donosDoPinAntigo, indiceDoPin, mesmaChave, type DonoDoPin } from "./pin";
 
 // Identificação do funcionário no aparelho de ponto: só o PIN de 4 números,
-// definido pelo gestor e diferente para cada funcionário da empresa. No celular
-// pessoal, só vale o PIN do dono do aparelho. Usada para bater o ponto, com ou
-// sem internet.
+// definido pelo gestor e diferente para cada funcionário (de todas as empresas).
+// O aparelho da loja pode atender várias empresas: o PIN diz quem é e de qual
+// empresa, e a batida vai para a empresa do funcionário. No celular pessoal, só
+// vale o PIN do dono do aparelho. Usada para bater o ponto, com ou sem internet.
 //
 // Proteção contra adivinhação de PIN:
 //  - por aparelho: 10 erros em 15 minutos bloqueiam o aparelho até a janela
@@ -218,35 +219,54 @@ async function auditarBloqueios(params: {
   }
 }
 
-/** Alerta para o gestor: o mesmo PIN antigo é de mais de um funcionário. */
-async function avisarPinRepetido(empresaRef: DocumentReference, funcionarioIds: string[], dispositivoId: string, dispositivoNome: string) {
-  const funcionarios = await db.getAll(...funcionarioIds.map((id) => empresaRef.collection("funcionarios").doc(id)));
+/** Alerta para os gestores: o mesmo PIN antigo é de mais de um funcionário (vai para a auditoria de cada empresa envolvida). */
+async function avisarPinRepetido(donos: DonoDoPin[], dispositivoId: string, dispositivoNome: string) {
+  const funcionarios = await db.getAll(...donos.map((d) => db.doc(`empresas/${d.empresaId}/funcionarios/${d.funcionarioId}`)));
   const nomes = funcionarios.map((f) => String(f.get("nome") ?? f.id));
-  await registrarAuditoria({
-    empresaId: empresaRef.id,
-    autor: { uid: dispositivoId, nome: `Aparelho "${dispositivoNome}"` },
-    acao: "pin.repetido",
-    descricao: `${nomes.join(", ")} têm o mesmo PIN, e nenhum deles consegue bater o ponto com ele. Troque o PIN de cada um em Funcionários.`,
-    detalhes: { funcionarios: funcionarioIds, dispositivoId },
-  });
+  for (const empresaId of new Set(donos.map((d) => d.empresaId))) {
+    await registrarAuditoria({
+      empresaId,
+      autor: { uid: dispositivoId, nome: `Aparelho "${dispositivoNome}"` },
+      acao: "pin.repetido",
+      descricao: `${nomes.join(", ")} têm o mesmo PIN, e nenhum deles consegue bater o ponto com ele. Troque o PIN de cada um em Funcionários.`,
+      detalhes: { funcionarios: donos.map((d) => d.funcionarioId), dispositivoId },
+    });
+  }
 }
 
 /**
  * PIN antigo (chave por funcionário) acertado: passa para o índice, e a chave
  * antiga sai das credenciais. Daí em diante, o PIN é achado por uma leitura.
  */
-async function passarParaOIndice(empresaRef: DocumentReference, funcionarioId: string, indice: string) {
-  const pinRef = empresaRef.collection("pins").doc(indice);
+async function passarParaOIndice(dono: DonoDoPin, indice: string) {
+  const pinRef = db.collection("pins").doc(indice);
   await db.runTransaction(async (tx) => {
     const atual = await tx.get(pinRef);
     // Proteção: salvarFuncionario não deixa dar a outro funcionário um PIN antigo em uso.
-    if (atual.exists && atual.get("funcionarioId") !== funcionarioId) throw erroPinRepetido();
-    tx.set(pinRef, { funcionarioId, criadoEm: FieldValue.serverTimestamp() });
-    tx.update(empresaRef.collection("credenciais").doc(funcionarioId), { pinIndice: indice, pinChave: FieldValue.delete() });
+    if (atual.exists && (atual.get("empresaId") !== dono.empresaId || atual.get("funcionarioId") !== dono.funcionarioId)) {
+      throw erroPinRepetido();
+    }
+    tx.set(pinRef, { ...dono, criadoEm: FieldValue.serverTimestamp() });
+    tx.update(db.doc(`empresas/${dono.empresaId}/credenciais/${dono.funcionarioId}`), { pinIndice: indice, pinChave: FieldValue.delete() });
   });
 }
 
+/** Dono do PIN pelo índice (uma leitura), em qualquer empresa; null se o PIN não é de ninguém (ou é um PIN antigo). */
+export async function buscarDonoDoPin(pin: string): Promise<DonoDoPin | null> {
+  const snap = await db.collection("pins").doc(await indiceDoPin(pin)).get();
+  const empresaId: unknown = snap.get("empresaId");
+  const funcionarioId: unknown = snap.get("funcionarioId");
+  return typeof empresaId === "string" && typeof funcionarioId === "string" ? { empresaId, funcionarioId } : null;
+}
+
+/** Empresas cujos funcionários batem ponto no aparelho: a dele e as outras escolhidas pelo gestor. */
+export function empresasDoAparelho(empresaId: string, dispositivo: DocumentData): string[] {
+  const outras: unknown[] = Array.isArray(dispositivo.empresas) ? dispositivo.empresas : [];
+  return [empresaId, ...outras.filter((id): id is string => typeof id === "string" && id !== empresaId)];
+}
+
 export interface Identificacao {
+  /** Empresa do funcionário: é nela que a batida é gravada (pode não ser a do aparelho). */
   empresa: Empresa;
   empresaRef: DocumentReference;
   dispositivoRef: DocumentReference;
@@ -258,66 +278,81 @@ export interface Identificacao {
 }
 
 /**
- * Identificação no aparelho: aparelho ativo e PIN de um funcionário ativo. No
- * celular pessoal, o PIN tem que ser o do dono do aparelho.
+ * Identificação no aparelho: aparelho ativo e PIN de um funcionário ativo de uma
+ * das empresas que o aparelho atende. No celular pessoal, o PIN tem que ser o do
+ * dono do aparelho.
  */
 export async function identificarNoAparelho(params: {
+  /** Empresa do aparelho. */
   empresaId: string;
   dispositivoId: string;
   pin: string;
   /** Foto pequena da tentativa: vai para a auditoria se a tentativa causar bloqueio. */
   miniatura?: Buffer | null;
-  /** Empresa já sendo carregada por quem chamou (evita ler duas vezes). */
+  /** Empresa do aparelho já sendo carregada por quem chamou (evita ler duas vezes). */
   empresa?: Promise<Empresa>;
+  /** Busca do dono do PIN já em andamento (buscarDonoDoPin). */
+  dono?: Promise<DonoDoPin | null>;
 }): Promise<Identificacao> {
   const { empresaId, dispositivoId, pin, miniatura = null } = params;
-  const empresaRef = db.doc(`empresas/${empresaId}`);
-  const dispositivoRef = empresaRef.collection("dispositivos").doc(dispositivoId);
+  const empresaDoAparelhoRef = db.doc(`empresas/${empresaId}`);
+  const dispositivoRef = empresaDoAparelhoRef.collection("dispositivos").doc(dispositivoId);
   // O dono do PIN é procurado (uma leitura, pelo índice) junto com o aparelho.
-  const indice = await indiceDoPin(empresaId, pin);
-  const doIndice = empresaRef.collection("pins").doc(indice).get();
+  const doIndice = params.dono ?? buscarDonoDoPin(pin);
   doIndice.catch(() => undefined);
-  const [empresa, dispositivoSnap] = await Promise.all([params.empresa ?? carregarEmpresa(empresaId), dispositivoRef.get()]);
-  const dispositivo = exigirAparelhoAtivo(dispositivoSnap.data(), empresa);
+  const [empresaDoAparelho, dispositivoSnap, indice] = await Promise.all([
+    params.empresa ?? carregarEmpresa(empresaId),
+    dispositivoRef.get(),
+    indiceDoPin(pin),
+  ]);
+  const dispositivo = exigirAparelhoAtivo(dispositivoSnap.data(), empresaDoAparelho);
   const dispositivoNome = String(dispositivo.nome ?? "");
-  // Celular pessoal: só o dono bate ponto nele.
+  // Celular pessoal: só o dono (funcionário da empresa do aparelho) bate ponto nele.
   const donoId = typeof dispositivo.funcionarioId === "string" && dispositivo.funcionarioId !== "" ? dispositivo.funcionarioId : null;
+  const atendidas = donoId ? [empresaId] : empresasDoAparelho(empresaId, dispositivo);
 
-  const reserva = await reservarTentativa(dispositivoRef, donoId ? empresaRef.collection("credenciais").doc(donoId) : null);
+  const reserva = await reservarTentativa(dispositivoRef, donoId ? empresaDoAparelhoRef.collection("credenciais").doc(donoId) : null);
 
-  const indexado: unknown = (await doIndice).get("funcionarioId");
-  let funcionarioId = typeof indexado === "string" ? indexado : null;
+  let dono = await doIndice;
   let pinAntigo = false;
-  if (!funcionarioId) {
+  if (!dono) {
     // Fora do índice, só pode ser um PIN antigo (ou um PIN errado).
-    const antigos = await donosDoPinAntigo((await credenciaisComPinAntigo(empresaRef).get()).docs, empresaId, pin);
-    const candidatos = donoId ? antigos.filter((id) => id === donoId) : antigos;
+    const antigos = await donosDoPinAntigo(atendidas, pin);
+    const candidatos = donoId ? antigos.filter((d) => d.empresaId === empresaId && d.funcionarioId === donoId) : antigos;
     if (candidatos.length > 1) {
-      await avisarPinRepetido(empresaRef, candidatos, dispositivoId, dispositivoNome);
+      await avisarPinRepetido(candidatos, dispositivoId, dispositivoNome);
       throw erroPinRepetido();
     }
-    funcionarioId = candidatos[0] ?? null;
-    pinAntigo = funcionarioId !== null;
+    dono = candidatos[0] ?? null;
+    pinAntigo = dono !== null;
   }
-  if (donoId && funcionarioId !== donoId) funcionarioId = null;
+  // PIN de quem não bate ponto aqui (outra empresa ou, no celular pessoal, outra pessoa): PIN incorreto.
+  if (dono && (!atendidas.includes(dono.empresaId) || (donoId !== null && dono.funcionarioId !== donoId))) dono = null;
 
-  const credenciaisRef = funcionarioId ? empresaRef.collection("credenciais").doc(funcionarioId) : null;
-  const [funcionarioSnap, credenciaisSnap] =
-    funcionarioId && credenciaisRef
-      ? await Promise.all([empresaRef.collection("funcionarios").doc(funcionarioId).get(), credenciaisRef.get()])
-      : [null, null];
+  const empresaRef = dono ? db.doc(`empresas/${dono.empresaId}`) : null;
+  const [funcionarioSnap, credenciaisSnap, empresa] =
+    dono && empresaRef
+      ? await Promise.all([
+          empresaRef.collection("funcionarios").doc(dono.funcionarioId).get(),
+          empresaRef.collection("credenciais").doc(dono.funcionarioId).get(),
+          dono.empresaId === empresaId ? empresaDoAparelho : carregarEmpresa(dono.empresaId),
+        ])
+      : [null, null, null];
   const funcionario = funcionarioSnap?.get("ativo") === true ? funcionarioSnap.data() : undefined;
   // O índice e as credenciais são gravados juntos: conferir os dois protege de um índice desatualizado.
   const acertou = funcionario !== undefined && (pinAntigo || mesmaChave(credenciaisSnap?.get("pinIndice"), indice));
 
-  if (!acertou || !funcionario || !funcionarioId || !credenciaisRef) {
+  if (!acertou || !dono || !empresaRef || !empresa || !funcionario || !credenciaisSnap) {
     // O PIN nunca vai para o log.
     logger.warn("PIN incorreto no aparelho", { empresaId, dispositivoId, donoId });
-    await auditarBloqueios({ reserva, empresaRef, dispositivoId, dispositivoNome, donoId, miniatura });
+    await auditarBloqueios({ reserva, empresaRef: empresaDoAparelhoRef, dispositivoId, dispositivoNome, donoId, miniatura });
     throw credenciaisInvalidas();
   }
 
-  if (pinAntigo) await passarParaOIndice(empresaRef, funcionarioId, indice);
-  await confirmarAcerto(dispositivoRef, credenciaisRef, reserva.janelaAparelho);
-  return { empresa, empresaRef, dispositivoRef, dispositivo, funcionarioId, funcionario, credenciaisRef };
+  if (pinAntigo) await passarParaOIndice(dono, indice);
+  await confirmarAcerto(dispositivoRef, credenciaisSnap.ref, reserva.janelaAparelho);
+  if (!empresa.ativo) {
+    throw new HttpsError("failed-precondition", "A empresa deste funcionário está desativada. Procure o gestor.", { motivo: "empresa-desativada" });
+  }
+  return { empresa, empresaRef, dispositivoRef, dispositivo, funcionarioId: dono.funcionarioId, funcionario, credenciaisRef: credenciaisSnap.ref };
 }

@@ -1,11 +1,11 @@
-import { collection } from 'firebase/firestore'
+import { collection, getDocs } from 'firebase/firestore'
 import { Pencil, Search, Shuffle, UserPlus, Users } from 'lucide-react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { api } from '../../api'
 import { Aviso, CabecalhoPagina, Campo, Carregando, Selo, Vazio } from '../../componentes/Basicos'
 import Modal from '../../componentes/Modal'
 import { useNotificar } from '../../componentes/Notificacoes'
-import { useEmpresaAtual } from '../../contexto/Empresa'
+import { useEmpresaAtual, useEmpresas } from '../../contexto/Empresa'
 import { db } from '../../banco'
 import { useColecao } from '../../hooks/useColecao'
 import { mensagemErro } from '../../lib/erros'
@@ -153,9 +153,14 @@ function FormFuncionario({
 }) {
   const notificar = useNotificar()
   const novo = funcionario === null
+  // Funcionário novo: dá para cadastrar em outra empresa (ex.: do mesmo grupo, que divide o aparelho da loja).
+  const empresasPossiveis = ordenarPorNome(useEmpresas().empresas.filter((e) => e.ativo || e.id === empresa.id))
+  const [empresaId, setEmpresaId] = useState(empresa.id)
+  const empresaEscolhida = empresasPossiveis.find((e) => e.id === empresaId) ?? empresa
   const [nome, setNome] = useState(funcionario?.nome ?? '')
   const [cpf, setCpf] = useState(funcionario ? formatarCpf(funcionario.cpf) : '')
   const [matricula, setMatricula] = useState(funcionario?.matricula ?? proximaMatricula(todos))
+  const matriculaSugerida = useRef(matricula)
   const [cargo, setCargo] = useState(funcionario?.cargo ?? '')
   const [admissao, setAdmissao] = useState(funcionario?.admissao ?? '')
   const [jornada, setJornada] = useState(() => (funcionario?.jornada ?? JORNADA_PADRAO).map((m) => minutosParaHHMM(m)))
@@ -165,6 +170,21 @@ function FormFuncionario({
   const [pin, setPin] = useState(() => (novo || !funcionario?.pinDefinido ? gerarPin() : ''))
   const [salvando, setSalvando] = useState(false)
   const [erro, setErro] = useState('')
+
+  // A matrícula sugerida é a próxima da empresa escolhida (sem apagar uma digitada).
+  async function escolherEmpresa(id: string) {
+    setEmpresaId(id)
+    let sugestao = proximaMatricula(todos)
+    if (id !== empresa.id) {
+      try {
+        sugestao = proximaMatricula((await getDocs(collection(db, 'empresas', id, 'funcionarios'))).docs.map(paraFuncionario))
+      } catch {
+        return
+      }
+    }
+    if (matricula === matriculaSugerida.current) setMatricula(sugestao)
+    matriculaSugerida.current = sugestao
+  }
 
   async function salvar() {
     setErro('')
@@ -181,7 +201,7 @@ function FormFuncionario({
     setSalvando(true)
     try {
       await api.salvarFuncionario({
-        empresaId: empresa.id,
+        empresaId,
         ...(funcionario ? { id: funcionario.id } : {}),
         nome: nome.trim(),
         cpf: somenteDigitos(cpf),
@@ -192,7 +212,11 @@ function FormFuncionario({
         ativo,
         ...(alterarPin ? { pin } : {}),
       })
-      const feito = novo ? 'Funcionário cadastrado.' : 'Funcionário atualizado.'
+      const feito = novo
+        ? empresaId === empresa.id
+          ? 'Funcionário cadastrado.'
+          : `Funcionário cadastrado em ${empresaEscolhida.nome} (aparece na lista dessa empresa).`
+        : 'Funcionário atualizado.'
       notificar(alterarPin ? `${feito} Passe o PIN ${pin} para ${nome.trim()}.` : feito)
       aoFechar()
     } catch (e) {
@@ -219,6 +243,17 @@ function FormFuncionario({
         </>
       }
     >
+      {novo && empresasPossiveis.length > 1 && (
+        <Campo rotulo="Empresa do funcionário" ajuda="As marcações dele vão para esta empresa, em qualquer aparelho que a atenda.">
+          <select value={empresaId} onChange={(e) => void escolherEmpresa(e.target.value)}>
+            {empresasPossiveis.map((e) => (
+              <option key={e.id} value={e.id}>
+                {e.nome}
+              </option>
+            ))}
+          </select>
+        </Campo>
+      )}
       <div className="grade-2">
         <Campo rotulo="Nome completo">
           <input value={nome} onChange={(e) => setNome(e.target.value)} maxLength={120} autoFocus />
@@ -226,7 +261,7 @@ function FormFuncionario({
         <Campo rotulo="CPF">
           <input value={cpf} onChange={(e) => setCpf(e.target.value)} inputMode="numeric" placeholder="000.000.000-00" maxLength={14} />
         </Campo>
-        <Campo rotulo="Matrícula" ajuda="Número que o funcionário digita no ponto.">
+        <Campo rotulo="Matrícula" ajuda="Número do funcionário na empresa (aparece nos relatórios).">
           <input value={matricula} onChange={(e) => setMatricula(somenteDigitos(e.target.value))} inputMode="numeric" maxLength={10} />
         </Campo>
         <Campo rotulo="Cargo (opcional)">
@@ -269,7 +304,8 @@ function FormFuncionario({
       <fieldset className="grupo">
         <legend>PIN do ponto</legend>
         <p className="texto-suave">
-          O funcionário bate o ponto digitando só este PIN de {TAMANHO_PIN} números, por isso cada funcionário tem um PIN diferente.
+          O funcionário bate o ponto digitando só este PIN de {TAMANHO_PIN} números, por isso cada funcionário (de todas as empresas)
+          tem um PIN diferente.
           Passe o PIN para ele; se ele esquecer ou outra pessoa descobrir, troque aqui (trocar também desbloqueia quem errou demais).
           {!novo && !funcionario?.pinDefinido && ' Este funcionário ainda não tem o PIN de 4 números: salve um para ele bater o ponto.'}
         </p>

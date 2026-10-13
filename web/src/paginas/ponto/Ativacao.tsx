@@ -5,7 +5,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { api } from '../../api'
 import { bancoDe } from '../../banco'
 import { Aviso, BotaoGoogle, Campo } from '../../componentes/Basicos'
-import UsoDoAparelho from '../../componentes/UsoDoAparelho'
+import UsoDoAparelho, { EmpresasAtendidas } from '../../componentes/UsoDoAparelho'
 import { CHAVE_APARELHO, useSessao } from '../../contexto/Sessao'
 import { auth, criarSessaoTemporaria, entrarComGoogle, NOME_SISTEMA, type SessaoTemporaria } from '../../firebase'
 import { cancelouJanela, mensagemErro } from '../../lib/erros'
@@ -28,6 +28,8 @@ export default function Ativacao() {
   const [nome, setNome] = useState('')
   // Celular pessoal: id do funcionário dono ('' = aparelho da loja).
   const [donoId, setDonoId] = useState('')
+  // Aparelho da loja: outras empresas cujos funcionários também batem ponto nele.
+  const [outras, setOutras] = useState<string[]>([])
   const nomeSugerido = useRef('')
   const [carregados, setCarregados] = useState<{ empresaId: string; funcionarios: Funcionario[]; erro: string } | null>(null)
   const [erro, setErro] = useState('')
@@ -76,6 +78,7 @@ export default function Ativacao() {
 
   function escolherEmpresa(id: string) {
     setEmpresaId(id)
+    setOutras((atuais) => atuais.filter((outra) => outra !== id))
     setDonoId('')
     sugerirNome('')
   }
@@ -130,7 +133,7 @@ export default function Ativacao() {
     setOcupado(true)
     try {
       const credenciais = await api.ativarDispositivo(
-        { empresaId, nome: nome.trim(), funcionarioId: dono?.id ?? null },
+        { empresaId, nome: nome.trim(), funcionarioId: dono?.id ?? null, empresas: dono ? [] : outras },
         temporaria.current.functions,
       )
       // O aparelho fica sempre conectado (a sessão do painel pode ser só desta janela).
@@ -193,6 +196,7 @@ export default function Ativacao() {
               </select>
             </Campo>
             <UsoDoAparelho funcionarios={funcionarios} valor={dono?.id ?? ''} aoMudar={escolherDono} />
+            {!dono && <EmpresasAtendidas opcoes={empresas.filter((e) => e.id !== empresaId)} marcadas={outras} aoMudar={setOutras} />}
             {erroFuncionarios && <Aviso tipo="alerta">{erroFuncionarios}</Aviso>}
             <Campo rotulo="Nome do aparelho" ajuda="Aparece no painel e em cada marcação.">
               <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Tablet do caixa" maxLength={60} />

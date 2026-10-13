@@ -205,24 +205,27 @@ type ResultadoEnvio =
  * aparelho tenta de novo depois.
  */
 export const registrarPontoGuardado = onCall({ memory: "512MiB", cpu: 1, maxInstances: 1 }, async (request): Promise<ResultadoEnvio> => {
-  const { dispositivoId, empresaId } = exigirDispositivo(request);
+  const { dispositivoId, empresaId: empresaDoAparelhoId } = exigirDispositivo(request);
   const recebidoEm = Date.now();
-  const empresaRef = db.doc(`empresas/${empresaId}`);
-  const dispositivoRef = empresaRef.collection("dispositivos").doc(dispositivoId);
-  const [{ privada, segredoAncora }, empresa, dispositivoSnap] = await Promise.all([obterChaves(), carregarEmpresa(empresaId), dispositivoRef.get()]);
+  const dispositivoRef = db.doc(`empresas/${empresaDoAparelhoId}/dispositivos/${dispositivoId}`);
+  const [{ privada, segredoAncora }, empresaDoAparelho, dispositivoSnap] = await Promise.all([
+    obterChaves(),
+    carregarEmpresa(empresaDoAparelhoId),
+    dispositivoRef.get(),
+  ]);
   const dispositivo = dispositivoSnap.data();
   // Aparelho desativado não envia nada: as batidas ficam nele e o gestor lança pelo painel, se for o caso.
   if (!dispositivo || dispositivo.ativo !== true) {
     throw new HttpsError("permission-denied", "Este aparelho foi desativado. Peça ao gestor para ativá-lo novamente.");
   }
   const dispositivoNome = String(dispositivo.nome ?? "");
-  const fuso = empresa.fusoHorario;
 
+  // Recusas vão para a auditoria da empresa do aparelho (antes da identificação, não se sabe de quem é a batida).
   const recusar = async (motivo: string, extra: { horario?: number; miniatura?: Buffer | null } = {}): Promise<ResultadoEnvio> => {
-    const quando = extra.horario ? ` de ${dataHoraBR(new Date(extra.horario), fuso)}` : "";
-    logger.warn("Batida sem internet recusada", { empresaId, dispositivoId, motivo });
+    const quando = extra.horario ? ` de ${dataHoraBR(new Date(extra.horario), empresaDoAparelho.fusoHorario)}` : "";
+    logger.warn("Batida sem internet recusada", { empresaId: empresaDoAparelhoId, dispositivoId, motivo });
     await registrarAuditoria({
-      empresaId,
+      empresaId: empresaDoAparelhoId,
       autor: { uid: dispositivoId, nome: `Aparelho "${dispositivoNome}"` },
       acao: "ponto.semInternetRecusado",
       descricao: `Batida feita sem internet${quando} no aparelho "${dispositivoNome}" recusada: ${motivo}`,
@@ -272,20 +275,24 @@ export const registrarPontoGuardado = onCall({ memory: "512MiB", cpu: 1, maxInst
     return recusar(avaliacao.motivo, { miniatura, horario: ancora.em + (relogioAgora - relogioNaAncora) });
   }
   const extra = { miniatura, horario: avaliacao.horario };
-  if (!empresa.ativo) return recusar("a empresa está desativada.", extra);
+  if (!empresaDoAparelho.ativo) return recusar("a empresa está desativada.", extra);
 
   // PIN conferido como numa batida online, com os mesmos bloqueios.
   let identificacao: Identificacao;
   try {
-    identificacao = await identificarNoAparelho({ empresaId, dispositivoId, pin, miniatura });
+    identificacao = await identificarNoAparelho({ empresaId: empresaDoAparelhoId, dispositivoId, pin, miniatura, empresa: Promise.resolve(empresaDoAparelho) });
   } catch (erro) {
     const motivo = (erro as { details?: { motivo?: string } }).details?.motivo;
     if (motivo === "credenciais-invalidas") return recusar("PIN incorreto.", extra);
     if (motivo === "pin-repetido") return recusar("o PIN é de mais de um funcionário (troque o PIN deles em Funcionários).", extra);
+    if (motivo === "empresa-desativada") return recusar("a empresa do funcionário está desativada.", extra);
     // Bloqueio temporário ou falha: a batida continua guardada e vai de novo depois.
     throw erro;
   }
-  const { funcionarioId, funcionario, credenciaisRef } = identificacao;
+  // A batida vai para a empresa do funcionário (o aparelho pode atender várias).
+  const { empresa, empresaRef, funcionarioId, funcionario, credenciaisRef } = identificacao;
+  const empresaId = empresa.id;
+  const fuso = empresa.fusoHorario;
 
   const dataHora = new Date(avaliacao.horario);
   const dia = dataLocal(dataHora, fuso);

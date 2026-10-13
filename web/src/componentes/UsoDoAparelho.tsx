@@ -52,3 +52,43 @@ export default function UsoDoAparelho({
     </>
   )
 }
+
+/**
+ * Outras empresas cujos funcionários também batem ponto no aparelho da loja (ex.:
+ * empresas do mesmo grupo na mesma loja). O PIN diz quem é, e a marcação vai
+ * para a empresa do funcionário. fixas: empresas atendidas que quem está
+ * editando não gerencia (continuam como estão).
+ */
+export function EmpresasAtendidas({
+  opcoes,
+  marcadas,
+  aoMudar,
+  fixas = 0,
+}: {
+  opcoes: { id: string; nome: string }[]
+  marcadas: string[]
+  aoMudar: (ids: string[]) => void
+  fixas?: number
+}) {
+  if (opcoes.length === 0 && fixas === 0) return null
+  return (
+    <fieldset className="grupo">
+      <legend>Outras empresas neste aparelho</legend>
+      <p className="texto-suave">
+        Marque as empresas cujos funcionários também batem ponto aqui. O PIN diz quem é, e a marcação vai para a empresa do
+        funcionário.
+      </p>
+      {opcoes.map((empresa) => (
+        <label key={empresa.id} className="caixa-marcar">
+          <input
+            type="checkbox"
+            checked={marcadas.includes(empresa.id)}
+            onChange={(e) => aoMudar(e.target.checked ? [...marcadas, empresa.id] : marcadas.filter((id) => id !== empresa.id))}
+          />
+          <span>{empresa.nome}</span>
+        </label>
+      ))}
+      {fixas > 0 && <small className="texto-suave">Atende também {fixas === 1 ? '1 empresa' : `${fixas} empresas`} que você não gerencia.</small>}
+    </fieldset>
+  )
+}
