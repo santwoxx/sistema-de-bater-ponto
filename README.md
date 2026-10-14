@@ -377,11 +377,23 @@ No GitHub, cada envio roda o `npm run verificar`, a auditoria das dependências 
 
 ## Aspectos legais: leia antes de usar com a equipe
 
-> **Este sistema não é um REP-P homologado.** Confirme com o contador ou o advogado trabalhista de cada empresa antes de usá-lo como controle oficial de jornada.
+> **Para valer como REP-P, ainda faltam o registro no INPI, o AEJ e o Atestado Técnico e Termo de Responsabilidade (ver abaixo).** Para REP-P não existe homologação do governo: o desenvolvedor declara, sob responsabilidade dele, que o programa cumpre a portaria. Confirme com o contador ou o advogado trabalhista de cada empresa antes de usá-lo como controle oficial de jornada.
 
 - Pela CLT (art. 74, §2º), estabelecimentos com **mais de 20 empregados** são obrigados a registrar entrada e saída.
 - O registro **eletrônico** de ponto é regulado pela **Portaria MTP nº 671/2021**. Para sistemas via programa (**REP-P**), ela exige, entre outros pontos, registro do programa no **INPI**, comprovante para o trabalhador, geração dos arquivos **AFD** e **AEJ** e assinatura eletrônica.
-- O sistema já tem a base que essas regras pedem: horário do servidor, NSR sequencial, marcações imutáveis, ajustes justificados, trilha de auditoria, comprovante na tela e espelho mensal congelado. **Ainda faltam** os arquivos AFD/AEJ, a assinatura digital com certificado (ICP-Brasil) dos arquivos, o comprovante enviado ao trabalhador e o registro no INPI.
+- **O que o sistema já faz da Portaria 671 (REP-P):**
+  - **Armazenamento de Registro de Ponto (ARP, Anexo IX):** marcações, inclusão e alteração do empregador e inclusão, alteração e exclusão de empregados, com NSR numa sequência única por empresa (começando em 1), encadeadas por hash e conferidas pela verificação de integridade. Nada da ARP é apagado ou alterado.
+  - **Código hash SHA-256 de cada marcação**, encadeado à anterior, como pede o registro do tipo 7 do AFD; ele vai no comprovante.
+  - **AFD (art. 81 e Anexo V):** Exportar dados → AFD, para qualquer período, no leiaute 003 (cabeçalho, tipos 2, 5 e 7, trailer, CRC-16 nos tipos 1 a 5). Com o certificado enviado, sai num ZIP com a assinatura CAdES em arquivo separado (`.p7s`).
+  - **Comprovante do trabalhador (arts. 79 e 80):** em PDF assinado (PAdES) com o certificado do desenvolvedor. O funcionário baixa em `/comprovantes` com o CPF e o PIN, a qualquer hora, os dos últimos 31 dias (a portaria pede pelo menos 48 horas); a tela do aparelho mostra o endereço depois de cada batida.
+  - **Relógio:** a hora vem do servidor (sincronizado com a hora oficial), e a tela do aparelho mostra horas, minutos e segundos.
+  - **Configuração (Administração → Portaria 671):** número do registro no INPI, CNPJ ou CPF do desenvolvedor e o certificado digital A1. A página lista o que falta cadastrar (CNPJ e endereço das empresas, CPF dos usuários, que vai no AFD como responsável pelas alterações).
+- **O que ainda falta para valer como REP-P:**
+  - **AEJ** (art. 83 e Anexo VI), que precisa do horário contratual de entrada e saída de cada funcionário (hoje o cadastro tem só a duração da jornada).
+  - **Registro do programa no INPI** e o número dele configurado no sistema.
+  - **Certificado digital A1 ICP-Brasil do desenvolvedor** (o A3, em token ou cartão, não assina sozinho no servidor).
+  - **Atestado Técnico e Termo de Responsabilidade** (art. 89), assinado pelo responsável técnico e pelo responsável legal do desenvolvedor, para cada empresa cliente (por CNPJ matriz).
+  - **A CRC-16 do AFD** não tem a variante definida na portaria: o sistema usa a CRC-16/KERMIT. As assinaturas seguem CAdES e PAdES; vale conferi-las no validador do ITI (validar.iti.gov.br) com o certificado definitivo.
 - **Assinatura do espelho:** é feita em papel, no espelho impresso pelo painel (versão congelada no fechamento). Guarde as folhas assinadas.
 - **LGPD:** a foto é dado pessoal. O sistema a usa só como prova visual da batida e não faz reconhecimento facial (que seria dado biométrico sensível). Informe os funcionários por escrito sobre a coleta, a finalidade e o prazo de guarda. Mantenha os registros por pelo menos 5 anos (prazo de prescrição trabalhista).
 
@@ -397,4 +409,4 @@ No GitHub, cada envio roda o `npm run verificar`, a auditoria das dependências 
 - **A foto não prova que a pessoa estava lá.** Não há detecção de vivacidade: uma foto de foto passaria. A foto serve de evidência para o gestor conferir.
 - **Quem tem acesso físico a um computador usado como ponto** pode copiar a sessão do aparelho. Ainda assim, só consegue bater ponto com um PIN certo (com os bloqueios acima e a foto de quem bateu). Prefira tablet em modo quiosque e desative aparelhos perdidos pelo painel.
 - **O dono do projeto Firebase** tem acesso total ao banco pelo Console. A cadeia de hashes torna qualquer alteração visível na verificação de integridade, mas não a impede.
-- **Próximos passos sugeridos:** arquivos AFD/AEJ (Portaria 671), banco de horas acumulado, envio do comprovante por e-mail, Firebase App Check, verificação em duas etapas (MFA) para quem entra com senha e alerta de solicitações pendentes por e-mail ou WhatsApp.
+- **Próximos passos sugeridos:** AEJ e horário contratual (Portaria 671), banco de horas acumulado, envio do comprovante por e-mail, Firebase App Check, verificação em duas etapas (MFA) para quem entra com senha e alerta de solicitações pendentes por e-mail ou WhatsApp.

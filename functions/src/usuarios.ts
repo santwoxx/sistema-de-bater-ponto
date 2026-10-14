@@ -3,7 +3,7 @@ import { HttpsError, type CallableRequest } from "firebase-functions/https";
 import { auth, db } from "./admin";
 import { autor, erroAuth, exigirAdmin } from "./acesso";
 import { auditarNa } from "./auditoria";
-import { booleano, email, idOpcional, listaIds, objeto, opcao, senha, texto } from "./validacao";
+import { booleano, cpf, email, idOpcional, listaIds, objeto, opcao, senha, texto } from "./validacao";
 
 export async function salvarUsuario(request: CallableRequest) {
   const admin = await exigirAdmin(request);
@@ -15,6 +15,8 @@ export async function salvarUsuario(request: CallableRequest) {
   const papel = opcao(dados.papel, "Papel", ["admin", "gestor"] as const);
   const empresas = papel === "admin" ? [] : listaIds(dados.empresas ?? [], "Empresas", 300);
   const ativo = dados.ativo === undefined ? true : booleano(dados.ativo, "Ativo");
+  // CPF: vai no AFD (Portaria 671) como responsável pelas alterações que a pessoa fizer no REP.
+  const cpfUsuario = dados.cpf ? cpf(dados.cpf) : "";
   // Sem senha inicial, a pessoa entra com a conta Google deste e-mail ou cria a
   // própria senha pelo "Esqueci minha senha" (assim o administrador não a conhece).
   const novaSenha = dados.senha ? senha(dados.senha, emailUsuario) : null;
@@ -47,7 +49,7 @@ export async function salvarUsuario(request: CallableRequest) {
     if (mesmoEmail && mesmoEmail.uid !== uidExistente) throw new HttpsError("already-exists", "Já existe um usuário com este e-mail.");
     // O banco muda primeiro: papel, empresas e desativação valem na hora para as regras e funções.
     const lote = db.batch();
-    lote.set(ref, { nome, email: emailUsuario, papel, empresas, ativo, atualizadoEm: agora }, { merge: true });
+    lote.set(ref, { nome, email: emailUsuario, cpf: cpfUsuario, papel, empresas, ativo, atualizadoEm: agora }, { merge: true });
     auditarNa(lote, auditoria(uidExistente));
     await lote.commit();
     try {
@@ -75,7 +77,7 @@ export async function salvarUsuario(request: CallableRequest) {
   }
   try {
     const lote = db.batch();
-    lote.create(db.doc(`usuarios/${uid}`), { nome, email: emailUsuario, papel, empresas, ativo, criadoEm: agora, atualizadoEm: agora });
+    lote.create(db.doc(`usuarios/${uid}`), { nome, email: emailUsuario, cpf: cpfUsuario, papel, empresas, ativo, criadoEm: agora, atualizadoEm: agora });
     auditarNa(lote, auditoria(uid));
     await lote.commit();
   } catch (erro) {

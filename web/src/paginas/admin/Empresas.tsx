@@ -97,6 +97,7 @@ function FormEmpresa({ empresa, aoFechar, aoCriar }: { empresa: Empresa | null; 
   const notificar = useNotificar()
   const [nome, setNome] = useState(empresa?.nome ?? '')
   const [cnpj, setCnpj] = useState(empresa?.cnpj ? formatarCnpj(empresa.cnpj) : '')
+  const [endereco, setEndereco] = useState(empresa?.endereco ?? '')
   const [fusoHorario, setFusoHorario] = useState(empresa?.fusoHorario ?? 'America/Sao_Paulo')
   const [intervalo, setIntervalo] = useState(String(empresa?.intervaloMinimoMinutos ?? 2))
   const [tolerancia, setTolerancia] = useState(String(empresa?.toleranciaMinutos ?? 10))
@@ -125,6 +126,7 @@ function FormEmpresa({ empresa, aoFechar, aoCriar }: { empresa: Empresa | null; 
         ...(empresa ? { id: empresa.id } : {}),
         nome: nome.trim(),
         cnpj: cnpj.trim(),
+        endereco: endereco.trim(),
         fusoHorario,
         intervaloMinimoMinutos,
         toleranciaMinutos,
@@ -162,6 +164,9 @@ function FormEmpresa({ empresa, aoFechar, aoCriar }: { empresa: Empresa | null; 
       </Campo>
       <Campo rotulo="CNPJ (opcional)" ajuda="Aceita o CNPJ numérico e o novo CNPJ alfanumérico.">
         <input value={cnpj} onChange={(e) => setCnpj(e.target.value.toUpperCase())} maxLength={18} placeholder="00.000.000/0000-00" />
+      </Campo>
+      <Campo rotulo="Endereço (local da prestação do serviço)" ajuda="Vai no comprovante do trabalhador e no AFD (Portaria 671).">
+        <input value={endereco} onChange={(e) => setEndereco(e.target.value)} maxLength={100} placeholder="Rua, número, bairro, cidade/UF" />
       </Campo>
       <Campo rotulo="Fuso horário da loja" ajuda="Define o dia e a hora das marcações desta empresa.">
         <select value={fusoHorario} onChange={(e) => setFusoHorario(e.target.value)}>

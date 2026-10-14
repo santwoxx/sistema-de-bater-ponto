@@ -29,6 +29,10 @@
     { "collectionGroup": "registros", "fieldPath": "miniatura", "indexes": [] },
     { "collectionGroup": "registros", "fieldPath": "hash", "indexes": [] },
     { "collectionGroup": "registros", "fieldPath": "hashAnterior", "indexes": [] },
+    { "collectionGroup": "registros", "fieldPath": "rep.hash", "indexes": [] },
+    { "collectionGroup": "registros", "fieldPath": "rep.hashAnterior", "indexes": [] },
+    { "collectionGroup": "arp", "fieldPath": "hash", "indexes": [] },
+    { "collectionGroup": "arp", "fieldPath": "hashAnterior", "indexes": [] },
     { "collectionGroup": "espelhos", "fieldPath": "documento", "indexes": [] },
     { "collectionGroup": "versoes", "fieldPath": "documento", "indexes": [] },
     { "collectionGroup": "auditoria", "fieldPath": "detalhes", "indexes": [] }

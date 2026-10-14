@@ -28,7 +28,7 @@ jobs:
       - run: npm run preparar
       - run: npm run verificar
       - name: Dependências do backend sem vulnerabilidades altas
-        run: npm audit --prefix functions --omit=dev --audit-level=high
+        run: node scripts/auditar-dependencias.mjs
 
   ponta-a-ponta:
     needs: verificar

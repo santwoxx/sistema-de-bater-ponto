@@ -2,7 +2,8 @@
 // Exige Java 21+ e o Firebase CLI. Na pasta "web":  npm run test:e2e
 
 import assert from 'node:assert/strict'
-import { createHash, createHmac, randomBytes } from 'node:crypto'
+import { createHash, createHmac, createPublicKey, generateKeyPairSync, randomBytes, verify } from 'node:crypto'
+import { createRequire } from 'node:module'
 import { initializeApp } from 'firebase/app'
 import {
   connectAuthEmulator,
@@ -55,6 +56,9 @@ const ACOES_DO_PAINEL = new Set([
   'incluirMarcacao',
   'desconsiderarMarcacao',
   'apagarMarcacao',
+  'salvarConfiguracaoRep',
+  'salvarCertificado',
+  'removerCertificado',
   'incluirAbono',
   'removerAbono',
   'criarSolicitacao',
@@ -108,6 +112,12 @@ async function comoDono(metodo, caminho, corpo) {
   return resposta.json()
 }
 
+// Último NSR da empresa: o contador fica num documento que só o servidor lê. Desde a
+// Portaria 671 (ARP), a inclusão do empregador e dos empregados também tem NSR.
+async function nsrAtual(empresaId) {
+  return Number((await comoDono('GET', `empresas/${empresaId}/privado/controle`)).fields?.ultimoNsr?.integerValue ?? 0)
+}
+
 async function falha(promessa, codigo, trecho) {
   try {
     await promessa
@@ -134,6 +144,68 @@ function jpeg(tamanho) {
   return `data:image/jpeg;base64,${Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), randomBytes(tamanho)]).toString('base64')}`
 }
 const sha256 = (dados) => createHash('sha256').update(dados).digest('hex')
+// A mesma biblioteca do servidor, para criar o certificado de teste e ler as assinaturas.
+const forge = createRequire(new URL('../../functions/package.json', import.meta.url))('node-forge')
+const SENHA_CERTIFICADO = 'senha-de-teste'
+
+/** Certificado A1 de teste (autoassinado, não ICP-Brasil), em PKCS#12 como o de verdade, em base64. */
+function certificadoDeTeste() {
+  const { privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 })
+  const chave = forge.pki.privateKeyFromPem(privateKey.export({ type: 'pkcs8', format: 'pem' }).toString())
+  const cert = forge.pki.createCertificate()
+  cert.publicKey = forge.pki.setRsaPublicKey(chave.n, chave.e)
+  cert.serialNumber = '0a1b2c'
+  cert.validity.notBefore = new Date(Date.now() - 86_400_000)
+  cert.validity.notAfter = new Date(Date.now() + 365 * 86_400_000)
+  const nome = [
+    { name: 'commonName', value: 'EMPRESA TESTE:11444777000161' },
+    { name: 'organizationName', value: 'Teste' },
+  ]
+  cert.setSubject(nome)
+  cert.setIssuer(nome)
+  cert.sign(chave, forge.md.sha256.create())
+  const p12 = forge.pkcs12.toPkcs12Asn1(chave, [cert], SENHA_CERTIFICADO, { algorithm: '3des' })
+  return Buffer.from(forge.asn1.toDer(p12).getBytes(), 'binary').toString('base64')
+}
+
+/** Confere uma assinatura CMS destacada (o resumo do conteúdo e a assinatura RSA) com o certificado que vem nela. */
+function assinaturaConfere(cms, conteudo) {
+  const { asn1 } = forge
+  const signedData = asn1.fromDer(forge.util.createBuffer(cms.toString('binary'))).value[1].value[0]
+  const partes = signedData.value
+  const certificado = forge.pki.certificateFromAsn1(partes[3].value[0])
+  const [, , , atributos, , assinatura] = partes[partes.length - 1].value[0].value
+  const resumo = atributos.value.find((a) => asn1.derToOid(a.value[0].value) === '1.2.840.113549.1.9.4').value[1].value[0].value
+  if (!Buffer.from(resumo, 'binary').equals(createHash('sha256').update(conteudo).digest())) return false
+  const der = Buffer.from(asn1.toDer(atributos).getBytes(), 'binary')
+  der[0] = 0x31
+  const publica = createPublicKey(forge.pki.publicKeyToPem(certificado.publicKey))
+  return verify('sha256', der, publica, Buffer.from(assinatura.value, 'binary'))
+}
+
+/** Arquivos de um ZIP sem compressão (o do AFD assinado). */
+function lerZip(zip) {
+  const arquivos = {}
+  let i = 0
+  while (zip.readUInt32LE(i) === 0x04034b50) {
+    const tamanho = zip.readUInt32LE(i + 18)
+    const nome = zip.toString('utf8', i + 30, i + 30 + zip.readUInt16LE(i + 26))
+    const inicio = i + 30 + zip.readUInt16LE(i + 26) + zip.readUInt16LE(i + 28)
+    arquivos[nome] = zip.subarray(inicio, inicio + tamanho)
+    i = inicio + tamanho
+  }
+  return arquivos
+}
+
+// CRC-16/KERMIT (registros 1 a 5 do AFD), feito aqui à parte para conferir o do servidor.
+function crc16(texto) {
+  let crc = 0
+  for (const byte of Buffer.from(texto, 'latin1')) {
+    crc ^= byte
+    for (let bit = 0; bit < 8; bit++) crc = crc & 1 ? (crc >>> 1) ^ 0x8408 : crc >>> 1
+  }
+  return crc.toString(16).toUpperCase().padStart(4, '0')
+}
 const id = () => randomBytes(16).toString('hex')
 
 function dataSaoPaulo(deslocamentoDias = 0) {
@@ -400,8 +472,28 @@ await etapa('no aparelho, só o PIN de 4 números (sem CPF nem matrícula); o ap
 const fotoMaria = jpeg(3000)
 await etapa('registro de ponto com foto gera NSR, hash e comprovante', async () => {
   const idRequisicao = id()
+  // ARP (Portaria 671): antes da 1ª marcação, a inclusão do empregador e dos dois empregados, com NSR.
+  const arp = (await comoDono('GET', `empresas/${empresaA}/arp`)).documents.map((d) => d.fields)
+  assert.deepEqual(
+    arp.map((c) => [Number(c.nsr.integerValue), Number(c.tipo.integerValue), c.operacao?.stringValue ?? null]),
+    [
+      [1, 2, null],
+      [2, 5, 'I'],
+      [3, 5, 'I'],
+    ],
+  )
+  assert.equal(arp[0].razaoSocial.stringValue, 'Loja Centro')
+  assert.equal(arp[0].idtEmpregador.stringValue, '11222333000181')
+  assert.deepEqual([arp[1].cpf.stringValue, arp[1].nome.stringValue], [CPF_MARIA, 'Maria Souza'])
+  const nsrAntes = await nsrAtual(empresaA)
+  assert.equal(nsrAntes, 3)
   primeiro = await aparelho.chamar('registrarPonto', { idRequisicao, pin: PIN_MARIA, foto: fotoMaria, miniatura: jpeg(500) })
-  assert.equal(primeiro.nsr, 1)
+  assert.equal(primeiro.nsr, nsrAntes + 1)
+  // A marcação tem o código hash SHA-256 do AFD (a primeira, sem anterior), que o comprovante mostra.
+  const gravada = (await getDoc(doc(gestora.db, 'empresas', empresaA, 'registros', primeiro.registroId))).data()
+  assert.match(gravada.rep.hash, /^[0-9a-f]{64}$/)
+  assert.equal(gravada.rep.hashAnterior, '')
+  assert.equal(primeiro.codigoVerificacao, gravada.rep.hash.slice(0, 12).toUpperCase())
   assert.equal(primeiro.tipo, 'entrada')
   assert.equal(primeiro.ordinal, 1)
   assert.equal(primeiro.funcionarioNome, 'Maria Souza')
@@ -411,7 +503,7 @@ await etapa('registro de ponto com foto gera NSR, hash e comprovante', async () 
   // Reenvio da mesma requisição (ex.: internet caiu na resposta) não duplica. Vindo da tela de
   // CPF + PIN (aberta desde antes da atualização), o CPF é ignorado: o PIN diz quem é.
   const reenvio = await aparelho.chamar('registrarPonto', { idRequisicao, cpf: CPF_MARIA, pin: PIN_MARIA, foto: fotoMaria, miniatura: jpeg(500) })
-  assert.equal(reenvio.nsr, 1)
+  assert.equal(reenvio.nsr, primeiro.nsr)
   assert.equal(reenvio.registroId, primeiro.registroId)
   // O reenvio também exige o PIN certo: sem ele, não devolve nem o comprovante.
   await falha(
@@ -436,7 +528,8 @@ await etapa('gestora vê a marcação e a foto (pelo servidor), que confere com 
   assert.equal(r.funcionarioId, maria)
   assert.equal(r.origem, 'dispositivo')
   assert.equal(r.dispositivoId, uidAparelho)
-  assert.equal(r.hashAnterior, '0'.repeat(64))
+  // Encadeia com o registro anterior da ARP (a inclusão do João, NSR 3).
+  assert.equal(r.hashAnterior, (await comoDono('GET', `empresas/${empresaA}/arp/000000003`)).fields.hash.stringValue)
   const esperado = sha256(
     [
       r.hashAnterior,
@@ -493,7 +586,7 @@ await etapa('segunda batida vira saída e encadeia com o hash anterior', async (
   // Editar sem enviar o início do controle não o apaga.
   assert.equal((await getDoc(doc(admin.db, 'empresas', empresaA))).get('inicioControle'), dataSaoPaulo())
   const segundo = await aparelho.chamar('registrarPonto', { idRequisicao: id(), pin: PIN_MARIA, foto: jpeg(1200), miniatura: jpeg(300) })
-  assert.equal(segundo.nsr, 2)
+  assert.equal(segundo.nsr, primeiro.nsr + 1)
   assert.equal(segundo.tipo, 'saida')
   assert.equal(segundo.ordinal, 2)
   const regs = (await getDocs(query(collection(gestora.db, 'empresas', empresaA, 'registros'), orderBy('nsr')))).docs.map((d) => d.data())
@@ -507,8 +600,12 @@ await etapa('o gestor troca o PIN: só aceita PIN que não seja de outro funcion
   await falha(trocarPin(PIN_MARIA), 'functions/already-exists', /PIN já é de outro funcionário/)
   await trocarPin(PIN_JOAO)
   await falha(tentativa(PIN_JOAO_INICIAL), 'functions/permission-denied', /PIN incorreto/)
+  // Trocar o PIN é alteração do empregado no REP (tipo 5, "A"), com NSR.
+  const nsrAntes = await nsrAtual(empresaA)
+  const alteracao = (await comoDono('GET', `empresas/${empresaA}/arp/${String(nsrAntes).padStart(9, '0')}`)).fields
+  assert.deepEqual([Number(alteracao.tipo.integerValue), alteracao.operacao.stringValue, alteracao.nome.stringValue], [5, 'A', 'João Lima'])
   const ok = await tentativa(PIN_JOAO)
-  assert.equal(ok.nsr, 3)
+  assert.equal(ok.nsr, nsrAntes + 1)
   assert.equal(ok.funcionarioNome, 'João Lima')
   // Salvar de novo o mesmo PIN não conflita com ele mesmo.
   await trocarPin(PIN_JOAO)
@@ -777,19 +874,19 @@ await etapa('verificação de integridade aponta marcação adulterada direto no
   const limpa = await gestora.chamar('verificarIntegridade', { empresaId: empresaA })
   assert.equal(limpa.totalProblemas, 0)
   assert.equal(limpa.marcacoesAparelho, 3)
-  assert.equal(limpa.ultimoNsr, 3)
+  assert.equal(limpa.ultimoNsr, await nsrAtual(empresaA))
   assert.ok(limpa.marcacoesManuais > 0)
   assert.equal((await integridade()).problemas, 0)
   await falha(outraGestora.chamar('verificarIntegridade', { empresaId: empresaA }), 'functions/permission-denied')
 
   // Alguém muda o horário de uma marcação direto no banco (como pelo Console do Firebase).
-  const alvo = (await getDocs(query(collection(gestora.db, 'empresas', empresaA, 'registros'), where('nsr', '==', 2)))).docs[0]
+  const alvo = (await getDocs(query(collection(gestora.db, 'empresas', empresaA, 'registros'), where('nsr', '==', primeiro.nsr + 1)))).docs[0]
   const original = alvo.get('horaLocal')
   await adulterar(`empresas/${empresaA}/registros/${alvo.id}`, 'horaLocal', '06:00:00')
   const adulterada = await gestora.chamar('verificarIntegridade', { empresaId: empresaA })
   assert.equal(adulterada.totalProblemas, 1)
   assert.equal(adulterada.problemas[0].registroId, alvo.id)
-  assert.match(adulterada.problemas[0].descricao, /NSR 2 .*alterados/)
+  assert.match(adulterada.problemas[0].descricao, new RegExp(`NSR ${primeiro.nsr + 1} .*alterados`))
   // O painel mostra o alerta (faixa no topo) e a auditoria registra.
   assert.equal((await integridade()).problemas, 1)
   const alerta = await getDocs(query(collection(gestora.db, 'empresas', empresaA, 'auditoria'), where('acao', '==', 'integridade.alerta')))
@@ -798,6 +895,13 @@ await etapa('verificação de integridade aponta marcação adulterada direto no
   await adulterar(`empresas/${empresaA}/registros/${alvo.id}`, 'horaLocal', original)
   assert.equal((await gestora.chamar('verificarIntegridade', { empresaId: empresaA })).totalProblemas, 0)
   assert.equal((await integridade()).problemas, 0)
+
+  // Uma operação do REP (a inclusão da Maria) alterada direto no banco também aparece.
+  await adulterar(`empresas/${empresaA}/arp/000000002`, 'nome', 'Outra Pessoa')
+  const operacao = await admin.chamar('verificarIntegridade', { empresaId: empresaA })
+  assert.equal(operacao.totalProblemas, 1)
+  assert.match(operacao.problemas[0].descricao, /NSR 2 \(empregado Outra Pessoa\): dados alterados/)
+  await adulterar(`empresas/${empresaA}/arp/000000002`, 'nome', 'Maria Souza')
 
   // Limite de uso: nos emuladores o máximo é 4 por hora (LIMITE_VERIFICAR_INTEGRIDADE em functions/.env.demo-ponto).
   await gestora.chamar('verificarIntegridade', { empresaId: empresaA })
@@ -822,8 +926,9 @@ await etapa('aparelho bloqueia depois de 10 PINs errados (com foto na auditoria)
   assert.match(bloqueios[0].get('descricao'), /Celular de teste" bloqueado por 15 min depois de 10 tentativas erradas/)
   assert.ok(bloqueios[0].get('detalhes').foto.startsWith('data:image/jpeg;base64,'))
   // O outro aparelho da loja continua funcionando.
+  const nsrAntes = await nsrAtual(empresaA)
   const ok = await aparelho.chamar('registrarPonto', { idRequisicao: id(), pin: PIN_MARIA, foto: jpeg(900), miniatura: jpeg(200) })
-  assert.equal(ok.nsr, 4)
+  assert.equal(ok.nsr, nsrAntes + 1)
 })
 
 await etapa('auditoria registra as ações; a do sistema é só do admin', async () => {
@@ -896,11 +1001,12 @@ await etapa('batida sem internet: guardada cifrada, conferida quando chega e mar
   const enviar = (pacote) => aparelho.chamar('registrarPontoGuardado', { pacote })
 
   // Batida normal: entra na cadeia com o NSR seguinte, marcada "sem internet", no horário certo.
+  const nsrAntes = await nsrAtual(empresaA)
   const ok = await guardar()
   const resultado = await enviar(ok.pacote)
   assert.equal(resultado.resultado, 'registrada')
   assert.equal(resultado.conferir, false)
-  assert.equal(resultado.comprovante.nsr, 5)
+  assert.equal(resultado.comprovante.nsr, nsrAntes + 1)
   assert.ok(Math.abs(resultado.comprovante.dataHora - (semInternet.ancora.em + 2_000)) < 1_000)
   // Reenvio (a resposta se perdeu): mesmo registro, sem duplicar.
   assert.equal((await enviar(ok.pacote)).comprovante.registroId, ok.idRequisicao)
@@ -946,7 +1052,7 @@ await etapa('batida sem internet: guardada cifrada, conferida quando chega e mar
   // A cadeia continua íntegra com as batidas que chegaram depois (NSR maior, horário anterior).
   const integridade = await admin.chamar('verificarIntegridade', { empresaId: empresaA })
   assert.equal(integridade.totalProblemas, 0)
-  assert.equal(integridade.ultimoNsr, 6)
+  assert.equal(integridade.ultimoNsr, await nsrAtual(empresaA))
   // O aparelho nunca lê a chave privada do servidor.
   await falha(getDoc(doc(aparelho.db, 'sistema', 'semInternet')), 'permission-denied')
   await falha(getDoc(doc(admin.db, 'sistema', 'semInternet')), 'permission-denied')
@@ -1047,10 +1153,11 @@ await etapa('aparelho da loja que atende duas empresas: o PIN diz quem é, e a b
   )
 
   // A batida do Fulano vai para a Loja Shopping (NSR e cadeia dela), com a foto na pasta dela.
+  const nsrAntesB = await nsrAtual(empresaB)
   const doFulano = await bater(PIN_FULANO)
   assert.equal(doFulano.funcionarioNome, 'Fulano de Tal')
   assert.equal(doFulano.empresaNome, 'Loja Shopping')
-  assert.equal(doFulano.nsr, 1)
+  assert.equal(doFulano.nsr, nsrAntesB + 1)
   const registro = (await getDoc(doc(outraGestora.db, 'empresas', empresaB, 'registros', doFulano.registroId))).data()
   assert.equal(registro.funcionarioId, fulano)
   assert.equal(registro.dispositivoId, uidAparelho)
@@ -1062,7 +1169,7 @@ await etapa('aparelho da loja que atende duas empresas: o PIN diz quem é, e a b
   assert.equal((await bater(PIN_MARIA)).empresaNome, 'Loja Centro')
   const integridade = await admin.chamar('verificarIntegridade', { empresaId: empresaB })
   assert.equal(integridade.totalProblemas, 0)
-  assert.equal(integridade.ultimoNsr, 1)
+  assert.equal(integridade.ultimoNsr, await nsrAtual(empresaB))
 
   // Sem a Loja Shopping na lista, o PIN dele volta a não valer aqui.
   await empresasDoAparelho(admin, [])
@@ -1083,6 +1190,143 @@ await etapa('aparelho da loja que atende duas empresas: o PIN diz quem é, e a b
   const uidPessoal = credPessoal.email.split('@')[0]
   assert.deepEqual((await getDoc(doc(admin.db, 'empresas', empresaA, 'dispositivos', uidPessoal))).get('empresas'), [empresaA])
   for (const uid of [uidGrupo, uidPessoal]) await admin.chamar('desativarDispositivo', { empresaId: empresaA, dispositivoId: uid })
+})
+
+await etapa('AFD (Portaria 671): leiaute oficial, CRC-16, hash SHA-256 encadeado, INPI e desenvolvedor, CPF do responsável', async () => {
+  // Só o administrador configura e lê os dados do REP-P (número do INPI e desenvolvedor).
+  const configuracao = {
+    inpi: 'BR 51 2026 000123-4',
+    documento: '11.444.777/0001-61',
+    nome: 'Desenvolvedor Teste',
+    email: 'dev@teste.com',
+    programaNome: 'Ponto Digital',
+    programaVersao: '2.0',
+  }
+  await falha(gestora.chamar('salvarConfiguracaoRep', configuracao), 'functions/permission-denied')
+  await falha(admin.chamar('salvarConfiguracaoRep', { ...configuracao, documento: '11.444.777/0001-62' }), 'functions/invalid-argument', /desenvolvedor/)
+  await admin.chamar('salvarConfiguracaoRep', configuracao)
+  await falha(getDoc(doc(gestora.db, 'sistema', 'rep')), 'permission-denied')
+  assert.equal((await getDoc(doc(admin.db, 'sistema', 'rep'))).get('inpi'), '5120260001234')
+
+  // Com o CPF da gestora cadastrado (Usuários), a alteração que ela faz leva o CPF dela.
+  const uidGestora = gestora.auth.currentUser.uid
+  await admin.chamar('salvarUsuario', { uid: uidGestora, nome: 'Gisele Gestora', email: 'gestora@teste.com', cpf: '246.813.579-28', papel: 'gestor', empresas: [empresaA], ativo: true })
+  await gestora.chamar('salvarFuncionario', { ...cadastroMaria(), pin: PIN_MARIA })
+
+  const hoje = dataSaoPaulo()
+  const ontem = dataSaoPaulo(-1)
+  const afd = await gestora.chamar('exportarDados', { empresaId: empresaA, tipo: 'afd', de: ontem, ate: hoje })
+  assert.equal(afd.nomeArquivo, 'AFD512026000123411222333000181REP_P.txt')
+  const texto = Buffer.from(afd.arquivo, 'base64').toString('latin1')
+  assert.ok(texto.endsWith('\r\n'), 'cada linha termina em CR LF')
+  const linhas = texto.slice(0, -2).split('\r\n')
+  assert.equal(linhas.length, afd.quantidade + 3)
+  const [cabecalho, ...registros] = linhas
+  const assinatura = registros.pop()
+  const trailer = registros.pop()
+
+  // Cabeçalho (tipo 1): 302 posições, CNPJ, razão social, INPI só com dígitos, período, leiaute 003, desenvolvedor e CRC-16.
+  assert.equal(cabecalho.length, 302)
+  assert.equal(cabecalho.slice(0, 11), '00000000011')
+  assert.equal(cabecalho.slice(11, 25), '11222333000181')
+  assert.equal(cabecalho.slice(39, 189).trimEnd(), 'Loja Centro')
+  assert.equal(cabecalho.slice(189, 206), '5120260001234    ')
+  assert.equal(cabecalho.slice(206, 226), ontem + hoje)
+  assert.match(cabecalho.slice(226, 250), /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00-0300$/)
+  assert.equal(cabecalho.slice(250, 253), '003')
+  assert.equal(cabecalho.slice(253, 268), '111444777000161')
+  assert.equal(cabecalho.slice(298), crc16(cabecalho.slice(0, 298)))
+
+  // Registros na ordem do NSR, desde a inclusão do empregador (NSR 1), cada tipo com o tamanho do leiaute.
+  const nsrs = registros.map((l) => Number(l.slice(0, 9)))
+  assert.deepEqual(nsrs, [...nsrs].sort((a, b) => a - b))
+  assert.deepEqual([nsrs[0], registros[0][9]], [1, '2'])
+  for (const l of registros) {
+    if (l[9] === '2') {
+      assert.equal(l.length, 331)
+      assert.equal(l.slice(327), crc16(l.slice(0, 327)))
+    } else if (l[9] === '5') {
+      assert.equal(l.length, 118)
+      assert.equal(l.slice(114), crc16(l.slice(0, 114)))
+    } else {
+      assert.equal(l[9], '7')
+      assert.equal(l.length, 137)
+    }
+  }
+  assert.equal(registros[0].slice(49, 63), '11222333000181')
+  // Inclusão da Maria (NSR 2) e a alteração feita agora pela gestora, com o CPF dela.
+  assert.deepEqual([registros[1].slice(34, 35), registros[1].slice(35, 47), registros[1].slice(47, 99).trimEnd()], ['I', `${CPF_MARIA} `, 'Maria Souza'])
+  const alteracao = registros.filter((l) => l[9] === '5').at(-1)
+  assert.deepEqual([alteracao.slice(34, 35), alteracao.slice(103, 114)], ['A', '24681357928'])
+
+  // Hash SHA-256 de cada marcação: campos 1 a 7 do registro, seguidos do hash da marcação anterior.
+  let anterior = ''
+  for (const l of registros.filter((r) => r[9] === '7')) {
+    assert.equal(l.slice(73), sha256(l.slice(0, 73) + anterior))
+    anterior = l.slice(73)
+  }
+  // A 1ª marcação da Maria: CPF em 12 posições, coletor "02" (navegador), on-line; o hash é o do comprovante.
+  const daMaria = registros.find((l) => Number(l.slice(0, 9)) === primeiro.nsr)
+  assert.equal(daMaria.slice(34, 46), `${CPF_MARIA} `)
+  assert.equal(daMaria.slice(70, 73), '020')
+  assert.equal(daMaria.slice(73, 85).toUpperCase(), primeiro.codigoVerificacao)
+  // Batida feita sem internet: "1" no campo 7.
+  assert.ok(registros.some((l) => l[9] === '7' && l[72] === '1'))
+
+  // Trailer com as quantidades por tipo e a linha da assinatura em arquivo separado.
+  const quantos = (tipo) => String(registros.filter((l) => l[9] === tipo).length).padStart(9, '0')
+  assert.equal(trailer, '999999999' + ['2', '3', '4', '5', '6', '7'].map(quantos).join('') + '9')
+  assert.equal(assinatura, 'ASSINATURA_DIGITAL_EM_ARQUIVO_P7S'.padEnd(100, ' '))
+  // Os registros antigos sem o CPF do responsável (o administrador não tem CPF cadastrado) aparecem nos avisos.
+  assert.ok(afd.avisos.some((a) => /sem o CPF do responsável/.test(a)))
+  // A Loja Centro não tem CNPJ? Tem. Uma empresa sem CNPJ não gera AFD.
+  const semCnpj = (await admin.chamar('salvarEmpresa', { nome: 'Sem CNPJ', fusoHorario: 'America/Sao_Paulo' })).id
+  await falha(admin.chamar('exportarDados', { empresaId: semCnpj, tipo: 'afd', de: ontem, ate: hoje }), 'functions/failed-precondition', /CNPJ/)
+})
+
+await etapa('certificado A1 do desenvolvedor: AFD assinado (ZIP com .p7s) e comprovante do trabalhador em PDF assinado, com CPF e PIN', async () => {
+  const pfx = certificadoDeTeste()
+  await falha(gestora.chamar('salvarCertificado', { pfx, senha: SENHA_CERTIFICADO }), 'functions/permission-denied')
+  await falha(admin.chamar('salvarCertificado', { pfx, senha: 'errada' }), 'functions/invalid-argument', /senha/)
+  const enviado = await admin.chamar('salvarCertificado', { pfx, senha: SENHA_CERTIFICADO })
+  assert.deepEqual([enviado.titular, enviado.icpBrasil], ['EMPRESA TESTE', false])
+  // O arquivo e a senha ficam só no servidor: nem o administrador lê; o painel vê titular e validade.
+  await falha(getDoc(doc(admin.db, 'sistema', 'certificado')), 'permission-denied')
+  assert.equal((await getDoc(doc(admin.db, 'sistema', 'rep'))).get('certificado').titular, 'EMPRESA TESTE')
+
+  // AFD assinado: ZIP com o arquivo e a assinatura CAdES (.p7s com o nome do AFD + ".p7s"), que confere.
+  const hoje = dataSaoPaulo()
+  const afd = await gestora.chamar('exportarDados', { empresaId: empresaA, tipo: 'afd', de: dataSaoPaulo(-1), ate: hoje })
+  assert.equal(afd.nomeArquivo, 'AFD512026000123411222333000181REP_P.zip')
+  const arquivos = lerZip(Buffer.from(afd.arquivo, 'base64'))
+  const nome = 'AFD512026000123411222333000181REP_P.txt'
+  assert.deepEqual(Object.keys(arquivos), [nome, `${nome}.p7s`])
+  assert.ok(assinaturaConfere(arquivos[`${nome}.p7s`], arquivos[nome]))
+  assert.ok(!assinaturaConfere(arquivos[`${nome}.p7s`], Buffer.concat([arquivos[nome], Buffer.from(' ')])))
+  assert.ok(afd.avisos.some((a) => /não é ICP-Brasil/.test(a)))
+
+  // Comprovantes do trabalhador: página aberta, com CPF e PIN.
+  const consultar = (dados) => anonimo.chamarFuncao('comprovantes', dados)
+  const lista = await consultar({ cpf: CPF_MARIA, pin: PIN_MARIA })
+  assert.equal(lista.trabalhador, 'Maria Souza')
+  assert.ok(lista.comprovantes.some((c) => c.registroId === primeiro.registroId && c.nsr === primeiro.nsr))
+  const baixado = await consultar({ cpf: CPF_MARIA, pin: PIN_MARIA, registroId: primeiro.registroId })
+  assert.equal(baixado.nome, `comprovante-NSR-${String(primeiro.nsr).padStart(9, '0')}.pdf`)
+  const pdf = Buffer.from(baixado.pdf, 'base64')
+  const texto = pdf.toString('latin1')
+  assert.ok(texto.startsWith('%PDF-') && texto.includes('/ETSI.CAdES.detached'))
+  const [, , b, c] = /\/ByteRange \[\s*(\d+) (\d+) (\d+) (\d+)\s*\]/.exec(texto).map(Number)
+  const reservado = Buffer.from(texto.slice(b + 1, c - 1), 'hex')
+  const cms = reservado.subarray(0, 4 + reservado.readUInt16BE(2))
+  assert.ok(assinaturaConfere(cms, Buffer.concat([pdf.subarray(0, b), pdf.subarray(c)])))
+
+  // Só os comprovantes dele: a marcação de outra pessoa não sai.
+  const doJoao = (await getDocs(query(collection(gestora.db, 'empresas', empresaA, 'registros'), where('funcionarioId', '==', joao)))).docs.find((d) => d.get('origem') === 'dispositivo')
+  await falha(consultar({ cpf: CPF_MARIA, pin: PIN_MARIA, registroId: doJoao.id }), 'functions/not-found')
+  // CPF de outra pessoa com o PIN da Maria: recusado; 5 erros seguidos bloqueiam aquele CPF.
+  for (let i = 0; i < 5; i++) await falha(consultar({ cpf: CPF_JOAO, pin: PIN_MARIA }), 'functions/permission-denied', /CPF ou PIN incorretos/)
+  await falha(consultar({ cpf: CPF_JOAO, pin: PIN_JOAO }), 'functions/resource-exhausted', /Muitas tentativas/)
+  await falha(consultar({ cpf: '123', pin: PIN_MARIA }), 'functions/invalid-argument', /CPF inválido/)
 })
 
 await etapa('só o administrador apaga uma marcação: some das telas e exportações, a foto vai junto e a cadeia continua íntegra', async () => {

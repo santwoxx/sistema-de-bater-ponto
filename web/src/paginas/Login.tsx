@@ -167,6 +167,7 @@ export default function Login() {
             Criar ou redefinir senha
           </button>
           <Link to="/ponto">Abrir o ponto neste aparelho</Link>
+          <Link to="/comprovantes">Sou funcionário: meus comprovantes de ponto</Link>
         </div>
       </form>
     </div>

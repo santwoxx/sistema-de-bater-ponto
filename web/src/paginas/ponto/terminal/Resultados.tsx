@@ -52,6 +52,7 @@ export function PontoRegistrado({
       <small>
         NSR {formatarNsr(comprovante.nsr)} · Código {comprovante.codigoVerificacao}
       </small>
+      <small className="resultado-onde">Comprovante em PDF: {window.location.host}/comprovantes (com seu CPF e PIN)</small>
     </Resultado>
   )
 }

@@ -2,7 +2,12 @@ import type { Timestamp } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/https";
 import { db } from "./admin";
 import { autor, exigirAcessoEmpresa } from "./acesso";
+import { gerarAfd } from "./afd";
 import { registrarAuditoria } from "./auditoria";
+import { assinarCms } from "./assinatura";
+import { carregarCertificado } from "./certificado";
+import { carregarConfiguracaoRep } from "./configuracaoRep";
+import { criarZip } from "./zip";
 import {
   calcularEspelho,
   classificar,
@@ -20,7 +25,7 @@ import { booleano, dataISO, idDocumento, listaIds, objeto, opcao } from "./valid
 // funcionários, situação, origem). É feita no servidor: lê só os campos
 // necessários (sem as fotos) e não depende do limite de leitura da tela.
 
-const TIPOS = ["marcacoes", "espelho-diario", "resumo", "espelhos"] as const;
+const TIPOS = ["marcacoes", "espelho-diario", "resumo", "espelhos", "afd"] as const;
 type TipoExportacao = (typeof TIPOS)[number];
 
 const ROTULOS: Record<TipoExportacao, string> = {
@@ -28,6 +33,7 @@ const ROTULOS: Record<TipoExportacao, string> = {
   "espelho-diario": "Espelho diário",
   resumo: "Resumo por funcionário",
   espelhos: "Espelhos para impressão",
+  afd: "AFD (Portaria 671)",
 };
 
 const MAX_DIAS = 366;
@@ -184,6 +190,41 @@ export const exportarDados = onCall({ timeoutSeconds: 300, memory: "1GiB", maxIn
   const ateConsulta = tipo === "espelhos" ? `${meses[meses.length - 1]}-31` : ate;
 
   await consumirLimite(usuario.uid, "exportarDados");
+
+  // AFD (Portaria 671): todos os registros do REP no período, sem filtros (é o arquivo do Auditor-Fiscal).
+  if (tipo === "afd") {
+    const [arquivo, certificado] = await Promise.all([gerarAfd(empresa, de, ate, await carregarConfiguracaoRep()), carregarCertificado()]);
+    // Assinado (CAdES, .p7s separado com o nome do AFD + ".p7s"), os dois vão num ZIP.
+    const avisos = [...arquivo.avisos];
+    let nomeArquivo = arquivo.nome;
+    let conteudo = arquivo.conteudo;
+    if (certificado) {
+      const p7s = assinarCms(arquivo.conteudo, certificado, { comHora: true });
+      nomeArquivo = arquivo.nome.replace(/.txt$/, ".zip");
+      conteudo = criarZip([
+        { nome: arquivo.nome, conteudo: arquivo.conteudo },
+        { nome: `${arquivo.nome}.p7s`, conteudo: p7s },
+      ]);
+      if (!certificado.icpBrasil) avisos.push("Assinado com um certificado que não é ICP-Brasil: a assinatura não vale para a Portaria 671 (só para teste).");
+    } else {
+      avisos.push("Sem assinatura digital: envie o certificado A1 (ICP-Brasil) do desenvolvedor em Administração → Portaria 671.");
+    }
+    await registrarAuditoria({
+      empresaId,
+      autor: autor(usuario),
+      acao: "dados.exportados",
+      descricao: `Exportação "${ROTULOS.afd}" de ${dataBR(de)} a ${dataBR(ate)}: ${arquivo.quantidade} registro(s).`,
+      detalhes: { tipo, de, ate, quantidade: arquivo.quantidade },
+    });
+    return {
+      tipo,
+      nomeArquivo,
+      empresa: { nome: empresa.nome, cnpj: empresa.cnpj },
+      quantidade: arquivo.quantidade,
+      arquivo: conteudo.toString("base64"),
+      avisos,
+    };
+  }
 
   const empresaRef = db.doc(`empresas/${empresaId}`);
   const [funcionariosSnap, registrosSnap, abonosSnap, fechadosSnap] = await Promise.all([

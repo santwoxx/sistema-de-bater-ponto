@@ -13,6 +13,7 @@ import {
   LogOut,
   Menu,
   Tablet,
+  ShieldCheck,
   UserCog,
   Users,
 } from 'lucide-react'
@@ -44,6 +45,7 @@ const ITENS = [
 const ITENS_ADMIN = [
   { para: '/admin/empresas', rotulo: 'Empresas', icone: Building2 },
   { para: '/admin/usuarios', rotulo: 'Usuários', icone: UserCog },
+  { para: '/admin/portaria-671', rotulo: 'Portaria 671', icone: ShieldCheck },
 ]
 
 export default function LayoutAdmin() {

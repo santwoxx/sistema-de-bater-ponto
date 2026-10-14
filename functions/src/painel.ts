@@ -2,6 +2,8 @@ import { HttpsError, onCall, type CallableRequest } from "firebase-functions/htt
 import { incluirAbono, removerAbono } from "./abonos";
 import { exigirUsuario } from "./acesso";
 import { apagarMarcacao, desconsiderarMarcacao, incluirMarcacao } from "./ajustes";
+import { removerCertificado, salvarCertificado } from "./certificado";
+import { salvarConfiguracaoRep } from "./configuracaoRep";
 import { ativarDispositivo, desativarDispositivo, salvarDispositivo } from "./dispositivos";
 import { salvarEmpresa } from "./empresas";
 import { obterFoto } from "./fotos";
@@ -28,6 +30,9 @@ const ACOES: Record<string, (request: CallableRequest) => Promise<unknown>> = {
   incluirMarcacao,
   desconsiderarMarcacao,
   apagarMarcacao,
+  salvarConfiguracaoRep,
+  salvarCertificado,
+  removerCertificado,
   incluirAbono,
   removerAbono,
   criarSolicitacao,

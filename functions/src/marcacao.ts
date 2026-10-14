@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { FieldValue, Timestamp, type DocumentData, type DocumentSnapshot, type QueryDocumentSnapshot } from "firebase-admin/firestore";
 import { bucket } from "./admin";
 import { HASH_INICIAL, hashDoRegistro } from "./cadeia";
+import { hashDaMarcacaoRep, marcacaoRepDe } from "./portaria671";
 import { sha256 } from "./seguranca";
 import { dataLocal, horaLocal } from "./tempo";
 
@@ -66,9 +67,11 @@ export interface NovaMarcacao {
 }
 
 /**
- * Monta o registro com o NSR seguinte e o hash encadeado ao anterior (ver
- * cadeia.ts), a partir do contador da empresa lido na mesma transação.
- * Devolve o registro e o novo valor do contador.
+ * Monta o registro com o NSR seguinte, o hash encadeado ao anterior (ver
+ * cadeia.ts) e o código hash SHA-256 do AFD (Portaria 671, encadeado à marcação
+ * anterior), a partir do contador da empresa lido na mesma transação. A ARP da
+ * empresa precisa estar preparada (garantirRepIniciado). Devolve o registro e o
+ * novo valor do contador.
  */
 export function montarMarcacao(controle: DocumentSnapshot, m: NovaMarcacao): { registro: DocumentData; contador: DocumentData } {
   const nsr = ((controle.get("ultimoNsr") as number | undefined) ?? 0) + 1;
@@ -88,6 +91,12 @@ export function montarMarcacao(controle: DocumentSnapshot, m: NovaMarcacao): { r
   };
   const hash = hashDoRegistro(campos);
   const s = m.semInternet;
+  const hashRepAnterior = (controle.get("ultimoHashRep") as string | undefined) ?? "";
+  const hashRep = hashDaMarcacaoRep(
+    marcacaoRepDe({ nsr, dataHora: m.dataHora, funcionarioCpf: campos.funcionarioCpf, semInternetRecebidoEm: s?.recebidoEm ?? null }),
+    m.fuso,
+    hashRepAnterior,
+  );
   const registro = {
     funcionarioId: m.funcionarioId,
     funcionarioNome: m.funcionario.nome,
@@ -102,6 +111,8 @@ export function montarMarcacao(controle: DocumentSnapshot, m: NovaMarcacao): { r
     nsr,
     hash,
     hashAnterior,
+    // Código hash SHA-256 do AFD (tipo 7) e do comprovante do trabalhador.
+    rep: { hash: hashRep, hashAnterior: hashRepAnterior },
     fotoPath: m.fotoPath,
     fotoSha256: m.fotoSha256,
     miniatura: `data:image/jpeg;base64,${m.miniatura.toString("base64")}`,
@@ -120,7 +131,7 @@ export function montarMarcacao(controle: DocumentSnapshot, m: NovaMarcacao): { r
       : {}),
     criadoEm: FieldValue.serverTimestamp(),
   };
-  return { registro, contador: { ultimoNsr: nsr, ultimoHash: hash, atualizadoEm: FieldValue.serverTimestamp() } };
+  return { registro, contador: { ultimoNsr: nsr, ultimoHash: hash, ultimoHashRep: hashRep, atualizadoEm: FieldValue.serverTimestamp() } };
 }
 
 /** Posição da marcação no dia (1ª, 2ª...), contando só as válidas do mesmo dia até ela. */
@@ -143,6 +154,7 @@ export function comprovante(registroId: string, registro: DocumentData, ordinal:
     ordinal,
     tipo: ordinal % 2 === 1 ? "entrada" : "saida",
     empresaNome,
-    codigoVerificacao: String(registro.hash).slice(0, 12).toUpperCase(),
+    // Início do código hash SHA-256 da marcação (o do comprovante e do AFD).
+    codigoVerificacao: String(registro.rep?.hash ?? registro.hash).slice(0, 12).toUpperCase(),
   };
 }

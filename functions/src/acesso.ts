@@ -14,6 +14,8 @@ export interface Usuario {
   email: string;
   papel: Papel;
   empresas: string[];
+  /** CPF (só números) ou "": vai no AFD como responsável pelas alterações no REP. */
+  cpf: string;
 }
 
 export interface Autor {
@@ -60,6 +62,7 @@ export async function exigirUsuario(request: CallableRequest): Promise<Usuario> 
     email: String(dados.email ?? ""),
     papel: dados.papel === "admin" ? "admin" : "gestor",
     empresas: Array.isArray(dados.empresas) ? dados.empresas : [],
+    cpf: typeof dados.cpf === "string" ? dados.cpf : "",
   };
 }
 

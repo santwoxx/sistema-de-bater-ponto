@@ -39,7 +39,25 @@ const TIPOS: Array<{ valor: TipoExportacao; titulo: string; descricao: string; f
     descricao: 'Um espelho por funcionário e mês, com as linhas para o funcionário e a empresa assinarem.',
     formato: 'Impressão / PDF',
   },
+  {
+    valor: 'afd',
+    titulo: 'AFD (Portaria 671)',
+    descricao: 'Arquivo Fonte de Dados do REP-P para o Auditor-Fiscal: todos os registros do período, na ordem do NSR.',
+    formato: 'Texto no leiaute oficial',
+  },
 ]
+
+/** Baixa um arquivo que veio do servidor em base64: o AFD (texto ISO-8859-1) ou, assinado, o ZIP com o .p7s. */
+function baixarArquivo(nome: string, base64: string) {
+  const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0))
+  const tipo = nome.endsWith('.zip') ? 'application/zip' : 'text/plain;charset=ISO-8859-1'
+  const url = URL.createObjectURL(new Blob([bytes], { type: tipo }))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = nome
+  link.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
 
 const MAX_DIAS = 366
 
@@ -63,6 +81,8 @@ export default function Exportar() {
   const [gerando, setGerando] = useState(false)
   const [erro, setErro] = useState('')
   const [impressao, setImpressao] = useState<ResultadoExportacao | null>(null)
+  // AFD: o que falta para o arquivo ficar completo (INPI, desenvolvedor, CPF de responsáveis).
+  const [avisos, setAvisos] = useState<string[]>([])
 
   const funcionarios = useColecao(() => collection(db, 'empresas', empresa.id, 'funcionarios'), paraFuncionario, `${empresa.id}:todos`)
   const termo = normalizarBusca(busca)
@@ -85,7 +105,8 @@ export default function Exportar() {
     setErro('')
     if (!de || !ate || de > ate) return setErro('Confira o período: a data final não pode ser anterior à inicial.')
     if (diferencaDias(de, ate) >= MAX_DIAS) return setErro(`O período pode ter no máximo ${MAX_DIAS} dias.`)
-    if (!todos && selecionados.length === 0) return setErro('Escolha pelo menos um funcionário.')
+    if (tipo !== 'afd' && !todos && selecionados.length === 0) return setErro('Escolha pelo menos um funcionário.')
+    setAvisos([])
     setGerando(true)
     try {
       const resultado = await api.exportarDados({
@@ -97,7 +118,11 @@ export default function Exportar() {
         incluirDesconsideradas,
         origem,
       })
-      if (resultado.espelhos) {
+      if (resultado.arquivo) {
+        baixarArquivo(resultado.nomeArquivo, resultado.arquivo)
+        setAvisos(resultado.avisos ?? [])
+        notificar(`AFD gerado: ${resultado.quantidade} registro(s).`)
+      } else if (resultado.espelhos) {
         if (resultado.espelhos.length === 0) setErro('Nenhum funcionário no período escolhido.')
         else setImpressao(resultado)
       } else if (resultado.linhas) {
@@ -185,6 +210,16 @@ export default function Exportar() {
         {tipo === 'espelhos' && <p className="texto-suave">Nos espelhos, cada mês do período sai inteiro, um por folha.</p>}
       </section>
 
+      {tipo === 'afd' ? (
+        <section className="cartao">
+          <h2>3. Conteúdo</h2>
+          <p className="texto-suave">
+            O AFD traz todos os registros do REP no período (identificação da empresa, inclusão e alteração de funcionários e todas as
+            marcações do aparelho, inclusive as desconsideradas), sem filtros. O número do INPI e o desenvolvedor vêm de Administração →
+            Portaria 671.
+          </p>
+        </section>
+      ) : (
       <section className="cartao">
         <h2>3. Funcionários</h2>
         <label className="caixa-marcar">
@@ -212,6 +247,7 @@ export default function Exportar() {
           </div>
         )}
       </section>
+      )}
 
       {tipo === 'marcacoes' && (
         <section className="cartao">
@@ -233,6 +269,16 @@ export default function Exportar() {
       )}
 
       {erro && <Aviso tipo="erro">{erro}</Aviso>}
+      {avisos.length > 0 && (
+        <Aviso tipo="alerta">
+          <strong>O AFD foi gerado, mas ainda falta:</strong>
+          <ul>
+            {avisos.map((a) => (
+              <li key={a}>{a}</li>
+            ))}
+          </ul>
+        </Aviso>
+      )}
       <div className="acoes-exportacao">
         <p className="texto-suave">
           O arquivo traz CPF e horários dos funcionários: guarde-o em local seguro. Cada exportação fica registrada na auditoria.

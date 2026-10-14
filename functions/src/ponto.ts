@@ -3,6 +3,7 @@ import { HttpsError, onCall } from "firebase-functions/https";
 import * as logger from "firebase-functions/logger";
 import { db } from "./admin";
 import { carregarEmpresa, exigirDispositivo } from "./acesso";
+import { garantirRepIniciado } from "./arp";
 import { buscarDonoDoPin, decodificarJpeg, identificarNoAparelho, lerPin, MAX_MINIATURA_BYTES, type Identificacao } from "./identificacao";
 import { comprovante, guardarFoto, MAX_FOTO_BYTES, montarMarcacao, ordinalNoDia } from "./marcacao";
 import { dataLocal, horaLocal } from "./tempo";
@@ -66,7 +67,7 @@ export const registrarPonto = onCall({ memory: "512MiB", cpu: 1, timeoutSeconds:
   const registroRef = empresaRef.collection("registros").doc(idRequisicao);
   const doDia = (dia: string) =>
     empresaRef.collection("registros").where("funcionarioId", "==", funcionarioId).where("dataLocal", "==", dia).select("dataHora", "desconsiderado").get();
-  const [registroSnap, marcacoesHoje] = await Promise.all([registroRef.get(), doDia(hoje)]);
+  const [registroSnap, marcacoesHoje] = await Promise.all([registroRef.get(), doDia(hoje), garantirRepIniciado(empresaId)]);
   const ordinalDe = async (registro: DocumentData): Promise<number> => {
     const doMesmoDia = registro.dataLocal === hoje ? marcacoesHoje : await doDia(registro.dataLocal);
     return ordinalNoDia(doMesmoDia.docs, registroRef.id, (registro.dataHora as Timestamp).toMillis());

@@ -4,6 +4,7 @@ import { HttpsError, onCall } from "firebase-functions/https";
 import * as logger from "firebase-functions/logger";
 import { db } from "./admin";
 import { carregarEmpresa, exigirDispositivo } from "./acesso";
+import { garantirRepIniciado } from "./arp";
 import { registrarAuditoria } from "./auditoria";
 import { decodificarJpeg, identificarNoAparelho, lerPin, MAX_MINIATURA_BYTES, type Identificacao } from "./identificacao";
 import { comprovante, guardarFoto, MAX_FOTO_BYTES, montarMarcacao, ordinalNoDia, type SemInternetRegistro } from "./marcacao";
@@ -306,6 +307,7 @@ export const registrarPontoGuardado = onCall({ memory: "512MiB", cpu: 1, maxInst
       .where("dataLocal", "in", [...new Set(vizinhos)])
       .select("dataHora", "dataLocal", "desconsiderado")
       .get(),
+    garantirRepIniciado(empresaId),
   ]);
   const doDia = (registro: DocumentData) => doFuncionario.docs.filter((doc) => doc.get("dataLocal") === registro.dataLocal);
 

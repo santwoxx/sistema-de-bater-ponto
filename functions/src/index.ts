@@ -6,6 +6,7 @@ export { painel } from "./painel";
 export { sincronizarDispositivo } from "./dispositivos";
 export { registrarPonto } from "./ponto";
 export { registrarPontoGuardado } from "./semInternet";
+export { comprovantes } from "./consultaComprovantes";
 export { fecharEspelhos } from "./fechamentos";
 export { exportarDados } from "./exportacao";
 export { verificarIntegridade, verificarIntegridadeSemanal } from "./integridade";

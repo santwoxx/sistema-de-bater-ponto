@@ -3,7 +3,7 @@ import { onCall } from "firebase-functions/https";
 import * as logger from "firebase-functions/logger";
 import { onSchedule } from "firebase-functions/scheduler";
 import { db } from "./admin";
-import { autor, exigirAcessoEmpresa, type Autor } from "./acesso";
+import { autor, carregarEmpresa, exigirAcessoEmpresa, type Autor } from "./acesso";
 import { auditarNa } from "./auditoria";
 import { verificarCadeia, type Problema } from "./cadeia";
 import { consumirLimite } from "./limites";
@@ -27,6 +27,7 @@ const CAMPOS = [
   "fotoSha256",
   "dispositivoId",
   "semInternet",
+  "rep",
 ];
 const MAX_PROBLEMAS_NA_RESPOSTA = 200;
 const VERIFICACAO_AUTOMATICA: Autor = { uid: "sistema", nome: "Verificação automática" };
@@ -40,16 +41,21 @@ interface ResultadoVerificacao {
 
 async function verificarEmpresa(empresaId: string): Promise<ResultadoVerificacao> {
   const empresaRef = db.doc(`empresas/${empresaId}`);
-  const [doAparelho, controle, manuais] = await Promise.all([
+  const [doAparelho, operacoes, controle, manuais, empresa] = await Promise.all([
     empresaRef.collection("registros").where("origem", "==", "dispositivo").select(...CAMPOS).get(),
+    // Operações do REP (inclusão do empregador e dos empregados), na mesma sequência de NSR.
+    empresaRef.collection("arp").get(),
     empresaRef.collection("privado").doc("controle").get(),
     empresaRef.collection("registros").where("origem", "==", "manual").count().get(),
+    carregarEmpresa(empresaId),
   ]);
-  const { problemas, ultimoNsr } = verificarCadeia(
+  const { problemas, ultimoNsr } = verificarCadeia({
     empresaId,
-    doAparelho.docs.map((doc) => ({ id: doc.id, dados: doc.data() })),
-    controle.data(),
-  );
+    fuso: empresa.fusoHorario,
+    registros: doAparelho.docs.map((doc) => ({ id: doc.id, dados: doc.data() })),
+    operacoes: operacoes.docs.map((doc) => ({ id: doc.id, dados: doc.data() })),
+    controle: controle.data(),
+  });
   return { marcacoesAparelho: doAparelho.size, marcacoesManuais: manuais.data().count, ultimoNsr, problemas };
 }
 

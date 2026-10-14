@@ -2,6 +2,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { HttpsError, type CallableRequest } from "firebase-functions/https";
 import { db } from "./admin";
 import { autor, exigirAcessoEmpresa } from "./acesso";
+import { contadorDe, garantirRepIniciado, gravarOperacoes, operacaoDoCadastro, operacaoEmpregado } from "./arp";
 import { auditarNa } from "./auditoria";
 import { donosDoPinAntigo, indiceDoPin } from "./pin";
 import {
@@ -44,17 +45,22 @@ export async function salvarFuncionario(request: CallableRequest) {
   const pinRef = indice ? db.collection("pins").doc(indice) : null;
   const eleMesmo = (dono: { empresaId?: unknown; funcionarioId?: unknown }) => dono.empresaId === empresaId && dono.funcionarioId === ref.id;
 
+  // A ARP da empresa precisa estar preparada antes de gravar a operação do empregado.
+  await garantirRepIniciado(empresaId);
+  const controleRef = empresaRef.collection("privado").doc("controle");
+
   // Transação: garante matrícula e CPF únicos na empresa, e o PIN único em todas
   // as empresas (um aparelho da loja pode atender várias, e o PIN sozinho
   // identifica o funcionário), mesmo com dois cadastros simultâneos.
   await db.runTransaction(async (tx) => {
-    const [mesmaMatricula, mesmoCpf, atual, credenciais, donoDoPin, empresas] = await Promise.all([
+    const [mesmaMatricula, mesmoCpf, atual, credenciais, donoDoPin, empresas, controle] = await Promise.all([
       tx.get(colecao.where("matricula", "==", matriculaFuncionario).limit(2)),
       tx.get(colecao.where("cpf", "==", cpfFuncionario).limit(2)),
       id ? tx.get(ref) : Promise.resolve(null),
       tx.get(credenciaisRef),
       pinRef ? tx.get(pinRef) : Promise.resolve(null),
       novoPin ? tx.get(db.collection("empresas").select()) : Promise.resolve(null),
+      tx.get(controleRef),
     ]);
     // PINs antigos (sem índice) de todas as empresas, conferidos um a um.
     const pinsAntigos =
@@ -118,6 +124,13 @@ export async function salvarFuncionario(request: CallableRequest) {
         },
         { merge: true },
       );
+    }
+    // ARP (Portaria 671): inclusão, alteração (nome, CPF ou PIN) ou exclusão (desativado) do empregado no REP.
+    const depois = { nome, cpf: cpfFuncionario, ativo };
+    const operacao = operacaoDoCadastro(atual?.data() ?? null, depois, Boolean(novoPin) && Boolean(id));
+    if (operacao) {
+      const contador = gravarOperacoes(tx, empresaRef, contadorDe(controle), [operacaoEmpregado(operacao, depois, usuario.cpf)], new Date());
+      tx.set(controleRef, contador, { merge: true });
     }
     auditarNa(tx, {
       empresaId,

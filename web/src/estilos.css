@@ -2517,6 +2517,40 @@ html.modo-ponto body {
   padding-left: 18px;
 }
 
+/* Comprovantes do trabalhador (página aberta) */
+
+.lista-comprovantes {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lista-comprovantes li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--borda);
+  border-radius: var(--raio);
+}
+
+.resultado-onde {
+  max-width: 90%;
+  opacity: 0.8;
+}
+
+/* Portaria 671: o que falta cadastrar */
+
+.lista-pendencias {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 12px;
+  padding-left: 20px;
+}
+
 /* Versão nova do sistema publicada (painel) */
 
 .faixa-versao {

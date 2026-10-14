@@ -9,6 +9,7 @@ import { configuracaoOk } from './firebase'
 // banco, que só o painel lê) e vice-versa.
 const Ponto = lazy(() => import('./paginas/ponto/Ponto'))
 const Login = lazy(() => import('./paginas/Login'))
+const Comprovantes = lazy(() => import('./paginas/Comprovantes'))
 const ConfiguracaoInicial = lazy(() => import('./paginas/ConfiguracaoInicial'))
 const AreaAdmin = lazy(() => import('./paginas/admin/AreaAdmin'))
 const Hoje = lazy(() => import('./paginas/admin/Hoje'))
@@ -22,6 +23,7 @@ const Aparelhos = lazy(() => import('./paginas/admin/Aparelhos'))
 const Auditoria = lazy(() => import('./paginas/admin/Auditoria'))
 const Empresas = lazy(() => import('./paginas/admin/Empresas'))
 const Usuarios = lazy(() => import('./paginas/admin/Usuarios'))
+const Portaria671 = lazy(() => import('./paginas/admin/Portaria671'))
 
 function Inicio() {
   const sessao = useSessao()
@@ -73,6 +75,7 @@ export default function App() {
               <Route path="/login" element={<Login />} />
               <Route path="/configuracao-inicial" element={<ConfiguracaoInicial />} />
               <Route path="/ponto" element={<Ponto />} />
+              <Route path="/comprovantes" element={<Comprovantes />} />
               <Route
                 path="/admin"
                 element={
@@ -103,6 +106,14 @@ export default function App() {
                   element={
                     <ExigirAdmin>
                       <Usuarios />
+                    </ExigirAdmin>
+                  }
+                />
+                <Route
+                  path="portaria-671"
+                  element={
+                    <ExigirAdmin>
+                      <Portaria671 />
                     </ExigirAdmin>
                   }
                 />

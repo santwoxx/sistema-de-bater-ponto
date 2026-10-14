@@ -10,7 +10,7 @@ import { usePerfil } from '../../contexto/Sessao'
 import { db } from '../../banco'
 import { useColecao } from '../../hooks/useColecao'
 import { mensagemErro } from '../../lib/erros'
-import { normalizarBusca } from '../../lib/formatos'
+import { cpfValido, formatarCpf, normalizarBusca, somenteDigitos } from '../../lib/formatos'
 import { ordenarPorNome, type Empresa, type Perfil } from '../../tipos'
 
 function paraPerfil(snap: DocumentSnapshot): Perfil {
@@ -22,6 +22,7 @@ function paraPerfil(snap: DocumentSnapshot): Perfil {
     papel: d.papel === 'admin' ? 'admin' : 'gestor',
     empresas: Array.isArray(d.empresas) ? d.empresas : [],
     ativo: d.ativo === true,
+    cpf: typeof d.cpf === 'string' ? d.cpf : '',
   }
 }
 
@@ -111,6 +112,7 @@ function FormUsuario({ usuario, eu, empresas, aoFechar }: { usuario: Perfil | nu
   const souEu = usuario?.uid === eu.uid
   const [nome, setNome] = useState(usuario?.nome ?? '')
   const [email, setEmail] = useState(usuario?.email ?? '')
+  const [cpf, setCpf] = useState(usuario?.cpf ? formatarCpf(usuario.cpf) : '')
   const [senha, setSenha] = useState('')
   const [papel, setPapel] = useState<'admin' | 'gestor'>(usuario?.papel ?? 'gestor')
   const [selecionadas, setSelecionadas] = useState<string[]>(usuario?.empresas ?? [])
@@ -126,6 +128,7 @@ function FormUsuario({ usuario, eu, empresas, aoFechar }: { usuario: Perfil | nu
     setErro('')
     if (nome.trim().length < 3) return setErro('Informe o nome.')
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return setErro('E-mail inválido.')
+    if (cpf.trim() && !cpfValido(cpf)) return setErro('CPF inválido.')
     if (senha && senha.length < 8) return setErro('A senha precisa ter pelo menos 8 caracteres.')
     setSalvando(true)
     try {
@@ -133,6 +136,7 @@ function FormUsuario({ usuario, eu, empresas, aoFechar }: { usuario: Perfil | nu
         ...(usuario ? { uid: usuario.uid } : {}),
         nome: nome.trim(),
         email: email.trim(),
+        cpf: somenteDigitos(cpf),
         ...(senha ? { senha } : {}),
         papel,
         empresas: papel === 'admin' ? [] : selecionadas,
@@ -179,6 +183,9 @@ function FormUsuario({ usuario, eu, empresas, aoFechar }: { usuario: Perfil | nu
         </Campo>
         <Campo rotulo="E-mail (login)">
           <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" />
+        </Campo>
+        <Campo rotulo="CPF" ajuda="Vai no AFD (Portaria 671) como responsável pelas alterações que a pessoa fizer.">
+          <input value={cpf} onChange={(e) => setCpf(e.target.value)} inputMode="numeric" placeholder="000.000.000-00" maxLength={14} />
         </Campo>
       </div>
       <Campo

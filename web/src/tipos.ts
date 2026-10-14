@@ -15,12 +15,16 @@ export interface Perfil {
   papel: Papel
   empresas: string[]
   ativo: boolean
+  /** CPF (só números): vai no AFD como responsável pelas alterações no REP. */
+  cpf?: string
 }
 
 export interface Empresa {
   id: string
   nome: string
   cnpj: string
+  /** Local da prestação do serviço ou endereço do estabelecimento (comprovante e AFD). */
+  endereco: string
   fusoHorario: string
   ativo: boolean
   intervaloMinimoMinutos: number
@@ -79,6 +83,8 @@ export interface Registro {
   justificativa?: string
   incluidoPor?: Autor
   desconsiderado: Desconsideracao | null
+  /** Código hash SHA-256 da marcação (Portaria 671: AFD e comprovante). Falta nas marcações de antes. */
+  rep?: { hash: string; hashAnterior: string }
   /** Apagada pelo administrador: não aparece em nenhuma tela (fica só para a cadeia de hashes). */
   apagado?: Desconsideracao
   /** Batida feita sem internet no aparelho e enviada depois. */
@@ -215,6 +221,7 @@ export function paraEmpresa(snap: DocumentSnapshot): Empresa {
     id: snap.id,
     nome: d.nome ?? '',
     cnpj: d.cnpj ?? '',
+    endereco: d.endereco ?? '',
     fusoHorario: d.fusoHorario ?? 'America/Sao_Paulo',
     ativo: d.ativo !== false,
     intervaloMinimoMinutos: d.intervaloMinimoMinutos ?? 2,

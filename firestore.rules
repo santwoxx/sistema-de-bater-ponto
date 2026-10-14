@@ -43,6 +43,12 @@ service cloud.firestore {
       allow list, write: if false;
     }
 
+    // Dados do REP-P (Portaria 671): número do INPI e desenvolvedor. Só o administrador vê.
+    match /sistema/rep {
+      allow read: if ehAdmin();
+      allow write: if false;
+    }
+
     match /usuarios/{uid} {
       allow read: if autenticado() && (request.auth.uid == uid || ehAdmin());
       allow write: if false;

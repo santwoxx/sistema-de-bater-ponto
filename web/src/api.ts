@@ -28,6 +28,7 @@ export interface DadosEmpresa {
   id?: string
   nome: string
   cnpj: string
+  endereco: string
   fusoHorario: string
   intervaloMinimoMinutos: number
   toleranciaMinutos: number
@@ -39,6 +40,7 @@ export interface DadosUsuario {
   uid?: string
   nome: string
   email: string
+  cpf: string
   senha?: string
   papel: 'admin' | 'gestor'
   empresas: string[]
@@ -92,6 +94,16 @@ export const api = {
   salvarEmpresa: acaoDoPainel<DadosEmpresa, { id: string }>('salvarEmpresa'),
   salvarUsuario: acaoDoPainel<DadosUsuario, { uid: string }>('salvarUsuario'),
   salvarFuncionario: acaoDoPainel<DadosFuncionario, { id: string }>('salvarFuncionario'),
+  // Portaria 671: número do INPI e desenvolvedor do REP-P (só o administrador).
+  salvarConfiguracaoRep: acaoDoPainel<
+    { inpi: string; documento: string; nome: string; email: string; programaNome: string; programaVersao: string },
+    { ok: true }
+  >('salvarConfiguracaoRep'),
+  // Certificado A1 do desenvolvedor (arquivo .pfx em base64 e a senha): assina AFD, AEJ e comprovantes.
+  salvarCertificado: acaoDoPainel<{ pfx: string; senha: string }, { titular: string; validoAte: number; icpBrasil: boolean }>('salvarCertificado'),
+  removerCertificado: acaoDoPainel<Record<string, never>, { ok: true }>('removerCertificado'),
+  // Página aberta do trabalhador: com CPF e PIN, a lista das marcações ou o PDF de uma (registroId).
+  comprovantes: funcao<{ cpf: string; pin: string; registroId?: string }, ListaDeComprovantes | { nome: string; pdf: string }>('comprovantes', 60_000),
   // empresas: outras empresas que o aparelho da loja atende, além da dele.
   ativarDispositivo: acaoDoPainel<
     { empresaId: string; nome: string; funcionarioId?: string | null; empresas?: string[] },
@@ -157,6 +169,13 @@ export const api = {
   verificarIntegridade: funcao<{ empresaId: string }, ResultadoIntegridade>('verificarIntegridade', 300_000),
 }
 
+export interface ListaDeComprovantes {
+  trabalhador: string
+  empresa: string
+  dias: number
+  comprovantes: Array<{ registroId: string; nsr: number; dataHora: number; dataLocal: string; horaLocal: string }>
+}
+
 export interface ResultadoIntegridade {
   marcacoesAparelho: number
   marcacoesManuais: number
@@ -167,7 +186,7 @@ export interface ResultadoIntegridade {
 
 export type ResultadoFechamento = 'fechado' | 'atualizado' | 'sem-alteracoes' | 'exige-motivo'
 
-export type TipoExportacao = 'marcacoes' | 'espelho-diario' | 'resumo' | 'espelhos'
+export type TipoExportacao = 'marcacoes' | 'espelho-diario' | 'resumo' | 'espelhos' | 'afd'
 
 export interface DadosExportacao {
   empresaId: string
@@ -195,4 +214,7 @@ export interface ResultadoExportacao {
   empresa: { nome: string; cnpj: string }
   linhas?: Array<Array<string | number | null>>
   espelhos?: EspelhoParaImpressao[]
+  /** AFD: o arquivo pronto (ISO-8859-1, em base64) e o que falta para ele ficar completo. */
+  arquivo?: string
+  avisos?: string[]
 }

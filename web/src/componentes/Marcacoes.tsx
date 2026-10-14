@@ -165,7 +165,13 @@ export function DetalhesRegistro({ registro, empresa, aoFechar }: { registro: Re
               <dt>NSR</dt>
               <dd className="numeros">{formatarNsr(registro.nsr)}</dd>
               <dt>Código de verificação</dt>
-              <dd className="numeros">{registro.hash?.slice(0, 12).toUpperCase()}</dd>
+              <dd className="numeros">{(registro.rep?.hash ?? registro.hash)?.slice(0, 12).toUpperCase()}</dd>
+              {registro.rep && (
+                <>
+                  <dt>Código hash (SHA-256)</dt>
+                  <dd className="hash">{registro.rep.hash}</dd>
+                </>
+              )}
               <dt>Hash de integridade</dt>
               <dd className="hash">{registro.hash}</dd>
             </>
