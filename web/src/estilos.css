@@ -381,6 +381,25 @@ input[type='radio'] {
   margin-bottom: 12px;
 }
 
+/* Horário contratual: um dia por linha, com a duração ao lado */
+.grade-horario {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.linha-horario {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr) 56px;
+  align-items: center;
+  gap: 10px;
+}
+
+.linha-horario small {
+  color: var(--texto-suave);
+  text-align: right;
+}
+
 .grade-jornada {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));

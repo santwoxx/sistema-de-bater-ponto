@@ -4,11 +4,13 @@ import { db } from "./admin";
 import { autor, exigirAcessoEmpresa } from "./acesso";
 import { contadorDe, garantirRepIniciado, gravarOperacoes, operacaoDoCadastro, operacaoEmpregado } from "./arp";
 import { auditarNa } from "./auditoria";
+import { jornadaDoHorario } from "./horario";
 import { donosDoPinAntigo, indiceDoPin } from "./pin";
 import {
   booleano,
   cpf,
   dataISO,
+  horario,
   idDocumento,
   idOpcional,
   jornada,
@@ -30,7 +32,9 @@ export async function salvarFuncionario(request: CallableRequest) {
   const matriculaFuncionario = matricula(dados.matricula);
   const cargo = textoOpcional(dados.cargo, "Cargo", { max: 80 });
   const admissao = dados.admissao ? dataISO(dados.admissao, "Admissão") : null;
-  const jornadaSemanal = jornada(dados.jornada);
+  // Com o horário contratual (Portaria 671: espelho e AEJ), a jornada de cada dia sai dele.
+  const horarioContratual = dados.horario === undefined || dados.horario === null ? null : horario(dados.horario);
+  const jornadaSemanal = horarioContratual ? jornadaDoHorario(horarioContratual) : jornada(dados.jornada);
   const ativo = dados.ativo === undefined ? true : booleano(dados.ativo, "Ativo");
   const novoPin = dados.pin ? pin(dados.pin) : null;
 
@@ -95,6 +99,7 @@ export async function salvarFuncionario(request: CallableRequest) {
         cargo,
         admissao,
         jornada: jornadaSemanal,
+        ...(horarioContratual ? { horario: horarioContratual } : {}),
         ativo,
         atualizadoEm: agora,
         ...(id ? {} : { criadoEm: agora, pinAtivo: false }),

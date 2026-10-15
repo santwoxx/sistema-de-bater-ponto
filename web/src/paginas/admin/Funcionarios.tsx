@@ -11,16 +11,27 @@ import { useColecao } from '../../hooks/useColecao'
 import { mensagemErro } from '../../lib/erros'
 import { cpfValido, formatarCpf, normalizarBusca, somenteDigitos } from '../../lib/formatos'
 import { gerarPin, problemaNoPin, TAMANHO_PIN } from '../../lib/pin'
-import { hhmmParaMinutos, minutosParaHHMM, NOMES_DIAS_LONGOS } from '../../lib/tempo'
+import { horarioSugerido, jornadaDoHorario, paresDoDia, problemaNoHorario } from '../../lib/horario'
+import { minutosParaHHMM, NOMES_DIAS_LONGOS } from '../../lib/tempo'
 import { JORNADA_PADRAO, ordenarPorNome, paraFuncionario, type Empresa, type Funcionario } from '../../tipos'
 
-const MODELOS_JORNADA = [
-  { rotulo: '44h · seg a sex 8h + sáb 4h', jornada: [0, 480, 480, 480, 480, 480, 240] },
-  { rotulo: '44h · seg a sex 8h48', jornada: [0, 528, 528, 528, 528, 528, 0] },
-  { rotulo: '40h · seg a sex 8h', jornada: [0, 480, 480, 480, 480, 480, 0] },
-  { rotulo: '36h · seg a sáb 6h', jornada: [0, 360, 360, 360, 360, 360, 360] },
-  { rotulo: '30h · seg a sex 6h', jornada: [0, 360, 360, 360, 360, 360, 0] },
+const COMERCIAL = '08:00-12:00 13:00-17:00'
+// Horários comuns (domingo a sábado); o gestor ajusta depois, se precisar.
+const MODELOS_HORARIO = [
+  { rotulo: '44h · seg a sex 8h + sáb 4h', horario: ['', COMERCIAL, COMERCIAL, COMERCIAL, COMERCIAL, COMERCIAL, '08:00-12:00'] },
+  { rotulo: '44h · seg a sex 8h48', horario: ['', ...Array(5).fill('08:00-12:00 13:00-17:48'), ''] },
+  { rotulo: '40h · seg a sex 8h', horario: ['', ...Array(5).fill(COMERCIAL), ''] },
+  { rotulo: '36h · seg a sáb 6h', horario: ['', ...Array(6).fill('08:00-14:00')] },
+  { rotulo: '30h · seg a sex 6h', horario: ['', ...Array(5).fill('08:00-14:00'), ''] },
 ]
+
+/** Duração do dia para mostrar ao lado do horário: "8h", "8h48", "folga" ou "?" (formato errado). */
+function duracaoDoDia(texto: string): string {
+  const pares = paresDoDia(texto)
+  if (!pares) return '?'
+  const minutos = jornadaDoHorario([texto])[0]
+  return minutos === 0 ? 'folga' : minutosParaHHMM(minutos).replace(/:00$/, 'h').replace(':', 'h')
+}
 
 function totalSemanal(jornada: number[]): string {
   const total = jornada.reduce((s, m) => s + m, 0)
@@ -163,7 +174,9 @@ function FormFuncionario({
   const matriculaSugerida = useRef(matricula)
   const [cargo, setCargo] = useState(funcionario?.cargo ?? '')
   const [admissao, setAdmissao] = useState(funcionario?.admissao ?? '')
-  const [jornada, setJornada] = useState(() => (funcionario?.jornada ?? JORNADA_PADRAO).map((m) => minutosParaHHMM(m)))
+  // Quem foi cadastrado antes do horário contratual: sugestão a partir da jornada, para conferir.
+  const [horario, setHorario] = useState(() => funcionario?.horario ?? horarioSugerido(funcionario?.jornada ?? JORNADA_PADRAO))
+  const horarioSugeridoAgora = Boolean(funcionario && !funcionario.horario)
   const [ativo, setAtivo] = useState(funcionario?.ativo ?? true)
   // Sem PIN (cadastro novo ou PIN antigo): já sugere um, que o gestor pode trocar.
   const [alterarPin, setAlterarPin] = useState(novo || !funcionario?.pinDefinido)
@@ -188,11 +201,11 @@ function FormFuncionario({
 
   async function salvar() {
     setErro('')
-    const minutos = jornada.map(hhmmParaMinutos)
     if (nome.trim().length < 3) return setErro('Informe o nome completo.')
     if (!cpfValido(cpf)) return setErro('CPF inválido.')
     if (!/^\d{1,10}$/.test(matricula.trim())) return setErro('A matrícula deve ter apenas números (até 10 dígitos).')
-    if (minutos.some((m) => Number.isNaN(m))) return setErro('Jornada: use o formato HH:MM em todos os dias (00:00 para folga).')
+    const problemaHorario = problemaNoHorario(horario)
+    if (problemaHorario) return setErro(problemaHorario)
     if (alterarPin) {
       const problema = problemaNoPin(pin)
       if (problema) return setErro(problema)
@@ -208,7 +221,8 @@ function FormFuncionario({
         matricula: matricula.trim(),
         cargo: cargo.trim(),
         admissao: admissao || null,
-        jornada: minutos,
+        jornada: jornadaDoHorario(horario),
+        horario,
         ativo,
         ...(alterarPin ? { pin } : {}),
       })
@@ -277,28 +291,35 @@ function FormFuncionario({
       </div>
 
       <fieldset className="grupo">
-        <legend>Jornada prevista por dia</legend>
+        <legend>Horário contratual</legend>
         <div className="modelos">
-          {MODELOS_JORNADA.map((m) => (
-            <button type="button" key={m.rotulo} className="botao pequeno" onClick={() => setJornada(m.jornada.map((x) => minutosParaHHMM(x)))}>
+          {MODELOS_HORARIO.map((m) => (
+            <button type="button" key={m.rotulo} className="botao pequeno" onClick={() => setHorario(m.horario)}>
               {m.rotulo}
             </button>
           ))}
         </div>
-        <div className="grade-jornada">
+        {horarioSugeridoAgora && (
+          <Aviso tipo="alerta">Horário sugerido a partir da jornada que estava cadastrada: confira com o contrato e salve.</Aviso>
+        )}
+        <div className="grade-horario">
           {[1, 2, 3, 4, 5, 6, 0].map((dia) => (
-            <Campo key={dia} rotulo={NOMES_DIAS_LONGOS[dia]}>
+            <label key={dia} className="linha-horario">
+              <span>{NOMES_DIAS_LONGOS[dia]}</span>
               <input
-                value={jornada[dia]}
-                inputMode="numeric"
-                maxLength={5}
-                placeholder="00:00"
-                onChange={(e) => setJornada(jornada.map((v, i) => (i === dia ? e.target.value : v)))}
+                value={horario[dia]}
+                placeholder="folga"
+                maxLength={60}
+                onChange={(e) => setHorario(horario.map((v, i) => (i === dia ? e.target.value : v)))}
               />
-            </Campo>
+              <small>{duracaoDoDia(horario[dia])}</small>
+            </label>
           ))}
         </div>
-        <small className="campo-ajuda">Horas a trabalhar em cada dia, sem contar o intervalo. Use 00:00 para folga.</small>
+        <small className="campo-ajuda">
+          Entradas e saídas de cada dia, como no contrato: 08:00-12:00 13:00-17:00 (um espaço entre os pares). Em branco é folga. A jornada
+          prevista do dia é a soma dos pares; ela vai no espelho e no AEJ (Portaria 671).
+        </small>
       </fieldset>
 
       <fieldset className="grupo">

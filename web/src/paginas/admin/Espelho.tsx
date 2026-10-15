@@ -16,6 +16,7 @@ import { useColecao } from '../../hooks/useColecao'
 import { baixarCsv } from '../../lib/csv'
 import { mensagemErro } from '../../lib/erros'
 import { calcularEspelho, documentoDoEspelho, ocorrenciasDoDia, rotuloAbono, type DiaEspelho } from '../../lib/espelho'
+import { textoDoHorario } from '../../lib/horario'
 import { formatarCnpj, formatarCpf } from '../../lib/formatos'
 import { dataLocal, formatarData, formatarDataHora, minutosParaHHMM, nomeDiaCurto, nomeMes } from '../../lib/tempo'
 import { jsonEstavel } from '../../lib/util'
@@ -246,6 +247,7 @@ export default function Espelho() {
                 {funcionario.cargo && ` · ${funcionario.cargo}`}
                 {funcionario.admissao && ` · Admissão ${formatarData(funcionario.admissao)}`}
               </p>
+              {funcionario.horario && <p>Horário contratual: {textoDoHorario(funcionario.horario)}</p>}
             </div>
             <div className="texto-direita">
               <strong>{empresa.nome}</strong>

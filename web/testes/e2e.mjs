@@ -1329,6 +1329,82 @@ await etapa('certificado A1 do desenvolvedor: AFD assinado (ZIP com .p7s) e comp
   await falha(consultar({ cpf: '123', pin: PIN_MARIA }), 'functions/invalid-argument', /CPF inválido/)
 })
 
+await etapa('AEJ (Portaria 671): exige o horário contratual; vínculos, horários, marcações originais, incluídas e desconsideradas, programa e trailer; assinado', async () => {
+  const hoje = dataSaoPaulo()
+  const [ano, mes] = hoje.split('-').map(Number)
+  const de = new Date(Date.UTC(ano, mes - 2, 1)).toISOString().slice(0, 10)
+  const gerar = () => gestora.chamar('exportarDados', { empresaId: empresaA, tipo: 'aej', de, ate: hoje })
+  // Sem o horário contratual (entradas e saídas), o AEJ não sai.
+  await falha(gerar(), 'functions/failed-precondition', /horário contratual.*João Lima, Maria Souza/)
+
+  // O horário é conferido, e a jornada de cada dia passa a ser calculada dele.
+  const COMERCIAL = '08:00-12:00 13:00-17:00'
+  const horario = ['', COMERCIAL, COMERCIAL, COMERCIAL, COMERCIAL, COMERCIAL, '08:00-12:00']
+  await falha(
+    gestora.chamar('salvarFuncionario', { ...cadastroMaria(), horario: ['', '8h-12h', '', '', '', '', ''] }),
+    'functions/invalid-argument',
+    /seg: use "HH:MM-HH:MM"/,
+  )
+  await gestora.chamar('salvarFuncionario', { ...cadastroMaria(), horario: horario.map((d) => `  ${d}  `), jornada: [0, 0, 0, 0, 0, 0, 0] })
+  await gestora.chamar('salvarFuncionario', { ...cadastroJoao(), horario })
+  const maria2 = (await getDoc(doc(gestora.db, 'empresas', empresaA, 'funcionarios', maria))).data()
+  assert.deepEqual(maria2.horario, horario)
+  assert.deepEqual(maria2.jornada, [0, 480, 480, 480, 480, 480, 240])
+
+  const aej = await gerar()
+  const nome = `AEJ_11222333000181_${de}_${hoje}.txt`
+  assert.equal(aej.nomeArquivo, nome.replace(/[.]txt$/, '.zip'))
+  const arquivos = lerZip(Buffer.from(aej.arquivo, 'base64'))
+  assert.deepEqual(Object.keys(arquivos), [nome, `${nome}.p7s`])
+  assert.ok(assinaturaConfere(arquivos[`${nome}.p7s`], arquivos[nome]))
+  const texto = arquivos[nome].toString('latin1')
+  assert.ok(texto.endsWith('\r\n'))
+  const linhas = texto.slice(0, -2).split('\r\n')
+  const assinatura = linhas.pop()
+  assert.equal(assinatura, 'ASSINATURA_DIGITAL_EM_ARQUIVO_P7S'.padEnd(100, ' '))
+  const registros = linhas.map((l) => l.split('|'))
+  const doTipo = (tipo) => registros.filter((r) => r[0] === tipo)
+
+  // Cabeçalho, REP-P (INPI só com dígitos) e vínculos em ordem de nome.
+  const [cabecalho] = doTipo('01')
+  assert.deepEqual(cabecalho.slice(0, 8), ['01', '1', '11222333000181', '', '', 'Loja Centro', de, hoje])
+  assert.match(cabecalho[8], /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00-0300$/)
+  assert.equal(cabecalho[9], '001')
+  assert.deepEqual(doTipo('02'), [['02', '1', '3', '5120260001234']])
+  assert.deepEqual(doTipo('03'), [
+    ['03', '1', CPF_JOAO, 'João Lima'],
+    ['03', '2', CPF_MARIA, 'Maria Souza'],
+  ])
+  // Horários contratuais distintos: 8h em dois pares e 4h num par só (o 2º par vazio).
+  assert.deepEqual(doTipo('04'), [
+    ['04', 'H1', '480', '0800', '1200', '1300', '1700'],
+    ['04', 'H2', '240', '0800', '1200', '', ''],
+  ])
+
+  // Marcações: 9 campos; originais do REP com o REP 1; incluídas pelo gestor sem REP e com a justificativa; desconsideradas com o motivo.
+  const marcacoes = doTipo('05')
+  assert.ok(marcacoes.length > 0)
+  for (const m of marcacoes) {
+    assert.equal(m.length, 9, m.join('|'))
+    assert.match(m[2], /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:00-0300$/)
+    assert.ok(['E', 'S', 'D'].includes(m[4]))
+    assert.match(m[5], /^\d{3}$/)
+    assert.equal(m[3], m[6] === 'O' ? '1' : '')
+    if (m[4] === 'D' || m[6] === 'I') assert.ok(m[8].length > 0, `sem motivo: ${m.join('|')}`)
+    // Só a 1ª entrada do dia leva o código do horário (pode faltar em dia de folga).
+    if (m[4] !== 'E' || m[5] !== '001') assert.equal(m[7], '')
+  }
+  assert.ok(marcacoes.some((m) => m[6] === 'I' && m[8] === 'Esqueceu de registrar'))
+  assert.ok(marcacoes.some((m) => m[4] === 'D' && m[8] === 'Lançada em duplicidade'))
+  for (const falta of doTipo('07')) assert.match(falta.join('|'), /^07\|[12]\|2\|\d{4}-\d{2}-\d{2}\|\|$/)
+
+  // Programa de tratamento e desenvolvedor (Administração → Portaria 671) e o trailer.
+  assert.deepEqual(doTipo('08'), [['08', 'Ponto Digital', '2.0', '1', '11444777000161', 'Desenvolvedor Teste', 'dev@teste.com']])
+  const [trailer] = doTipo('99')
+  assert.deepEqual(trailer, ['99', ...['01', '02', '03', '04', '05', '06', '07', '08'].map((t) => String(doTipo(t).length))])
+  assert.equal(aej.quantidade, marcacoes.length + doTipo('07').length)
+})
+
 await etapa('só o administrador apaga uma marcação: some das telas e exportações, a foto vai junto e a cadeia continua íntegra', async () => {
   const registroRef = doc(gestora.db, 'empresas', empresaA, 'registros', primeiro.registroId)
   const { fotoPath, nsr } = (await getDoc(registroRef)).data()

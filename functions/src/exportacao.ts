@@ -2,6 +2,7 @@ import type { Timestamp } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/https";
 import { db } from "./admin";
 import { autor, exigirAcessoEmpresa } from "./acesso";
+import { gerarAej } from "./aej";
 import { gerarAfd } from "./afd";
 import { registrarAuditoria } from "./auditoria";
 import { assinarCms } from "./assinatura";
@@ -25,7 +26,7 @@ import { booleano, dataISO, idDocumento, listaIds, objeto, opcao } from "./valid
 // funcionários, situação, origem). É feita no servidor: lê só os campos
 // necessários (sem as fotos) e não depende do limite de leitura da tela.
 
-const TIPOS = ["marcacoes", "espelho-diario", "resumo", "espelhos", "afd"] as const;
+const TIPOS = ["marcacoes", "espelho-diario", "resumo", "espelhos", "afd", "aej"] as const;
 type TipoExportacao = (typeof TIPOS)[number];
 
 const ROTULOS: Record<TipoExportacao, string> = {
@@ -34,6 +35,7 @@ const ROTULOS: Record<TipoExportacao, string> = {
   resumo: "Resumo por funcionário",
   espelhos: "Espelhos para impressão",
   afd: "AFD (Portaria 671)",
+  aej: "AEJ (Portaria 671)",
 };
 
 const MAX_DIAS = 366;
@@ -83,6 +85,7 @@ interface Funcionario {
   cargo: string;
   admissao: string | null;
   jornada: number[];
+  horario: string[] | null;
 }
 
 const dataBR = (iso: string) => iso.split("-").reverse().join("/");
@@ -191,16 +194,20 @@ export const exportarDados = onCall({ timeoutSeconds: 300, memory: "1GiB", maxIn
 
   await consumirLimite(usuario.uid, "exportarDados");
 
-  // AFD (Portaria 671): todos os registros do REP no período, sem filtros (é o arquivo do Auditor-Fiscal).
-  if (tipo === "afd") {
-    const [arquivo, certificado] = await Promise.all([gerarAfd(empresa, de, ate, await carregarConfiguracaoRep()), carregarCertificado()]);
-    // Assinado (CAdES, .p7s separado com o nome do AFD + ".p7s"), os dois vão num ZIP.
+  // AFD e AEJ (Portaria 671): todos os registros do período, sem filtros (são os arquivos do Auditor-Fiscal).
+  if (tipo === "afd" || tipo === "aej") {
+    const configuracao = await carregarConfiguracaoRep();
+    const [arquivo, certificado] = await Promise.all([
+      tipo === "afd" ? gerarAfd(empresa, de, ate, configuracao) : gerarAej(empresa, de, ate, configuracao),
+      carregarCertificado(),
+    ]);
+    // Assinado (CAdES, .p7s separado com o nome do arquivo + ".p7s"), os dois vão num ZIP.
     const avisos = [...arquivo.avisos];
     let nomeArquivo = arquivo.nome;
     let conteudo = arquivo.conteudo;
     if (certificado) {
       const p7s = assinarCms(arquivo.conteudo, certificado, { comHora: true });
-      nomeArquivo = arquivo.nome.replace(/.txt$/, ".zip");
+      nomeArquivo = arquivo.nome.replace(/\.txt$/, ".zip");
       conteudo = criarZip([
         { nome: arquivo.nome, conteudo: arquivo.conteudo },
         { nome: `${arquivo.nome}.p7s`, conteudo: p7s },
@@ -213,7 +220,7 @@ export const exportarDados = onCall({ timeoutSeconds: 300, memory: "1GiB", maxIn
       empresaId,
       autor: autor(usuario),
       acao: "dados.exportados",
-      descricao: `Exportação "${ROTULOS.afd}" de ${dataBR(de)} a ${dataBR(ate)}: ${arquivo.quantidade} registro(s).`,
+      descricao: `Exportação "${ROTULOS[tipo]}" de ${dataBR(de)} a ${dataBR(ate)}: ${arquivo.quantidade} registro(s).`,
       detalhes: { tipo, de, ate, quantidade: arquivo.quantidade },
     });
     return {
@@ -260,6 +267,7 @@ export const exportarDados = onCall({ timeoutSeconds: 300, memory: "1GiB", maxIn
         cargo: f.cargo ?? "",
         admissao: f.admissao ?? null,
         jornada: Array.isArray(f.jornada) && f.jornada.length === 7 ? f.jornada : JORNADA_PADRAO,
+        horario: Array.isArray(f.horario) && f.horario.length === 7 ? f.horario : null,
       };
     })
     .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
@@ -387,7 +395,7 @@ export const exportarDados = onCall({ timeoutSeconds: 300, memory: "1GiB", maxIn
           const fechado = fechados.get(`${f.id}_${mes}`);
           return {
             mes,
-            funcionario: { id: f.id, nome: f.nome, cpf: f.cpf, matricula: f.matricula, cargo: f.cargo, admissao: f.admissao },
+            funcionario: { id: f.id, nome: f.nome, cpf: f.cpf, matricula: f.matricula, cargo: f.cargo, admissao: f.admissao, horario: f.horario },
             documento: fechado?.documento ?? documentoDoEspelho(calcular(f, mes), empresa.toleranciaMinutos),
             fechamento: fechado
               ? { versao: fechado.versao, fechadoEm: millis(fechado.fechadoEm), fechadoPor: fechado.fechadoPor?.nome ?? "" }

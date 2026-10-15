@@ -56,6 +56,8 @@ export interface DadosFuncionario {
   cargo: string
   admissao: string | null
   jornada: number[]
+  /** Horário contratual por dia da semana (domingo a sábado); a jornada sai dele. */
+  horario: string[]
   ativo: boolean
   pin?: string
 }
@@ -186,7 +188,7 @@ export interface ResultadoIntegridade {
 
 export type ResultadoFechamento = 'fechado' | 'atualizado' | 'sem-alteracoes' | 'exige-motivo'
 
-export type TipoExportacao = 'marcacoes' | 'espelho-diario' | 'resumo' | 'espelhos' | 'afd'
+export type TipoExportacao = 'marcacoes' | 'espelho-diario' | 'resumo' | 'espelhos' | 'afd' | 'aej'
 
 export interface DadosExportacao {
   empresaId: string
@@ -201,7 +203,7 @@ export interface DadosExportacao {
 
 export interface EspelhoParaImpressao {
   mes: string
-  funcionario: { id: string; nome: string; cpf: string; matricula: string; cargo: string; admissao: string | null }
+  funcionario: { id: string; nome: string; cpf: string; matricula: string; cargo: string; admissao: string | null; horario: string[] | null }
   documento: DocumentoEspelho
   /** Mês fechado: a versão congelada (a que vai para a assinatura em papel). */
   fechamento: { versao: number; fechadoEm: number | null; fechadoPor: string } | null

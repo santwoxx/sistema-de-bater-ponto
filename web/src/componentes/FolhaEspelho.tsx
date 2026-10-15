@@ -1,5 +1,6 @@
 import type { EspelhoParaImpressao } from '../api'
 import { formatarCnpj, formatarCpf } from '../lib/formatos'
+import { textoDoHorario } from '../lib/horario'
 import { formatarData, formatarDataHora, minutosParaHHMM, nomeDiaCurto, nomeMes } from '../lib/tempo'
 
 // Um espelho por folha, para impressão em lote ou PDF (Exportar dados), com as
@@ -28,6 +29,7 @@ export default function FolhaEspelho({
             {f.cargo && ` · ${f.cargo}`}
             {f.admissao && ` · Admissão ${formatarData(f.admissao)}`}
           </p>
+          {f.horario && <p>Horário contratual: {textoDoHorario(f.horario)}</p>}
         </div>
         <div className="texto-direita">
           <strong>{empresa.nome}</strong>

@@ -1,4 +1,5 @@
 import { HttpsError } from "firebase-functions/https";
+import { normalizarHorario, problemaNoHorario } from "./horario";
 
 // Validação de toda entrada recebida pelas funções. Nada que vem do
 // navegador é confiável: cada campo é conferido e normalizado aqui.
@@ -205,6 +206,17 @@ export function fusoHorario(valor: unknown): string {
 }
 
 // Jornada prevista em minutos para cada dia da semana (0 = domingo ... 6 = sábado).
+/** Horário contratual: 7 textos (domingo a sábado) com os pares "HH:MM-HH:MM" do dia (ver horario.ts). */
+export function horario(valor: unknown): string[] {
+  if (!Array.isArray(valor) || valor.length !== 7 || valor.some((dia) => typeof dia !== "string" || dia.length > 60)) {
+    invalido("Horário contratual", "informe os 7 dias da semana.");
+  }
+  const dias = valor as string[];
+  const problema = problemaNoHorario(dias);
+  if (problema) throw new HttpsError("invalid-argument", problema);
+  return normalizarHorario(dias);
+}
+
 export function jornada(valor: unknown): number[] {
   if (!Array.isArray(valor) || valor.length !== 7) invalido("Jornada", "informe os 7 dias da semana.");
   return valor.map((minutos) => inteiro(minutos, "Jornada", 0, 24 * 60));

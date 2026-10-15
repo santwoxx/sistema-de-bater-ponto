@@ -66,6 +66,9 @@ await chamar('salvarUsuario', {
 })
 
 const JORNADA_44H = [0, 480, 480, 480, 480, 480, 240]
+// Horário contratual (Portaria 671: espelho e AEJ); a jornada de cada dia é calculada dele.
+const COMERCIAL = '08:00-12:00 13:00-17:00'
+const HORARIO_44H = ['', COMERCIAL, COMERCIAL, COMERCIAL, COMERCIAL, COMERCIAL, '08:00-12:00']
 const equipe = [
   { empresaId: centro, nome: 'Maria Souza', cpf: cpf('529982247'), matricula: '1', cargo: 'Vendedora', pin: '2580' },
   { empresaId: centro, nome: 'João Lima', cpf: cpf('111444777'), matricula: '2', cargo: 'Caixa', pin: '1357' },
@@ -74,7 +77,7 @@ const equipe = [
 ]
 const ids = {}
 for (const f of equipe) {
-  ids[f.nome] = (await chamar('salvarFuncionario', { ...f, admissao: null, jornada: JORNADA_44H, ativo: true })).id
+  ids[f.nome] = (await chamar('salvarFuncionario', { ...f, admissao: null, jornada: JORNADA_44H, horario: HORARIO_44H, ativo: true })).id
 }
 
 // Mês anterior da Loja Centro: semana com 8h, sábado com 4h, pequenas variações,

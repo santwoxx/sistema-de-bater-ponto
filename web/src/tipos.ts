@@ -51,6 +51,8 @@ export interface Funcionario {
   admissao: string | null
   /** Minutos previstos por dia da semana: [domingo, segunda, ..., sábado]. */
   jornada: number[]
+  /** Horário contratual por dia da semana ("08:00-12:00 13:00-17:00"; "" = folga). null = cadastrado antes de existir. */
+  horario: string[] | null
   ativo: boolean
   /** Tem o PIN de 4 números com que bate o ponto (quem tinha o PIN antigo precisa de um novo). */
   pinDefinido: boolean
@@ -248,6 +250,7 @@ export function paraFuncionario(snap: DocumentSnapshot): Funcionario {
     cargo: d.cargo ?? '',
     admissao: d.admissao ?? null,
     jornada: Array.isArray(d.jornada) && d.jornada.length === 7 ? d.jornada : JORNADA_PADRAO,
+    horario: Array.isArray(d.horario) && d.horario.length === 7 ? d.horario : null,
     ativo: d.ativo !== false,
     pinDefinido: d.pinAtivo === true,
   }

@@ -40,6 +40,12 @@ const TIPOS: Array<{ valor: TipoExportacao; titulo: string; descricao: string; f
     formato: 'Impressão / PDF',
   },
   {
+    valor: 'aej',
+    titulo: 'AEJ (Portaria 671)',
+    descricao: 'Arquivo Eletrônico de Jornada: vínculos, horário contratual, marcações (com as incluídas e desconsideradas) e faltas.',
+    formato: 'Texto no leiaute oficial',
+  },
+  {
     valor: 'afd',
     titulo: 'AFD (Portaria 671)',
     descricao: 'Arquivo Fonte de Dados do REP-P para o Auditor-Fiscal: todos os registros do período, na ordem do NSR.',
@@ -105,7 +111,7 @@ export default function Exportar() {
     setErro('')
     if (!de || !ate || de > ate) return setErro('Confira o período: a data final não pode ser anterior à inicial.')
     if (diferencaDias(de, ate) >= MAX_DIAS) return setErro(`O período pode ter no máximo ${MAX_DIAS} dias.`)
-    if (tipo !== 'afd' && !todos && selecionados.length === 0) return setErro('Escolha pelo menos um funcionário.')
+    if (tipo !== 'afd' && tipo !== 'aej' && !todos && selecionados.length === 0) return setErro('Escolha pelo menos um funcionário.')
     setAvisos([])
     setGerando(true)
     try {
@@ -121,7 +127,7 @@ export default function Exportar() {
       if (resultado.arquivo) {
         baixarArquivo(resultado.nomeArquivo, resultado.arquivo)
         setAvisos(resultado.avisos ?? [])
-        notificar(`AFD gerado: ${resultado.quantidade} registro(s).`)
+        notificar(`${tipo === 'aej' ? 'AEJ' : 'AFD'} gerado: ${resultado.quantidade} registro(s).`)
       } else if (resultado.espelhos) {
         if (resultado.espelhos.length === 0) setErro('Nenhum funcionário no período escolhido.')
         else setImpressao(resultado)
@@ -210,10 +216,13 @@ export default function Exportar() {
         {tipo === 'espelhos' && <p className="texto-suave">Nos espelhos, cada mês do período sai inteiro, um por folha.</p>}
       </section>
 
-      {tipo === 'afd' ? (
+      {tipo === 'afd' || tipo === 'aej' ? (
         <section className="cartao">
           <h2>3. Conteúdo</h2>
           <p className="texto-suave">
+            {tipo === 'aej'
+              ? 'O AEJ traz todos os funcionários ativos ou com marcação no período, com o horário contratual (cadastre em Funcionários), as marcações e as faltas. '
+              : ''}
             O AFD traz todos os registros do REP no período (identificação da empresa, inclusão e alteração de funcionários e todas as
             marcações do aparelho, inclusive as desconsideradas), sem filtros. O número do INPI e o desenvolvedor vêm de Administração →
             Portaria 671.
@@ -271,7 +280,7 @@ export default function Exportar() {
       {erro && <Aviso tipo="erro">{erro}</Aviso>}
       {avisos.length > 0 && (
         <Aviso tipo="alerta">
-          <strong>O AFD foi gerado, mas ainda falta:</strong>
+          <strong>O arquivo foi gerado, mas ainda falta:</strong>
           <ul>
             {avisos.map((a) => (
               <li key={a}>{a}</li>
