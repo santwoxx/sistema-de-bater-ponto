@@ -5,7 +5,6 @@ import { autor, exigirAcessoEmpresa } from "./acesso";
 import { gerarAej } from "./aej";
 import { gerarAfd } from "./afd";
 import { registrarAuditoria } from "./auditoria";
-import { assinarCms } from "./assinatura";
 import { carregarCertificado } from "./certificado";
 import { carregarConfiguracaoRep } from "./configuracaoRep";
 import { criarZip } from "./zip";
@@ -206,6 +205,8 @@ export const exportarDados = onCall({ timeoutSeconds: 300, memory: "1GiB", maxIn
     let nomeArquivo = arquivo.nome;
     let conteudo = arquivo.conteudo;
     if (certificado) {
+      // A biblioteca da assinatura só carrega aqui (as outras exportações não precisam dela).
+      const { assinarCms } = await import("./assinatura.js");
       const p7s = assinarCms(arquivo.conteudo, certificado, { comHora: true });
       nomeArquivo = arquivo.nome.replace(/\.txt$/, ".zip");
       conteudo = criarZip([

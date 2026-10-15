@@ -2,7 +2,7 @@ import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { HttpsError, type CallableRequest } from "firebase-functions/https";
 import { db } from "./admin";
 import { autor, exigirAdmin } from "./acesso";
-import { lerCertificado, type Certificado } from "./assinatura";
+import type { Certificado } from "./assinatura";
 import { auditarNa } from "./auditoria";
 import { objeto, texto } from "./validacao";
 
@@ -14,6 +14,9 @@ import { objeto, texto } from "./validacao";
 
 const MAX_PFX_BYTES = 64 * 1024;
 
+/** A biblioteca do certificado (node-forge) só carrega quando é usada: as outras funções partem mais rápido. */
+const assinatura = () => import("./assinatura.js");
+
 let emCache: { versao: number; certificado: Certificado | null } | null = null;
 
 /** Certificado guardado, ou null se ainda não foi enviado (os documentos saem sem assinatura). */
@@ -22,7 +25,7 @@ export async function carregarCertificado(): Promise<Certificado | null> {
   const versao = (snap.get("atualizadoEm") as Timestamp | undefined)?.toMillis() ?? 0;
   if (emCache?.versao === versao) return emCache.certificado;
   const pfx = snap.get("pfx") as string | undefined;
-  const certificado = pfx ? lerCertificado(Buffer.from(pfx, "base64"), String(snap.get("senha") ?? "")) : null;
+  const certificado = pfx ? (await assinatura()).lerCertificado(Buffer.from(pfx, "base64"), String(snap.get("senha") ?? "")) : null;
   emCache = { versao, certificado };
   return certificado;
 }
@@ -36,7 +39,7 @@ export async function salvarCertificado(request: CallableRequest) {
 
   let certificado: Certificado;
   try {
-    certificado = lerCertificado(pfx, senha);
+    certificado = (await assinatura()).lerCertificado(pfx, senha);
   } catch (erro) {
     throw new HttpsError("invalid-argument", (erro as Error).message);
   }

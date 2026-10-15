@@ -6,7 +6,6 @@ import { carregarEmpresa } from "./acesso";
 import { consultaDasMarcacoes, hashesDasMarcacoes } from "./afd";
 import { carregarCertificado } from "./certificado";
 import { carregarConfiguracaoRep } from "./configuracaoRep";
-import { gerarComprovantePdf } from "./comprovantePdf";
 import { buscarDonoDoPin, lerPin, minutosDeBloqueio } from "./identificacao";
 import { sha256 } from "./seguranca";
 import { dataLocal } from "./tempo";
@@ -108,6 +107,8 @@ export const comprovantes = onCall({ memory: "512MiB", maxInstances: 2 }, async 
   let hash = (r.rep?.hash as string | undefined) ?? "";
   // Marcação de antes do REP-P: o hash é refeito na sequência das marcações da empresa.
   if (!hash) hash = hashesDasMarcacoes((await consultaDasMarcacoes(empresaRef).get()).docs, empresa.fusoHorario).get(registroId) ?? "";
+  // O gerador de PDF (pdf-lib) só carrega para baixar um comprovante, não para a lista.
+  const { gerarComprovantePdf } = await import("./comprovantePdf.js");
   const pdf = await gerarComprovantePdf(
     {
       nsr: Number(r.nsr),
