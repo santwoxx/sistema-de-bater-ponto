@@ -57,6 +57,13 @@ export function normalizarHorario(horario: string[]): string[] {
   return horario.map((dia) => (paresDoDia(dia) ?? []).map((par) => `${par.entrada}-${par.saida}`).join(' '))
 }
 
+/** Os dois são o mesmo horário da semana (depois de normalizados)? Aceita o que vier do banco. */
+export function mesmoHorario(a: unknown, b: unknown): boolean {
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== 7 || b.length !== 7) return false
+  const outro = normalizarHorario(b.map(String))
+  return normalizarHorario(a.map(String)).every((dia, i) => dia === outro[i])
+}
+
 /**
  * Sugestão a partir da jornada em minutos, para quem foi cadastrado antes do
  * horário contratual existir (o gestor confere e ajusta): começa às 08:00 e,

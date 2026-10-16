@@ -4,7 +4,7 @@ import { db } from "./admin";
 import { autor, exigirAcessoEmpresa } from "./acesso";
 import { contadorDe, garantirRepIniciado, gravarOperacoes, operacaoDoCadastro, operacaoEmpregado } from "./arp";
 import { auditarNa } from "./auditoria";
-import { jornadaDoHorario } from "./horario";
+import { jornadaDoHorario, mesmoHorario } from "./horario";
 import { donosDoPinAntigo, indiceDoPin } from "./pin";
 import {
   booleano,
@@ -34,7 +34,9 @@ export async function salvarFuncionario(request: CallableRequest) {
   const admissao = dados.admissao ? dataISO(dados.admissao, "Admissão") : null;
   // Com o horário contratual (Portaria 671: espelho e AEJ), a jornada de cada dia sai dele.
   const horarioContratual = dados.horario === undefined || dados.horario === null ? null : horario(dados.horario);
-  const jornadaSemanal = horarioContratual ? jornadaDoHorario(horarioContratual) : jornada(dados.jornada);
+  // Escala (ver escalas.ts): o horário vem dela; null = horário próprio. Sem o campo (painel de antes
+  // das escalas), o funcionário continua na escala se o horário enviado for o mesmo dela.
+  const escalaPedida = dados.escalaId === undefined ? undefined : idOpcional(dados.escalaId, "Escala");
   const ativo = dados.ativo === undefined ? true : booleano(dados.ativo, "Ativo");
   const novoPin = dados.pin ? pin(dados.pin) : null;
 
@@ -89,6 +91,17 @@ export async function salvarFuncionario(request: CallableRequest) {
       );
     }
 
+    // A escala que fica e o horário que vale: o da escala ou o informado.
+    const escalaAtual = typeof atual?.get("escalaId") === "string" ? String(atual.get("escalaId")) : null;
+    const continuaNaEscala = escalaAtual !== null && (!horarioContratual || mesmoHorario(atual?.get("horario"), horarioContratual));
+    const escalaId = escalaPedida !== undefined ? escalaPedida : continuaNaEscala ? escalaAtual : null;
+    const escala = escalaId ? await tx.get(empresaRef.collection("escalas").doc(escalaId)) : null;
+    if (escalaPedida && !escala?.exists) throw new HttpsError("not-found", "Escala não encontrada nesta empresa.");
+    const escalaFinal = escala?.exists ? escala.id : null;
+    const horarioFinal = escala?.exists ? (escala.get("horario") as string[]) : horarioContratual;
+    // Sem horário (cadastro de antes do horário contratual), vale a jornada informada.
+    const jornadaFinal = horarioFinal ? jornadaDoHorario(horarioFinal) : jornada(dados.jornada);
+
     const agora = FieldValue.serverTimestamp();
     tx.set(
       ref,
@@ -98,8 +111,9 @@ export async function salvarFuncionario(request: CallableRequest) {
         matricula: matriculaFuncionario,
         cargo,
         admissao,
-        jornada: jornadaSemanal,
-        ...(horarioContratual ? { horario: horarioContratual } : {}),
+        jornada: jornadaFinal,
+        ...(horarioFinal ? { horario: horarioFinal } : {}),
+        ...(escalaFinal ? { escalaId: escalaFinal } : escalaAtual ? { escalaId: FieldValue.delete() } : {}),
         ativo,
         atualizadoEm: agora,
         ...(id ? {} : { criadoEm: agora, pinAtivo: false }),
@@ -143,8 +157,9 @@ export async function salvarFuncionario(request: CallableRequest) {
       acao: id ? "funcionario.atualizado" : "funcionario.criado",
       descricao:
         `Funcionário ${nome} (matrícula ${matriculaFuncionario}) ${id ? "atualizado" : "cadastrado"}` +
-        `${novoPin && id ? "; PIN redefinido" : ""}${ativo ? "" : "; inativo"}.`,
-      detalhes: { funcionarioId: ref.id, matricula: matriculaFuncionario, cargo, ativo, pinAlterado: Boolean(novoPin) },
+        `${novoPin && id ? "; PIN redefinido" : ""}${ativo ? "" : "; inativo"}` +
+        `${escalaFinal === escalaAtual ? "" : escalaFinal ? `; escala ${String(escala?.get("nome"))}` : "; saiu da escala (horário próprio)"}.`,
+      detalhes: { funcionarioId: ref.id, matricula: matriculaFuncionario, cargo, ativo, pinAlterado: Boolean(novoPin), escalaId: escalaFinal },
     });
   });
 

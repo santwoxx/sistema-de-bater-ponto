@@ -19,6 +19,7 @@ const Espelho = lazy(() => import('./paginas/admin/Espelho'))
 const Fechamento = lazy(() => import('./paginas/admin/Fechamento'))
 const Exportar = lazy(() => import('./paginas/admin/Exportar'))
 const Funcionarios = lazy(() => import('./paginas/admin/Funcionarios'))
+const Escalas = lazy(() => import('./paginas/admin/Escalas'))
 const Aparelhos = lazy(() => import('./paginas/admin/Aparelhos'))
 const Auditoria = lazy(() => import('./paginas/admin/Auditoria'))
 const Empresas = lazy(() => import('./paginas/admin/Empresas'))
@@ -91,6 +92,7 @@ export default function App() {
                 <Route path="fechamento" element={<Fechamento />} />
                 <Route path="exportar" element={<Exportar />} />
                 <Route path="funcionarios" element={<Funcionarios />} />
+                <Route path="escalas" element={<Escalas />} />
                 <Route path="aparelhos" element={<Aparelhos />} />
                 <Route path="auditoria" element={<Auditoria />} />
                 <Route

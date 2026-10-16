@@ -68,6 +68,12 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // Escalas de horário: o horário da escala é copiado para o cadastro de cada funcionário dela.
+      match /escalas/{escalaId} {
+        allow read: if acessaEmpresa(empresaId);
+        allow write: if false;
+      }
+
       match /registros/{registroId} {
         allow read: if acessaEmpresa(empresaId);
         allow write: if false;

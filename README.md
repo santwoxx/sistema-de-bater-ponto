@@ -50,7 +50,8 @@ Sistema de controle de ponto para lojas e pequenas empresas. **Tudo roda no Fire
 | **Espelho de ponto** | Qualquer mês, por funcionário: marcações, previsto, trabalhado, saldo, faltas e marcações ímpares. Lançamento de abonos. Mostra se o mês foi fechado e avisa se algo mudou depois. Impressão ou PDF (com linhas para o funcionário e a empresa assinarem) e CSV |
 | **Fechamento mensal** | Congela o espelho de todos os funcionários de um mês (a versão oficial, para imprimir e assinar em papel), com os totais de cada um; CSV do mês para a folha. Mudou algo depois? Reabrir exige motivo e guarda a versão anterior |
 | **Exportar dados** | Baixa os dados de ponto da empresa escolhida, com filtros de período (até 12 meses), funcionários, origem e situação: **marcações** (uma linha por batida), **espelho diário**, **resumo por funcionário** (CSV que abre no Excel) ou **espelhos para imprimir/PDF**, um por folha. Cada exportação fica na auditoria |
-| **Funcionários** | CPF, matrícula, cargo, admissão, jornada de cada dia da semana e o PIN de 4 números, um para cada funcionário (com "Gerar PIN"; mostra quem está sem PIN). No cadastro novo, dá para escolher a empresa do funcionário |
+| **Funcionários** | CPF, matrícula, cargo, admissão, horário contratual (próprio ou o de uma escala) e o PIN de 4 números, um para cada funcionário (com "Gerar PIN"; mostra quem está sem PIN). No cadastro novo, dá para escolher a empresa do funcionário |
+| **Escalas de horário** | Horários da semana com nome (ex.: Comercial 44h), montados a partir dos modelos prontos; ao criar, dá para criar a mesma escala nas outras empresas. Associa vários funcionários de uma vez, marcando na lista. Mudar a escala muda o horário de todos dela; quem sai da escala (ou se ela for excluída) fica com o mesmo horário, como horário próprio |
 | **Aparelhos de ponto** | Aparelhos ativados, empresas que cada aparelho da loja atende, último sinal, **câmera** (funcionando ou o problema, com o que fazer), último registro e desativação |
 | **Auditoria** | Quem fez o quê e quando, com as justificativas. Bloqueios por PIN errado aparecem com a foto de quem tentou. **Verificação de integridade**: refaz a cadeia de hashes e aponta marcação apagada, inserida ou alterada, mesmo direto no banco |
 | **Empresas** *(admin)* | CNPJ (inclusive o novo CNPJ alfanumérico), fuso horário, intervalo mínimo entre batidas, tolerância e início do controle de ponto |
@@ -114,6 +115,7 @@ Sistema bater ponto/
 │       ├── exportacao.ts    exportação com filtros (CSV e espelhos para impressão)
 │       ├── ajustes.ts       incluir/desconsiderar marcação
 │       ├── abonos.ts        feriados, atestados, férias
+│       ├── escalas.ts       escalas de horário: criar, associar funcionários, mudar e excluir
 │       ├── funcionarios.ts, empresas.ts, usuarios.ts, dispositivos.ts, sistema.ts
 │       └── validacao.ts, tempo.ts, seguranca.ts, acesso.ts, auditoria.ts
 └── web/                     site (React + Vite, TypeScript)
@@ -132,7 +134,8 @@ auditoria/{id}                          ações globais (empresas, usuários)
 limites/{uid}_{acao}                    contadores de limite de uso (inacessível pelo navegador)
 pins/{índice}                           dono de cada PIN (empresa e funcionário): um PIN, um funcionário (inacessível pelo navegador)
 empresas/{empresaId}                    nome, CNPJ, fuso, regras e resultado da verificação de integridade
-  ├── funcionarios/{id}                 nome, CPF, matrícula, jornada
+  ├── funcionarios/{id}                 nome, CPF, matrícula, horário contratual, jornada e a escala (se tiver)
+  ├── escalas/{id}                      escalas de horário (o horário é copiado para cada funcionário da escala)
   ├── credenciais/{funcionarioId}       índice do PIN, erros e bloqueios, última marcação (inacessível pelo navegador)
   ├── registros/{id}                    marcações (imutáveis)
   ├── abonos/{id}                       feriados, atestados, férias
@@ -217,7 +220,7 @@ A publicação não faz perguntas: cria o site do Hosting se faltar e aceita a l
 4. Em **Usuários**, crie a conta da gestora e marque as empresas que ela pode acessar. Sem senha inicial, ela entra com a conta Google do e-mail cadastrado ou cria a própria senha no login ("Criar ou redefinir senha"), sem que você a conheça.
 
 **Login com Google.** O botão "Entrar com Google" aparece no login do painel e na ativação/desativação do aparelho. Ele entra na conta já cadastrada com o mesmo e-mail (mesmo papel e mesmas empresas); conta Google sem cadastro é recusada. Se a pessoa tinha senha, o Firebase a desliga no primeiro acesso pelo Google (o Google passa a ser o único jeito de entrar); o administrador pode definir uma senha de novo em Usuários. Em conta Google com e-mail de outro provedor (ex.: Hotmail), o Google não confirma o e-mail: a tela pede a senha uma vez e liga as duas formas de entrar. Em computador compartilhado, lembre que sair do painel não sai da conta Google.
-5. Em **Funcionários**, cadastre a equipe com matrícula e o **PIN de 4 números** de cada um (o painel sugere um; dá para trocar). Em "Empresa do funcionário", escolha a empresa de cada um. Entregue o PIN a cada pessoa: no aparelho ela digita só o PIN.
+5. Em **Funcionários**, cadastre a equipe com matrícula e o **PIN de 4 números** de cada um (o painel sugere um; dá para trocar). Em "Empresa do funcionário", escolha a empresa de cada um. Entregue o PIN a cada pessoa: no aparelho ela digita só o PIN. Se vários têm o mesmo horário, crie as **Escalas de horário** e associe a equipe de uma vez.
 
 ### 6. Coloque o aparelho na loja
 
@@ -245,6 +248,7 @@ A publicação não faz perguntas: cria o site do Hosting se faltar e aceita a l
 - **Batida duplicada ou errada:** abra a marcação → **Desconsiderar** (com motivo). A original continua guardada.
 - **Batida que não deveria existir** (teste na implantação, por exemplo): abra a marcação → **Apagar** (só o administrador, com motivo). Ela some de todas as telas, relatórios e exportações, e a foto é apagada. Não tem volta; a auditoria guarda quem apagou e por quê.
 - **Feriado, atestado ou férias:** Espelho de ponto → **Lançar abono** (ou o ícone de calendário no dia).
+- **Horário de um grupo mudou:** Escalas de horário → editar a escala → **Salvar**: o horário de todos dela muda junto. **Trocar alguém de escala:** na escala nova, **Funcionários** → marque → **Salvar** (ou no cadastro do funcionário, campo "Escala").
 - **Esqueceu o PIN, alguém descobriu ou foi bloqueado** (no celular pessoal, 5 erros seguidos bloqueiam o PIN do dono por 15 minutos; se repetir, 30 e depois 60): Funcionários → editar → **Trocar o PIN** (ou "Gerar PIN") → salvar, e passe o novo PIN para ele. O antigo deixa de valer na hora, e o bloqueio acaba. Se o PIN escolhido já for de outro funcionário, o painel avisa: escolha outro.
 - **Aparelho bloqueado** ("Muitas tentativas erradas neste aparelho"): 10 PINs errados em 15 minutos bloqueiam o aparelho por 15 minutos. A página **Hoje** mostra o alerta com a foto de quem tentou.
 - **Alertas de segurança:** a página **Hoje** mostra os bloqueios por PIN errado dos últimos 7 dias, com a foto de quem tentou. Se a verificação de integridade (automática, toda segunda-feira) encontrar marcação alterada ou apagada, uma faixa vermelha aparece no topo de todas as páginas.
@@ -309,7 +313,7 @@ Abra <http://localhost:5173>. Os dados somem quando os emuladores são fechados.
 | Comando | O que faz |
 |---|---|
 | `npm run verificar` | Build das funções e do site, lint (sem nenhum aviso permitido) e testes unitários: CPF, CNPJ, PIN, senhas, limpeza de textos, fusos, limites de uso, cadeia de hashes, cálculo do espelho e textos do aparelho. O `npm run publicar` roda isto antes de publicar |
-| `npm run testar:e2e` | 36 etapas de ponta a ponta com os emuladores: Portaria 671 (ARP com NSR, AFD e AEJ conferidos campo a campo, assinaturas CAdES e PAdES, comprovantes do trabalhador com CPF e PIN), aparelho da loja que atende duas empresas (cada batida na empresa do funcionário), permissões de cada papel, ações do painel numa função só (ação desconhecida recusada) e aquecimento das funções, código de instalação, login com Google (mesma conta do e-mail, ligação com senha, conta sem cadastro), batida sem internet (cifrada, horário conferido, recusas e cadeia íntegra), só o PIN de 4 números (único em todas as empresas, troca só pelo gestor, PINs antigos passados ao novo formato e alerta de PIN repetido), registro com foto, NSR e cadeia de hashes, bloqueios do aparelho e do PIN no celular pessoal (inclusive com tentativas em paralelo), fotos só pelo servidor, ajustes, marcação apagada só pelo administrador (some das telas, foto junto, cadeia íntegra), abonos, solicitações só pelo gestor, fechamento e reabertura com motivo, exportação, adulteração detectada, limites de uso, auditoria, celular pessoal e desativação de aparelho |
+| `npm run testar:e2e` | 37 etapas de ponta a ponta com os emuladores: Portaria 671 (ARP com NSR, AFD e AEJ conferidos campo a campo, assinaturas CAdES e PAdES, comprovantes do trabalhador com CPF e PIN), escalas de horário (criar também em outra empresa, associar vários, mudar a escala muda o horário de todos, tirar e excluir), aparelho da loja que atende duas empresas (cada batida na empresa do funcionário), permissões de cada papel, ações do painel numa função só (ação desconhecida recusada) e aquecimento das funções, código de instalação, login com Google (mesma conta do e-mail, ligação com senha, conta sem cadastro), batida sem internet (cifrada, horário conferido, recusas e cadeia íntegra), só o PIN de 4 números (único em todas as empresas, troca só pelo gestor, PINs antigos passados ao novo formato e alerta de PIN repetido), registro com foto, NSR e cadeia de hashes, bloqueios do aparelho e do PIN no celular pessoal (inclusive com tentativas em paralelo), fotos só pelo servidor, ajustes, marcação apagada só pelo administrador (some das telas, foto junto, cadeia íntegra), abonos, solicitações só pelo gestor, fechamento e reabertura com motivo, exportação, adulteração detectada, limites de uso, auditoria, celular pessoal e desativação de aparelho |
 | `npm run dados:exemplo` | Com os emuladores ligados, cria administrador, gestora, empresas, funcionários e o histórico do mês anterior, pronto para fechar (senha `ponto-teste-2026`; o resumo no fim mostra o PIN de cada funcionário) |
 | `npm run logs` | Últimos registros das funções em produção |
 
@@ -405,7 +409,8 @@ No GitHub, cada envio roda o `npm run verificar`, a auditoria das dependências 
 
 - **Sem internet, a batida é guardada** e enviada depois (até 72 horas). Como o aparelho não confere o PIN sem internet, uma batida com PIN errado só é recusada quando chega, e o gestor vê o alerta.
 - **Turnos que atravessam a meia-noite** contam no dia de cada marcação. Para turnos noturnos, o espelho precisaria do conceito de "dia de trabalho".
-- **Escalas (12x36 etc.)** não são calculadas automaticamente: a jornada é por dia da semana. Use folgas e abonos para ajustar.
+- **Escalas de revezamento (12x36, folga alternada)** não são calculadas automaticamente: as escalas de horário são semanais (cada dia da semana tem o seu horário). Use folgas e abonos para ajustar.
+- **Mudar um horário (no cadastro ou na escala) vale para os meses ainda não fechados**: o espelho do mês aberto é recalculado com o horário novo. Os meses fechados continuam como estão.
 - **Horas extras e adicional noturno** aparecem como saldo, sem percentuais (50%, 100%).
 - **Banco de horas** é calculado mês a mês; o saldo de um mês ainda não é levado automaticamente para o seguinte.
 - **A foto não prova que a pessoa estava lá.** Não há detecção de vivacidade: uma foto de foto passaria. A foto serve de evidência para o gestor conferir.

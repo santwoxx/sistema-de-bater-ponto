@@ -53,9 +53,21 @@ export interface Funcionario {
   jornada: number[]
   /** Horário contratual por dia da semana ("08:00-12:00 13:00-17:00"; "" = folga). null = cadastrado antes de existir. */
   horario: string[] | null
+  /** Escala de horário (o horário acima é o dela) ou null (horário próprio). */
+  escalaId: string | null
   ativo: boolean
   /** Tem o PIN de 4 números com que bate o ponto (quem tinha o PIN antigo precisa de um novo). */
   pinDefinido: boolean
+}
+
+/** Escala de horário da empresa: o horário dela é copiado para o cadastro de cada funcionário associado. */
+export interface Escala {
+  id: string
+  nome: string
+  /** Horário da semana, como o do funcionário ("08:00-12:00 13:00-17:00"; "" = folga). */
+  horario: string[]
+  /** Minutos previstos por dia da semana (domingo a sábado). */
+  jornada: number[]
 }
 
 export interface Desconsideracao {
@@ -251,8 +263,19 @@ export function paraFuncionario(snap: DocumentSnapshot): Funcionario {
     admissao: d.admissao ?? null,
     jornada: Array.isArray(d.jornada) && d.jornada.length === 7 ? d.jornada : JORNADA_PADRAO,
     horario: Array.isArray(d.horario) && d.horario.length === 7 ? d.horario : null,
+    escalaId: typeof d.escalaId === 'string' ? d.escalaId : null,
     ativo: d.ativo !== false,
     pinDefinido: d.pinAtivo === true,
+  }
+}
+
+export function paraEscala(snap: DocumentSnapshot): Escala {
+  const d = snap.data() ?? {}
+  return {
+    id: snap.id,
+    nome: d.nome ?? '',
+    horario: Array.isArray(d.horario) && d.horario.length === 7 ? d.horario : ['', '', '', '', '', '', ''],
+    jornada: Array.isArray(d.jornada) && d.jornada.length === 7 ? d.jornada : [0, 0, 0, 0, 0, 0, 0],
   }
 }
 

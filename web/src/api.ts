@@ -58,8 +58,19 @@ export interface DadosFuncionario {
   jornada: number[]
   /** Horário contratual por dia da semana (domingo a sábado); a jornada sai dele. */
   horario: string[]
+  /** Escala de horário (o servidor usa o horário dela) ou null (horário próprio). */
+  escalaId: string | null
   ativo: boolean
   pin?: string
+}
+
+export interface DadosEscala {
+  empresaId: string
+  id?: string
+  nome: string
+  horario: string[]
+  /** Escala nova: criar a mesma também nestas empresas (ex.: do mesmo grupo, na mesma loja). */
+  copiarPara?: string[]
 }
 
 export interface ComprovantePonto {
@@ -96,6 +107,15 @@ export const api = {
   salvarEmpresa: acaoDoPainel<DadosEmpresa, { id: string }>('salvarEmpresa'),
   salvarUsuario: acaoDoPainel<DadosUsuario, { uid: string }>('salvarUsuario'),
   salvarFuncionario: acaoDoPainel<DadosFuncionario, { id: string }>('salvarFuncionario'),
+  // Escalas de horário: mudar a escala muda o horário de todos os funcionários dela.
+  salvarEscala: acaoDoPainel<DadosEscala, { id: string; funcionariosAtualizados: number; copias: number }>('salvarEscala'),
+  // Quem era da escala fica com o mesmo horário, como horário próprio.
+  removerEscala: acaoDoPainel<{ empresaId: string; escalaId: string }, { ok: true; funcionarios: number }>('removerEscala'),
+  // Quem entra recebe o horário da escala; quem sai fica com o mesmo horário, como horário próprio.
+  associarEscala: acaoDoPainel<
+    { empresaId: string; escalaId: string; adicionar: string[]; remover: string[] },
+    { adicionados: number; removidos: number }
+  >('associarEscala'),
   // Portaria 671: número do INPI e desenvolvedor do REP-P (só o administrador).
   salvarConfiguracaoRep: acaoDoPainel<
     { inpi: string; documento: string; nome: string; email: string; programaNome: string; programaVersao: string },

@@ -2,6 +2,7 @@ import { signOut } from 'firebase/auth'
 import { collection, query, where } from 'firebase/firestore'
 import {
   Building2,
+  CalendarClock,
   CalendarDays,
   ClipboardList,
   Download,
@@ -38,6 +39,7 @@ const ITENS = [
   { para: '/admin/fechamento', rotulo: 'Fechamento mensal', icone: FileSignature },
   { para: '/admin/exportar', rotulo: 'Exportar dados', icone: Download },
   { para: '/admin/funcionarios', rotulo: 'Funcionários', icone: Users },
+  { para: '/admin/escalas', rotulo: 'Escalas de horário', icone: CalendarClock },
   { para: '/admin/aparelhos', rotulo: 'Aparelhos de ponto', icone: Tablet },
   { para: '/admin/auditoria', rotulo: 'Auditoria', icone: History },
 ]

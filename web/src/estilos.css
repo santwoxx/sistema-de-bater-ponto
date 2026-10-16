@@ -400,6 +400,51 @@ input[type='radio'] {
   text-align: right;
 }
 
+/* Horário que vem da escala: só para ver */
+.linha-horario input[readonly] {
+  background: var(--superficie-2);
+  color: var(--texto-suave);
+}
+
+/* Escalas de horário: botões na linha da tabela e a escolha dos funcionários */
+
+.acoes-linha {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.barra-escolha {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.barra-escolha .busca {
+  flex: 1 1 220px;
+}
+
+.lista-marcar.lista-escala {
+  max-height: min(46vh, 380px);
+  margin: 10px 0;
+  border-top: 1px solid var(--borda);
+  border-bottom: 1px solid var(--borda);
+}
+
+.rodape-escolha {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 12px;
+}
+
+.modal-rodape .empurrar-esquerda {
+  margin-right: auto;
+}
+
 .grade-jornada {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));

@@ -6,6 +6,7 @@ import { removerCertificado, salvarCertificado } from "./certificado";
 import { salvarConfiguracaoRep } from "./configuracaoRep";
 import { ativarDispositivo, desativarDispositivo, salvarDispositivo } from "./dispositivos";
 import { salvarEmpresa } from "./empresas";
+import { associarEscala, removerEscala, salvarEscala } from "./escalas";
 import { obterFoto } from "./fotos";
 import { salvarFuncionario } from "./funcionarios";
 import { criarSolicitacao, decidirSolicitacao } from "./solicitacoes";
@@ -23,6 +24,9 @@ const ACOES: Record<string, (request: CallableRequest) => Promise<unknown>> = {
   salvarEmpresa,
   salvarUsuario,
   salvarFuncionario,
+  salvarEscala,
+  removerEscala,
+  associarEscala,
   ativarDispositivo,
   salvarDispositivo,
   desativarDispositivo,

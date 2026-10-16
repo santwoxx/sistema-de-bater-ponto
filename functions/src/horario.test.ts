@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { horarioSugerido, jornadaDoHorario, normalizarHorario, paresDoDia, problemaNoHorario, textoDoHorario } from "./horario";
+import { horarioSugerido, jornadaDoHorario, mesmoHorario, normalizarHorario, paresDoDia, problemaNoHorario, textoDoHorario } from "./horario";
 
 const COMERCIAL = ["", "08:00-12:00 13:00-17:00", "08:00-12:00 13:00-17:00", "08:00-12:00 13:00-17:00", "08:00-12:00 13:00-17:00", "08:00-12:00 13:00-17:00", "08:00-12:00"];
 
@@ -32,6 +32,13 @@ describe("horário contratual", () => {
     expect(normalizarHorario([" 08:00-12:00   13:00-17:00 "])).toEqual(["08:00-12:00 13:00-17:00"]);
     expect(textoDoHorario(COMERCIAL)).toBe("seg a sex 08:00-12:00 13:00-17:00 · sáb 08:00-12:00");
     expect(textoDoHorario(["", "", "", "", "", "", ""])).toBe("sem horário contratual");
+  });
+
+  it("compara horários depois de normalizados, aceitando o que vier do banco", () => {
+    expect(mesmoHorario(COMERCIAL, COMERCIAL.map((dia) => ` ${dia.replace(" ", "   ")} `))).toBe(true);
+    expect(mesmoHorario(COMERCIAL, [...COMERCIAL.slice(0, 6), ""])).toBe(false);
+    expect(mesmoHorario(undefined, COMERCIAL)).toBe(false);
+    expect(mesmoHorario(COMERCIAL.slice(0, 6), COMERCIAL.slice(0, 6))).toBe(false);
   });
 
   it("sugere um horário a partir da jornada de quem foi cadastrado antes", () => {

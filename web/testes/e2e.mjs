@@ -49,6 +49,9 @@ const ACOES_DO_PAINEL = new Set([
   'salvarEmpresa',
   'salvarUsuario',
   'salvarFuncionario',
+  'salvarEscala',
+  'removerEscala',
+  'associarEscala',
   'ativarDispositivo',
   'salvarDispositivo',
   'desativarDispositivo',
@@ -1459,6 +1462,93 @@ await etapa('só o administrador apaga uma marcação: some das telas e exporta�
   assert.equal(auditoria.length, 1)
   assert.equal(auditoria[0].get('detalhes').motivo, 'Batida de teste na implantação')
   assert.match(auditoria[0].get('descricao'), /Marcação de Maria Souza em .* apagada/)
+})
+
+await etapa('escalas de horário: criar (também em outra empresa), associar vários de uma vez, mudar a escala muda o horário de todos, tirar e excluir', async () => {
+  const PARES = '07:00-11:00 12:00-16:00'
+  const MANHA = ['', PARES, PARES, PARES, PARES, PARES, '07:00-11:00']
+  const SEM_SABADO = [...MANHA.slice(0, 6), '']
+  const lerFuncionario = async (id) => (await getDoc(doc(gestora.db, 'empresas', empresaA, 'funcionarios', id))).data()
+  const escalasDaShopping = async () => (await getDocs(collection(outraGestora.db, 'empresas', empresaB, 'escalas'))).docs
+
+  // Nome, horário conferido e pelo menos um dia de trabalho; outra empresa, só com acesso a ela.
+  const manha = { empresaId: empresaA, nome: 'Manhã', horario: MANHA }
+  await falha(gestora.chamar('salvarEscala', { ...manha, nome: 'X' }), 'functions/invalid-argument', /Nome da escala/)
+  await falha(gestora.chamar('salvarEscala', { ...manha, horario: ['', '', '', '', '', '', ''] }), 'functions/invalid-argument', /pelo menos um dia/)
+  await falha(gestora.chamar('salvarEscala', { ...manha, horario: ['', '7h-11h', '', '', '', '', ''] }), 'functions/invalid-argument', /seg: use/)
+  await falha(gestora.chamar('salvarEscala', { ...manha, copiarPara: [empresaB] }), 'functions/permission-denied', /não tem acesso/)
+  await falha(outraGestora.chamar('salvarEscala', manha), 'functions/permission-denied')
+
+  // O admin cria na Loja Centro e, junto, na Loja Shopping: cada uma fica com a sua.
+  const criada = await admin.chamar('salvarEscala', { ...manha, horario: MANHA.map((dia) => ` ${dia} `), copiarPara: [empresaB] })
+  assert.equal(criada.copias, 1)
+  const escala = (await getDoc(doc(gestora.db, 'empresas', empresaA, 'escalas', criada.id))).data()
+  assert.deepEqual(escala.horario, MANHA)
+  assert.deepEqual(escala.jornada, [0, 480, 480, 480, 480, 480, 240])
+  assert.deepEqual((await escalasDaShopping()).map((d) => d.get('nome')), ['Manhã'])
+  await falha(getDocs(collection(gestora.db, 'empresas', empresaB, 'escalas')), 'permission-denied')
+  await falha(setDoc(doc(gestora.db, 'empresas', empresaA, 'escalas', 'falsa'), { nome: 'Hack' }), 'permission-denied')
+  // Nome repetido na empresa (sem contar acento e maiúscula), não.
+  await falha(gestora.chamar('salvarEscala', { ...manha, nome: 'MANHA' }), 'functions/already-exists', /Já existe uma escala/)
+
+  // Associar vários de uma vez: cada um recebe o horário e a jornada da escala.
+  const associar = (adicionar, remover = []) => gestora.chamar('associarEscala', { empresaId: empresaA, escalaId: criada.id, adicionar, remover })
+  await falha(associar([fulano]), 'functions/not-found', /Funcionário não encontrado/)
+  await falha(associar([maria], [maria]), 'functions/invalid-argument')
+  assert.deepEqual(await associar([maria, joao]), { adicionados: 2, removidos: 0 })
+  for (const id of [maria, joao]) {
+    const f = await lerFuncionario(id)
+    assert.equal(f.escalaId, criada.id)
+    assert.deepEqual(f.horario, MANHA)
+    assert.deepEqual(f.jornada, [0, 480, 480, 480, 480, 480, 240])
+  }
+  assert.deepEqual(await associar([maria]), { adicionados: 0, removidos: 0 })
+
+  // Mudar a escala muda o horário (e a jornada) de todos dela; a da outra empresa continua igual.
+  const editada = await gestora.chamar('salvarEscala', { empresaId: empresaA, id: criada.id, nome: 'Manhã 40h', horario: SEM_SABADO })
+  assert.equal(editada.funcionariosAtualizados, 2)
+  for (const id of [maria, joao]) {
+    const f = await lerFuncionario(id)
+    assert.deepEqual(f.horario, SEM_SABADO)
+    assert.deepEqual(f.jornada, [0, 480, 480, 480, 480, 480, 0])
+  }
+  assert.deepEqual((await escalasDaShopping())[0].get('horario'), MANHA)
+
+  // No cadastro, com a escala vale o horário dela (mesmo vindo outro); "horário próprio" tira da escala.
+  await gestora.chamar('salvarFuncionario', { ...cadastroMaria(), horario: MANHA, escalaId: criada.id })
+  assert.deepEqual((await lerFuncionario(maria)).horario, SEM_SABADO)
+  await falha(gestora.chamar('salvarFuncionario', { ...cadastroMaria(), escalaId: 'naoExiste' }), 'functions/not-found', /Escala não encontrada/)
+  // Painel de antes das escalas (sem o campo): continua na escala com o mesmo horário; sem nenhum horário, também.
+  await gestora.chamar('salvarFuncionario', { ...cadastroMaria(), horario: SEM_SABADO })
+  await gestora.chamar('salvarFuncionario', cadastroMaria())
+  assert.equal((await lerFuncionario(maria)).escalaId, criada.id)
+  await gestora.chamar('salvarFuncionario', { ...cadastroMaria(), horario: MANHA, escalaId: null })
+  const mariaPropria = await lerFuncionario(maria)
+  assert.equal(mariaPropria.escalaId, undefined)
+  assert.deepEqual(mariaPropria.horario, MANHA)
+  assert.deepEqual(mariaPropria.jornada, [0, 480, 480, 480, 480, 480, 240])
+
+  // Tirar da escala: fica com o mesmo horário, como horário próprio (quem já não era dela não conta).
+  assert.deepEqual(await associar([], [joao, maria]), { adicionados: 0, removidos: 1 })
+  const joaoProprio = await lerFuncionario(joao)
+  assert.equal(joaoProprio.escalaId, undefined)
+  assert.deepEqual(joaoProprio.horario, SEM_SABADO)
+
+  // Excluir a escala: quem era dela também fica com o mesmo horário.
+  await associar([joao])
+  assert.deepEqual(await gestora.chamar('removerEscala', { empresaId: empresaA, escalaId: criada.id }), { ok: true, funcionarios: 1 })
+  assert.equal((await getDoc(doc(gestora.db, 'empresas', empresaA, 'escalas', criada.id))).exists(), false)
+  const joaoDepois = await lerFuncionario(joao)
+  assert.equal(joaoDepois.escalaId, undefined)
+  assert.deepEqual(joaoDepois.horario, SEM_SABADO)
+  await falha(associar([joao]), 'functions/not-found', /Escala não encontrada/)
+
+  // Tudo na auditoria de cada empresa.
+  const ACOES_ESCALA = ['escala.criada', 'escala.atualizada', 'escala.associada', 'escala.removida']
+  const auditoria = await getDocs(query(collection(gestora.db, 'empresas', empresaA, 'auditoria'), where('acao', 'in', ACOES_ESCALA)))
+  assert.deepEqual([...new Set(auditoria.docs.map((d) => d.get('acao')))].sort(), [...ACOES_ESCALA].sort())
+  const daShopping = await getDocs(query(collection(outraGestora.db, 'empresas', empresaB, 'auditoria'), where('acao', '==', 'escala.criada')))
+  assert.match(daShopping.docs[0].get('descricao'), /Escala Manhã criada \(junto com a de Loja Centro\)/)
 })
 
 await etapa('aparelho desativado para de registrar na hora', async () => {

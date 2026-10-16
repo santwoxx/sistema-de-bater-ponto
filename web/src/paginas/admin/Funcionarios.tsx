@@ -1,8 +1,10 @@
 import { collection, getDocs } from 'firebase/firestore'
 import { Pencil, Search, Shuffle, UserPlus, Users } from 'lucide-react'
 import { useRef, useState } from 'react'
+import { Link } from 'react-router'
 import { api } from '../../api'
 import { Aviso, CabecalhoPagina, Campo, Carregando, Selo, Vazio } from '../../componentes/Basicos'
+import { GradeHorario } from '../../componentes/HorarioContratual'
 import Modal from '../../componentes/Modal'
 import { useNotificar } from '../../componentes/Notificacoes'
 import { useEmpresaAtual, useEmpresas } from '../../contexto/Empresa'
@@ -11,36 +13,14 @@ import { useColecao } from '../../hooks/useColecao'
 import { mensagemErro } from '../../lib/erros'
 import { cpfValido, formatarCpf, normalizarBusca, somenteDigitos } from '../../lib/formatos'
 import { gerarPin, problemaNoPin, TAMANHO_PIN } from '../../lib/pin'
-import { horarioSugerido, jornadaDoHorario, paresDoDia, problemaNoHorario } from '../../lib/horario'
-import { minutosParaHHMM, NOMES_DIAS_LONGOS } from '../../lib/tempo'
-import { JORNADA_PADRAO, ordenarPorNome, paraFuncionario, type Empresa, type Funcionario } from '../../tipos'
-
-const COMERCIAL = '08:00-12:00 13:00-17:00'
-// Horários comuns (domingo a sábado); o gestor ajusta depois, se precisar.
-const MODELOS_HORARIO = [
-  { rotulo: '44h · seg a sex 8h + sáb 4h', horario: ['', COMERCIAL, COMERCIAL, COMERCIAL, COMERCIAL, COMERCIAL, '08:00-12:00'] },
-  { rotulo: '44h · seg a sex 8h48', horario: ['', ...Array(5).fill('08:00-12:00 13:00-17:48'), ''] },
-  { rotulo: '40h · seg a sex 8h', horario: ['', ...Array(5).fill(COMERCIAL), ''] },
-  { rotulo: '36h · seg a sáb 6h', horario: ['', ...Array(6).fill('08:00-14:00')] },
-  { rotulo: '30h · seg a sex 6h', horario: ['', ...Array(5).fill('08:00-14:00'), ''] },
-]
-
-/** Duração do dia para mostrar ao lado do horário: "8h", "8h48", "folga" ou "?" (formato errado). */
-function duracaoDoDia(texto: string): string {
-  const pares = paresDoDia(texto)
-  if (!pares) return '?'
-  const minutos = jornadaDoHorario([texto])[0]
-  return minutos === 0 ? 'folga' : minutosParaHHMM(minutos).replace(/:00$/, 'h').replace(':', 'h')
-}
-
-function totalSemanal(jornada: number[]): string {
-  const total = jornada.reduce((s, m) => s + m, 0)
-  return minutosParaHHMM(total).replace(/:00$/, 'h').replace(':', 'h')
-}
+import { horarioSugerido, jornadaDoHorario, problemaNoHorario, totalSemanal } from '../../lib/horario'
+import { JORNADA_PADRAO, ordenarPorNome, paraEscala, paraFuncionario, type Empresa, type Escala, type Funcionario } from '../../tipos'
 
 export default function Funcionarios() {
   const empresa = useEmpresaAtual()
   const funcionarios = useColecao(() => collection(db, 'empresas', empresa.id, 'funcionarios'), paraFuncionario, `${empresa.id}:todos`)
+  const escalas = useColecao(() => collection(db, 'empresas', empresa.id, 'escalas'), paraEscala, `${empresa.id}:escalas`)
+  const nomeDaEscala = new Map(escalas.dados.map((e) => [e.id, e.nome]))
   const [busca, setBusca] = useState('')
   const [filtro, setFiltro] = useState<'ativos' | 'inativos' | 'todos'>('ativos')
   const [editando, setEditando] = useState<Funcionario | 'novo' | null>(null)
@@ -102,6 +82,7 @@ export default function Funcionarios() {
                   <th>Matrícula</th>
                   <th>CPF</th>
                   <th>Cargo</th>
+                  <th>Escala</th>
                   <th>Jornada</th>
                   <th>Situação</th>
                   <th aria-label="Ações" />
@@ -116,6 +97,10 @@ export default function Funcionarios() {
                     <td className="numeros">{f.matricula}</td>
                     <td className="numeros">{formatarCpf(f.cpf)}</td>
                     <td>{f.cargo || '—'}</td>
+                    <td>
+                      {(f.escalaId && nomeDaEscala.get(f.escalaId)) ??
+                        (f.horario ? <span className="texto-suave">Horário próprio</span> : <Selo cor="amarelo">Sem horário</Selo>)}
+                    </td>
                     <td>{totalSemanal(f.jornada)}/sem</td>
                     <td>
                       {f.ativo ? <Selo cor="verde">Ativo</Selo> : <Selo>Inativo</Selo>}{' '}
@@ -139,6 +124,7 @@ export default function Funcionarios() {
           empresa={empresa}
           funcionario={editando === 'novo' ? null : editando}
           todos={funcionarios.dados}
+          escalas={escalas.dados}
           aoFechar={() => setEditando(null)}
         />
       )}
@@ -155,11 +141,14 @@ function FormFuncionario({
   empresa,
   funcionario,
   todos,
+  escalas,
   aoFechar,
 }: {
   empresa: Empresa
   funcionario: Funcionario | null
   todos: Funcionario[]
+  /** Escalas da empresa atual. */
+  escalas: Escala[]
   aoFechar: () => void
 }) {
   const notificar = useNotificar()
@@ -177,6 +166,16 @@ function FormFuncionario({
   // Quem foi cadastrado antes do horário contratual: sugestão a partir da jornada, para conferir.
   const [horario, setHorario] = useState(() => funcionario?.horario ?? horarioSugerido(funcionario?.jornada ?? JORNADA_PADRAO))
   const horarioSugeridoAgora = Boolean(funcionario && !funcionario.horario)
+  // Com escala, o horário é o dela. Cadastro novo em outra empresa: as escalas de lá.
+  const escalasDeOutra = useColecao(
+    () => (empresaId === empresa.id ? null : collection(db, 'empresas', empresaId, 'escalas')),
+    paraEscala,
+    `escalas:${empresaId}`,
+  )
+  const opcoesEscala = ordenarPorNome(empresaId === empresa.id ? escalas : escalasDeOutra.dados)
+  const [escalaId, setEscalaId] = useState(funcionario?.escalaId ?? '')
+  const escala = opcoesEscala.find((e) => e.id === escalaId) ?? null
+  const horarioQueVale = escala?.horario ?? horario
   const [ativo, setAtivo] = useState(funcionario?.ativo ?? true)
   // Sem PIN (cadastro novo ou PIN antigo): já sugere um, que o gestor pode trocar.
   const [alterarPin, setAlterarPin] = useState(novo || !funcionario?.pinDefinido)
@@ -187,6 +186,8 @@ function FormFuncionario({
   // A matrícula sugerida é a próxima da empresa escolhida (sem apagar uma digitada).
   async function escolherEmpresa(id: string) {
     setEmpresaId(id)
+    // Cada empresa tem as suas escalas.
+    setEscalaId('')
     let sugestao = proximaMatricula(todos)
     if (id !== empresa.id) {
       try {
@@ -199,12 +200,18 @@ function FormFuncionario({
     matriculaSugerida.current = sugestao
   }
 
+  function escolherEscala(id: string) {
+    // Ao sair da escala, o horário dela fica de ponto de partida para o horário próprio.
+    if (!id && escala) setHorario(escala.horario)
+    setEscalaId(id)
+  }
+
   async function salvar() {
     setErro('')
     if (nome.trim().length < 3) return setErro('Informe o nome completo.')
     if (!cpfValido(cpf)) return setErro('CPF inválido.')
     if (!/^\d{1,10}$/.test(matricula.trim())) return setErro('A matrícula deve ter apenas números (até 10 dígitos).')
-    const problemaHorario = problemaNoHorario(horario)
+    const problemaHorario = problemaNoHorario(horarioQueVale)
     if (problemaHorario) return setErro(problemaHorario)
     if (alterarPin) {
       const problema = problemaNoPin(pin)
@@ -221,8 +228,10 @@ function FormFuncionario({
         matricula: matricula.trim(),
         cargo: cargo.trim(),
         admissao: admissao || null,
-        jornada: jornadaDoHorario(horario),
-        horario,
+        jornada: jornadaDoHorario(horarioQueVale),
+        horario: horarioQueVale,
+        // Com escala, o servidor usa o horário dela.
+        escalaId: escalaId || null,
         ativo,
         ...(alterarPin ? { pin } : {}),
       })
@@ -292,34 +301,34 @@ function FormFuncionario({
 
       <fieldset className="grupo">
         <legend>Horário contratual</legend>
-        <div className="modelos">
-          {MODELOS_HORARIO.map((m) => (
-            <button type="button" key={m.rotulo} className="botao pequeno" onClick={() => setHorario(m.horario)}>
-              {m.rotulo}
-            </button>
-          ))}
-        </div>
-        {horarioSugeridoAgora && (
+        {opcoesEscala.length > 0 || escalaId ? (
+          <Campo
+            rotulo="Escala"
+            ajuda={
+              escalaId
+                ? 'O horário vem da escala: para mudar, edite a escala (muda para todos dela) ou escolha "Horário próprio".'
+                : 'Com uma escala, o horário passa a vir dela.'
+            }
+          >
+            <select value={escalaId} onChange={(e) => escolherEscala(e.target.value)}>
+              <option value="">Horário próprio (só deste funcionário)</option>
+              {escalaId && !escala && <option value={escalaId}>Escala atual</option>}
+              {opcoesEscala.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.nome} ({totalSemanal(e.jornada)} por semana)
+                </option>
+              ))}
+            </select>
+          </Campo>
+        ) : (
+          <p className="texto-suave">
+            Para dar o mesmo horário a vários funcionários de uma vez, crie uma escala em <Link to="/admin/escalas">Escalas de horário</Link>.
+          </p>
+        )}
+        {horarioSugeridoAgora && !escalaId && (
           <Aviso tipo="alerta">Horário sugerido a partir da jornada que estava cadastrada: confira com o contrato e salve.</Aviso>
         )}
-        <div className="grade-horario">
-          {[1, 2, 3, 4, 5, 6, 0].map((dia) => (
-            <label key={dia} className="linha-horario">
-              <span>{NOMES_DIAS_LONGOS[dia]}</span>
-              <input
-                value={horario[dia]}
-                placeholder="folga"
-                maxLength={60}
-                onChange={(e) => setHorario(horario.map((v, i) => (i === dia ? e.target.value : v)))}
-              />
-              <small>{duracaoDoDia(horario[dia])}</small>
-            </label>
-          ))}
-        </div>
-        <small className="campo-ajuda">
-          Entradas e saídas de cada dia, como no contrato: 08:00-12:00 13:00-17:00 (um espaço entre os pares). Em branco é folga. A jornada
-          prevista do dia é a soma dos pares; ela vai no espelho e no AEJ (Portaria 671).
-        </small>
+        <GradeHorario horario={horarioQueVale} aoMudar={escalaId ? undefined : setHorario} />
       </fieldset>
 
       <fieldset className="grupo">
